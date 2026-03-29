@@ -1,13 +1,7 @@
-import {
-  bigint,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { bigint, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /** Speech jobs after audio upload (transcription pipeline). */
-export const transcriptionJobs = pgTable("transcription_jobs", {
+export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
   uploadId: text("upload_id").notNull().unique(),
   source: text("source").notNull(), // 'video' | 'audio'
@@ -27,5 +21,6 @@ export const transcriptionJobs = pgTable("transcription_jobs", {
     .notNull(),
 });
 
-export type TranscriptionJob = typeof transcriptionJobs.$inferSelect;
-export type NewTranscriptionJob = typeof transcriptionJobs.$inferInsert;
+export type AudioTranscriptionJob = typeof AudioTranscriptionJobs.$inferSelect;
+export type NewAudioTranscriptionJob =
+  typeof AudioTranscriptionJobs.$inferInsert;
