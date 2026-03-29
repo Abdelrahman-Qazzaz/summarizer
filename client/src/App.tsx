@@ -1,23 +1,36 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useId, useState } from "react";
+import { uploadAudioEndpoint, uploadTextEndpoint } from "./config";
+import { extractAudioFromVideo } from "./lib/extractAudio";
 import "./App.css";
 
-type SourceMode = "text" | "video";
+type SourceMode = "text" | "video" | "audio";
 
 const TEXT_ACCEPT = ".txt,.md,.markdown,.text,text/plain";
 const VIDEO_ACCEPT = "video/*";
+const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm";
 
 function App() {
   const inputId = useId();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<SourceMode>("text");
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [phase, setPhase] = useState<"extract" | "upload" | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
-  const accept = mode === "text" ? TEXT_ACCEPT : VIDEO_ACCEPT;
+  const accept =
+    mode === "text"
+      ? TEXT_ACCEPT
+      : mode === "video"
+        ? VIDEO_ACCEPT
+        : AUDIO_ACCEPT;
 
   const pickFiles = useCallback((list: FileList | null) => {
     const next = list?.[0];
     setFile(next ?? null);
+    setUploadError(null);
+    setUploadMessage(null);
   }, []);
 
   const onDrop = useCallback(
@@ -29,11 +42,78 @@ function App() {
     [pickFiles],
   );
 
-  const onUpload = () => {
+  const onUpload = async () => {
     if (!file) return;
-    // Wire API / processing here
-    console.info("upload", { mode, name: file.name, size: file.size });
+    setUploadError(null);
+    setUploadMessage(null);
+    setUploading(true);
+    setPhase(null);
+    try {
+      const body = new FormData();
+      let url: string;
+
+      if (mode === "text") {
+        body.append("file", file);
+        url = uploadTextEndpoint();
+      } else {
+        let uploadFile = file;
+        if (mode === "video") {
+          setPhase("extract");
+          uploadFile = await extractAudioFromVideo(file);
+        }
+        setPhase("upload");
+        body.append("file", uploadFile);
+        body.append("source", mode === "video" ? "video" : "audio");
+        url = uploadAudioEndpoint();
+      }
+
+      if (mode === "text") {
+        setPhase("upload");
+      }
+
+      const res = await fetch(url, {
+        method: "POST",
+        body,
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg =
+          data && typeof data === "object" && "message" in data
+            ? String((data as { message: unknown }).message)
+            : res.statusText;
+        throw new Error(msg || `Upload failed (${res.status})`);
+      }
+      if (
+        data &&
+        typeof data === "object" &&
+        "message" in data &&
+        typeof (data as { message: unknown }).message === "string"
+      ) {
+        setUploadMessage((data as { message: string }).message);
+      } else {
+        setUploadMessage("Upload complete.");
+      }
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      setPhase(null);
+    }
   };
+
+  const dropTitle =
+    mode === "text"
+      ? "Drop a text file"
+      : mode === "video"
+        ? "Drop a video file"
+        : "Drop an audio file";
+
+  const dropHint =
+    mode === "text"
+      ? ".txt, .md, …"
+      : mode === "video"
+        ? "MP4, WebM, …"
+        : "MP3, WAV, M4A, …";
 
   return (
     <div className="app">
@@ -48,6 +128,8 @@ function App() {
             onClick={() => {
               setMode("text");
               setFile(null);
+              setUploadError(null);
+              setUploadMessage(null);
             }}
           >
             Text
@@ -60,16 +142,31 @@ function App() {
             onClick={() => {
               setMode("video");
               setFile(null);
+              setUploadError(null);
+              setUploadMessage(null);
             }}
           >
             Video
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="modeBtn"
+            aria-selected={mode === "audio"}
+            onClick={() => {
+              setMode("audio");
+              setFile(null);
+              setUploadError(null);
+              setUploadMessage(null);
+            }}
+          >
+            Audio
           </button>
         </div>
       </header>
 
       <main className="main">
         <input
-          ref={fileInputRef}
           id={inputId}
           type="file"
           className="srOnly"
@@ -91,13 +188,13 @@ function App() {
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
         >
-          <span className="dropzoneTitle">
-            {mode === "text" ? "Drop a text file" : "Drop a video file"}
-          </span>
-          <span className="dropzoneHint">
-            or click to choose —{" "}
-            {mode === "text" ? ".txt, .md, …" : "MP4, WebM, …"}
-          </span>
+          <span className="dropzoneTitle">{dropTitle}</span>
+          <span className="dropzoneHint">or click to choose — {dropHint}</span>
+          {mode === "video" && (
+            <span className="dropzonePrivacy">
+              Audio is extracted in your browser; the video file is not uploaded.
+            </span>
+          )}
         </label>
 
         {file && (
@@ -109,11 +206,26 @@ function App() {
         <button
           type="button"
           className="uploadBtn"
-          disabled={!file}
-          onClick={onUpload}
+          disabled={!file || uploading}
+          onClick={() => void onUpload()}
         >
-          Upload
+          {uploading && phase === "extract"
+            ? "Extracting audio…"
+            : uploading
+              ? "Uploading…"
+              : "Upload"}
         </button>
+
+        {uploadMessage && (
+          <p className="uploadOk" role="status">
+            {uploadMessage}
+          </p>
+        )}
+        {uploadError && (
+          <p className="uploadErr" role="alert">
+            {uploadError}
+          </p>
+        )}
       </main>
     </div>
   );
