@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "hono";
-import { db, AudioTranscriptionJobs } from "../db";
+import { db, AudioTranscriptionJobs, TextSummarizationJobs } from "../db";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
@@ -121,7 +121,12 @@ export async function handleTextUpload(c: Context) {
   const text = await file.text();
   const dest = join(dir, `${uploadId}-${safeBaseName(file.name)}`);
   await Bun.write(dest, text);
-
+  await db.insert(TextSummarizationJobs).values({
+    uploadId,
+    filePath: dest,
+    fileName: file.name,
+    sizeBytes: file.size,
+  });
   return c.json({
     message: "File uploaded",
     uploadId,
