@@ -21,6 +21,23 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
     .notNull(),
 });
 
+export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  uploadId: text("upload_id").notNull().unique(),
+  filePath: text("file_path").notNull(),
+  fileName: text("file_name").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  status: text("status").notNull().default("queued"),
+  summary: text("summary"),
+  // queued | processing | completed | failed
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 export type AudioTranscriptionJob = typeof AudioTranscriptionJobs.$inferSelect;
 export type NewAudioTranscriptionJob =
   typeof AudioTranscriptionJobs.$inferInsert;
