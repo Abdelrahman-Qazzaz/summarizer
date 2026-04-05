@@ -9,14 +9,16 @@
     "db": "drizzle-kit push"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.2",
-    "dotenv": "^17.3.1",
-    "drizzle-orm": "^0.45.2",
-    "hono": "^4.7.4"
+    "@neondatabase/serverless": "1.0.2",
+    "dotenv": "17.3.1",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.7.4",
+    "node-cron": "4.2.1"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.22",
-    "drizzle-kit": "^0.31.10",
-    "typescript": "^5.7.3"
+    "@types/bun": "1.2.22",
+    "@types/node-cron": "3.0.11",
+    "drizzle-kit": "0.31.10",
+    "typescript": "5.7.3"
   }
 }
