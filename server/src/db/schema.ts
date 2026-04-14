@@ -5,7 +5,6 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
   uploadId: text("upload_id").notNull().unique(),
   source: text("source").notNull(), // 'video' | 'audio'
-  filePath: text("file_path").notNull(),
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type"),
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
@@ -24,7 +23,6 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
 export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
   uploadId: text("upload_id").notNull().unique(),
-  filePath: text("file_path").notNull(),
   fileName: text("file_name").notNull(),
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
   status: text("status").notNull().default("queued"),
