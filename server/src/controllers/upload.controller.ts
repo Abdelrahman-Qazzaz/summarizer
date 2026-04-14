@@ -10,6 +10,14 @@ const TEXT_PREVIEW_CHARS = 2000;
 
 type AudioSource = "video" | "audio";
 
+async function uploadTextFile(dest: string, text: string) {
+  await Bun.write(dest, text);
+}
+
+async function uploadAudioFile(dest: string, file: File) {
+  await Bun.write(dest, file);
+}
+
 function uploadRoot() {
   return process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads");
 }
@@ -75,7 +83,7 @@ export async function handleAudioUpload(c: Context) {
   await mkdir(dir, { recursive: true });
   const dest = join(dir, `${uploadId}-${safeBaseName(file.name)}`);
 
-  await Bun.write(dest, file);
+  await uploadAudioFile(dest, file);
 
   await db.insert(AudioTranscriptionJobs).values({
     uploadId,
@@ -120,7 +128,8 @@ export async function handleTextUpload(c: Context) {
 
   const text = await file.text();
   const dest = join(dir, `${uploadId}-${safeBaseName(file.name)}`);
-  await Bun.write(dest, text);
+
+  await uploadTextFile(dest, text);
   await db.insert(TextSummarizationJobs).values({
     uploadId,
     filePath: dest,
