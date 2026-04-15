@@ -2,6 +2,7 @@ import { useCallback, useId, useState } from "react";
 import { uploadAudioEndpoint, uploadTextEndpoint } from "./config";
 import { extractAudioFromVideo } from "./lib/extractAudio";
 import "./App.css";
+import { FileTypePicker } from "./File Picker/FileTypePicker";
 
 type SourceMode = "text" | "video" | "audio";
 
@@ -119,50 +120,13 @@ function App() {
     <div className="app">
       <header className="top">
         <h1 className="title">Summarizer</h1>
-        <div className="mode" role="tablist" aria-label="Source type">
-          <button
-            type="button"
-            role="tab"
-            className="modeBtn"
-            aria-selected={mode === "text"}
-            onClick={() => {
-              setMode("text");
-              setFile(null);
-              setUploadError(null);
-              setUploadMessage(null);
-            }}
-          >
-            Text
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className="modeBtn"
-            aria-selected={mode === "video"}
-            onClick={() => {
-              setMode("video");
-              setFile(null);
-              setUploadError(null);
-              setUploadMessage(null);
-            }}
-          >
-            Video
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className="modeBtn"
-            aria-selected={mode === "audio"}
-            onClick={() => {
-              setMode("audio");
-              setFile(null);
-              setUploadError(null);
-              setUploadMessage(null);
-            }}
-          >
-            Audio
-          </button>
-        </div>
+        <FileTypePicker
+          mode={mode}
+          setMode={(mode: string) => setMode(mode as SourceMode)}
+          setFile={setFile}
+          setUploadError={setUploadError}
+          setUploadMessage={setUploadMessage}
+        />
       </header>
 
       <main className="main">
@@ -192,7 +156,8 @@ function App() {
           <span className="dropzoneHint">or click to choose — {dropHint}</span>
           {mode === "video" && (
             <span className="dropzonePrivacy">
-              Audio is extracted in your browser; the video file is not uploaded.
+              Audio is extracted in your browser; the video file is not
+              uploaded.
             </span>
           )}
         </label>
