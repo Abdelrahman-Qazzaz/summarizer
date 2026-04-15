@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { UploadId } from "./controllers/upload.controller";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -11,11 +12,11 @@ const BUCKET = "Audio & Text files";
  * Directly upload a text string to Supabase Storage (no local write).
  * Returns the storage path.
  */
-export async function uploadTextToBucket(name: string, text: string) {
+export async function uploadTextToBucket(uploadId: UploadId, text: string) {
   const body = new Blob([text], { type: "text/plain; charset=utf-8" });
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .upload(name, body, { contentType: "text/plain; charset=utf-8" });
+    .upload(uploadId, body, { contentType: "text/plain; charset=utf-8" });
 
   if (error) throw error;
   return data.path;
@@ -26,20 +27,22 @@ export async function uploadTextToBucket(name: string, text: string) {
  * Pass audio as ArrayBuffer/Uint8Array/Buffer/Blob.
  * Returns the storage path.
  */
-export async function uploadAudioToBucket(
-  audio: ArrayBuffer | Uint8Array | Buffer | Blob,
-  opts: { ext?: string; contentType?: string } = {},
-) {
-  const ext = opts.ext ?? "webm";
-  const contentType = opts.contentType ?? "audio/webm";
-  const path = `audio/${crypto.randomUUID()}.${ext}`;
+export async function uploadAudioToBucket(uploadId: UploadId, file: File) {
+  debugger;
+  // Optional: ensure you're uploading an audio file
+  if (!file.type.startsWith("audio/")) {
+    throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
+  }
 
-  const body =
-    audio instanceof Blob ? audio : new Blob([audio], { type: contentType });
-
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, body, { contentType });
+  const { data, error } = await supabase.storage.from(BUCKET).upload(
+    uploadId,
+    file, // File is a Blob, so you can pass it directly
+    {
+      contentType: file.type || "audio/mpeg",
+      // Optional: prevent "already exists" errors by overwriting
+      // upsert: true,
+    },
+  );
 
   if (error) throw error;
   return data.path;
