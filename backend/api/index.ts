@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { uploadRouter } from "./routes/upload.router";
+import { uploadRouter } from "./src/routes/upload.router";
 
 export function registerRoutes(app: Hono) {
   app.route("/upload", uploadRouter);

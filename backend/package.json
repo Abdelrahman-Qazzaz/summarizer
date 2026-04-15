@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --inspect --watch src/index.ts",
+    "dev": "bun run --inspect --watch api/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "db": "drizzle-kit push"
