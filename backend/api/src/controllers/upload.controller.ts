@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "hono";
-import { db, AudioTranscriptionJobs, TextSummarizationJobs } from "../../db";
+import { db, AudioTranscriptionJobs, TextSummarizationJobs } from "../../../db";
 import { uploadTextToBucket, uploadAudioToBucket } from "../bucket";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
