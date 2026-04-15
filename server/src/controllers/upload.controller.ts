@@ -3,15 +3,16 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "hono";
 import { db, AudioTranscriptionJobs, TextSummarizationJobs } from "../db";
+import { uploadTextToBucket } from "../bucket";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
 const TEXT_PREVIEW_CHARS = 2000;
 
 type AudioSource = "video" | "audio";
-
-async function uploadTextFile(dest: string, text: string) {
-  await Bun.write(dest, text);
+type UploadId = `${string}-${string}-${string}-${string}-${string}`;
+async function uploadTextFile(uploadId: UploadId, text: string) {
+  uploadTextToBucket(uploadId, text);
 }
 
 async function uploadAudioFile(dest: string, file: File) {
@@ -122,17 +123,12 @@ export async function handleTextUpload(c: Context) {
     );
   }
 
-  const uploadId = randomUUID();
-  const dir = join(uploadRoot(), "text");
-  await mkdir(dir, { recursive: true });
-
+  const uploadId: UploadId = randomUUID();
   const text = await file.text();
-  const dest = join(dir, `${uploadId}-${safeBaseName(file.name)}`);
 
-  await uploadTextFile(dest, text);
+  await uploadTextFile(uploadId, text);
   await db.insert(TextSummarizationJobs).values({
     uploadId,
-    filePath: dest,
     fileName: file.name,
     sizeBytes: file.size,
   });
