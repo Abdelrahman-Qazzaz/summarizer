@@ -19,16 +19,6 @@ async function uploadAudioFile(uploadId: UploadId, file: File) {
   await uploadAudioToBucket(uploadId, file);
 }
 
-function uploadRoot() {
-  return process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads");
-}
-
-function safeBaseName(name: string): string {
-  const base = name.split(/[/\\]/).pop() ?? "file";
-  const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180);
-  return cleaned || "file";
-}
-
 async function readMultipartFile(
   c: Context,
 ): Promise<
