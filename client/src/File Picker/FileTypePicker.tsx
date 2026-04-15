@@ -12,12 +12,7 @@ export function FileTypePicker({
   setUploadMessage: (message: string | null) => void;
 }) {
   return (
-    <div
-      style={{ border: "2px solid red" }}
-      className="mode"
-      role="tablist"
-      aria-label="Source type"
-    >
+    <div className="mode" role="tablist" aria-label="Source type">
       <button
         type="button"
         role="tab"

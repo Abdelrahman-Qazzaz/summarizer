@@ -3,6 +3,7 @@ import { uploadAudioEndpoint, uploadTextEndpoint } from "./config";
 import { extractAudioFromVideo } from "./lib/extractAudio";
 import "./App.css";
 import { FileTypePicker } from "./File Picker/FileTypePicker";
+import { FilePicker } from "./File Picker/FilePicker";
 
 type SourceMode = "text" | "video" | "audio";
 
@@ -128,70 +129,23 @@ function App() {
           setUploadMessage={setUploadMessage}
         />
       </header>
-
-      <main className="main">
-        <input
-          id={inputId}
-          type="file"
-          className="srOnly"
-          accept={accept}
-          onChange={(e) => pickFiles(e.target.files)}
-        />
-
-        <label
-          htmlFor={inputId}
-          className={`dropzone ${dragOver ? "dropzoneActive" : ""}`}
-          onDragEnter={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-        >
-          <span className="dropzoneTitle">{dropTitle}</span>
-          <span className="dropzoneHint">or click to choose — {dropHint}</span>
-          {mode === "video" && (
-            <span className="dropzonePrivacy">
-              Audio is extracted in your browser; the video file is not
-              uploaded.
-            </span>
-          )}
-        </label>
-
-        {file && (
-          <p className="fileName" aria-live="polite">
-            Selected: <strong>{file.name}</strong>
-          </p>
-        )}
-
-        <button
-          type="button"
-          className="uploadBtn"
-          disabled={!file || uploading}
-          onClick={() => void onUpload()}
-        >
-          {uploading && phase === "extract"
-            ? "Extracting audio…"
-            : uploading
-              ? "Uploading…"
-              : "Upload"}
-        </button>
-
-        {uploadMessage && (
-          <p className="uploadOk" role="status">
-            {uploadMessage}
-          </p>
-        )}
-        {uploadError && (
-          <p className="uploadErr" role="alert">
-            {uploadError}
-          </p>
-        )}
-      </main>
+      <FilePicker
+        inputId={inputId}
+        accept={accept}
+        pickFiles={pickFiles}
+        dragOver={dragOver}
+        setDragOver={setDragOver}
+        onDrop={onDrop}
+        dropTitle={dropTitle}
+        dropHint={dropHint}
+        file={file}
+        uploading={uploading}
+        phase={phase}
+        uploadError={uploadError}
+        uploadMessage={uploadMessage}
+        onUpload={onUpload}
+        mode={mode}
+      />
     </div>
   );
 }
