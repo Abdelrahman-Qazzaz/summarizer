@@ -12,5 +12,9 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["api/src/**/*.ts", "api/index.ts"]
+  "include": [
+    "api/src/**/*.ts",
+    "api/index.ts",
+    "transcribe-summarize-service/index.ts"
+  ]
 }
