@@ -3,20 +3,20 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "hono";
 import { db, AudioTranscriptionJobs, TextSummarizationJobs } from "../db";
-import { uploadTextToBucket } from "../bucket";
+import { uploadTextToBucket, uploadAudioToBucket } from "../bucket";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
 const TEXT_PREVIEW_CHARS = 2000;
 
 type AudioSource = "video" | "audio";
-type UploadId = `${string}-${string}-${string}-${string}-${string}`;
+export type UploadId = `${string}-${string}-${string}-${string}-${string}`;
 async function uploadTextFile(uploadId: UploadId, text: string) {
-  uploadTextToBucket(uploadId, text);
+  await uploadTextToBucket(uploadId, text);
 }
 
-async function uploadAudioFile(dest: string, file: File) {
-  await Bun.write(dest, file);
+async function uploadAudioFile(uploadId: UploadId, file: File) {
+  await uploadAudioToBucket(uploadId, file);
 }
 
 function uploadRoot() {
@@ -79,17 +79,12 @@ export async function handleAudioUpload(c: Context) {
     );
   }
 
-  const uploadId = randomUUID();
-  const dir = join(uploadRoot(), "audio");
-  await mkdir(dir, { recursive: true });
-  const dest = join(dir, `${uploadId}-${safeBaseName(file.name)}`);
-
-  await uploadAudioFile(dest, file);
+  const uploadId: UploadId = randomUUID();
+  await uploadAudioFile(uploadId, file);
 
   await db.insert(AudioTranscriptionJobs).values({
     uploadId,
     source,
-    filePath: dest,
     fileName: file.name,
     mimeType: file.type || null,
     sizeBytes: file.size,
