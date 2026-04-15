@@ -1,0 +1,58 @@
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
+
+const BUCKET = "Audio & Text files";
+
+/**
+ * Directly upload a text string to Supabase Storage (no local write).
+ * Returns the storage path.
+ */
+export async function uploadTextToBucket(name: string, text: string) {
+  const body = new Blob([text], { type: "text/plain; charset=utf-8" });
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .upload(name, body, { contentType: "text/plain; charset=utf-8" });
+
+  if (error) throw error;
+  return data.path;
+}
+
+/**
+ * Directly upload audio bytes to Supabase Storage (no local write).
+ * Pass audio as ArrayBuffer/Uint8Array/Buffer/Blob.
+ * Returns the storage path.
+ */
+export async function uploadAudioToBucket(
+  audio: ArrayBuffer | Uint8Array | Buffer | Blob,
+  opts: { ext?: string; contentType?: string } = {},
+) {
+  const ext = opts.ext ?? "webm";
+  const contentType = opts.contentType ?? "audio/webm";
+  const path = `audio/${crypto.randomUUID()}.${ext}`;
+
+  const body =
+    audio instanceof Blob ? audio : new Blob([audio], { type: contentType });
+
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, body, { contentType });
+
+  if (error) throw error;
+  return data.path;
+}
+
+/**
+ * If you need to read it back from a private bucket, generate a signed URL.
+ */
+export async function signedUrl(path: string, seconds = 600) {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(path, seconds);
+
+  if (error) throw error;
+  return data.signedUrl;
+}
