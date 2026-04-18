@@ -1,3 +1,9 @@
 .env
 node_modules
 uploads
+
+# Enforce bun as the package manager (single lockfile)
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+pnpm-lock.yaml
