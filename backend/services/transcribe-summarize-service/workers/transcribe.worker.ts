@@ -1,3 +1,5 @@
-export async function handleTranscribe(data: any) {
-  console.log("transcribing:", data);
+import type { UploadId } from "../../../shared/types/mq.types";
+
+export async function handleTranscribe(uploadId: UploadId) {
+  console.log("transcribing:", uploadId);
 }

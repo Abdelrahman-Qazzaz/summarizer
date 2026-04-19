@@ -7,13 +7,14 @@ import {
 } from "../../../../shared/db";
 import { uploadTextToBucket, uploadAudioToBucket } from "../bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
+import type { UploadId } from "../../../../shared/types/mq.types";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
 const TEXT_PREVIEW_CHARS = 2000;
 
 type AudioSource = "video" | "audio";
-export type UploadId = `${string}-${string}-${string}-${string}-${string}`;
+
 async function uploadTextFile(uploadId: UploadId, text: string) {
   await uploadTextToBucket(uploadId, text);
 }
