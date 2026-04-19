@@ -31,15 +31,15 @@ class MQ {
     this.channel.sendToQueue(queue, Buffer.from(JSON.stringify(data)));
   }
 
-  async listen(queue: string, handler: (data: any) => void) {
+  async listen(queue: string, handler: (data: any) => Promise<void>) {
     await this.channel.assertQueue(queue);
 
-    this.channel.consume(queue, (msg: ConsumeMessage | null) => {
+    this.channel.consume(queue, async (msg: ConsumeMessage | null) => {
       if (!msg) return;
 
       try {
         const data = JSON.parse(msg.content.toString());
-        handler(data);
+        await handler(data);
         this.channel.ack(msg);
       } catch (err) {
         console.error("Failed to process message", err);
