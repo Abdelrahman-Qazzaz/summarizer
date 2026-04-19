@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import { db, AudioTranscriptionJobs, TextSummarizationJobs } from "../../../db";
+import {
+  db,
+  AudioTranscriptionJobs,
+  TextSummarizationJobs,
+} from "../../../../shared/db";
 import { uploadTextToBucket, uploadAudioToBucket } from "../bucket";
-import { mq } from "../../../message-queue/messageQueue";
+import { mq } from "../../../../shared/message-queue/messageQueue";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
