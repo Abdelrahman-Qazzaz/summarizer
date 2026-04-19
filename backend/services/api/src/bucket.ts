@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { UploadId } from "./controllers/upload.controller";
+import type { UploadId } from "../../../shared/types/mq.types";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -48,10 +48,19 @@ export async function uploadAudioToBucket(uploadId: UploadId, file: File) {
   return data.path;
 }
 
+export async function readTextFile(uploadId: UploadId) {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .download(uploadId);
+
+  if (error) throw error;
+
+  return await data.text();
+}
 /**
  * If you need to read it back from a private bucket, generate a signed URL.
  */
-export async function signedUrl(path: string, seconds = 600) {
+async function signedUrl(path: string, seconds = 600) {
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(path, seconds);
