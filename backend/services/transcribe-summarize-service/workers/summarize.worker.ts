@@ -1,5 +1,32 @@
 import type { UploadId } from "../../../shared/types/mq.types";
+import { db, TextSummarizationJobs } from "../../../shared/db";
+import { and, eq } from "drizzle-orm";
+import { readTextFile } from "../../api/src/bucket";
+import { summarize } from "../../../shared/ai/summarize";
 
 export async function handleSummarize(uploadId: UploadId) {
-  console.log("summarizing:", uploadId);
+  const TABLE = TextSummarizationJobs;
+  try {
+    const [job] = await db
+      .update(TABLE)
+      .set({ status: "processing" })
+      .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "queued")))
+      .returning();
+
+    if (!job) return;
+    const text = await readTextFile(uploadId);
+    const summary = await summarize(text);
+
+    await db
+      .update(TABLE)
+      .set({ status: "completed", summary })
+      .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
+  } catch (err) {
+    await db
+      .update(TABLE)
+      .set({ status: "failed" })
+      .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
+
+    throw err;
+  }
 }

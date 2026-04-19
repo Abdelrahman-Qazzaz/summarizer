@@ -28,7 +28,6 @@ export async function uploadTextToBucket(uploadId: UploadId, text: string) {
  * Returns the storage path.
  */
 export async function uploadAudioToBucket(uploadId: UploadId, file: File) {
-  debugger;
   // Optional: ensure you're uploading an audio file
   if (!file.type.startsWith("audio/")) {
     throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
