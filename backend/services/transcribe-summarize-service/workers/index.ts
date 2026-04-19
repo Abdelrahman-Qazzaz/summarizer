@@ -1,4 +1,4 @@
-import { mq } from "../../message-queue/messageQueue";
+import { mq } from "../../../shared/message-queue/messageQueue";
 import { handleTranscribe } from "./transcribe.worker";
 import { handleSummarize } from "./summarize.worker";
 

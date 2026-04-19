@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "bun@1.3.11",
   "scripts": {
-    "dev": "bun run --inspect --watch api/index.ts & bun run --inspect --watch transcribe-summarize-service/index.ts",
+    "dev": "bun run --inspect --watch services/api/index.ts & bun run --inspect --watch services/transcribe-summarize-service/index.ts",
     "mq": "CONF_ENV_FILE=/opt/homebrew/etc/rabbitmq/rabbitmq-env.conf /opt/homebrew/opt/rabbitmq/sbin/rabbitmq-server",
     "typecheck": "tsc --noEmit",
     "db": "drizzle-kit push"

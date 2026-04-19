@@ -13,8 +13,8 @@
     "types": ["bun-types"]
   },
   "include": [
-    "api/src/**/*.ts",
-    "api/index.ts",
-    "transcribe-summarize-service/index.ts"
+    "services/api/src/**/*.ts",
+    "services/api/index.ts",
+    "services/transcribe-summarize-service/index.ts"
   ]
 }
