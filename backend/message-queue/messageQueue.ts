@@ -45,5 +45,5 @@ class MQ {
 }
 
 const mq = new MQ();
-await mq.connect("amqp://localhost");
+await mq.connect(process.env.MQ_URL!);
 export { mq };
