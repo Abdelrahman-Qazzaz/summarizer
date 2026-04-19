@@ -7,3 +7,4 @@ package-lock.json
 npm-shrinkwrap.json
 yarn.lock
 pnpm-lock.yaml
+backend/erl_crash.dump
