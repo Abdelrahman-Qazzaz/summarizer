@@ -21,6 +21,7 @@ class MQ {
     this.connecting = (async () => {
       this.conn = await amqplib.connect(url);
       this.channel = await this.conn.createChannel();
+      await this.channel.prefetch(1);
     })();
 
     await this.connecting;
@@ -43,6 +44,7 @@ class MQ {
         this.channel.ack(msg);
       } catch (err) {
         console.error("Failed to process message", err);
+        this.channel.nack(msg, false, false);
       }
     });
   }
