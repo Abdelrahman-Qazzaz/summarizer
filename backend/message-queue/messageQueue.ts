@@ -2,6 +2,10 @@ import amqplib from "amqplib";
 import type { Channel, ChannelModel, ConsumeMessage } from "amqplib";
 
 class MQ {
+  queues = {
+    TRANSCRIBE: "transcribe",
+    SUMMARIZE: "summarize",
+  } as const;
   private conn!: ChannelModel;
   private channel!: Channel;
   private connecting?: Promise<void>;
