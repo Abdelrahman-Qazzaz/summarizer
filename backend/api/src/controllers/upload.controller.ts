@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { db, AudioTranscriptionJobs, TextSummarizationJobs } from "../../../db";
 import { uploadTextToBucket, uploadAudioToBucket } from "../bucket";
+import { mq } from "../../../message-queue/messageQueue";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
@@ -78,6 +79,7 @@ export async function handleAudioUpload(c: Context) {
     sizeBytes: file.size,
   });
 
+  await mq.sendEvent(mq.queues.TRANSCRIBE, uploadId);
   return c.json({
     message: "File uploaded",
     uploadId,
@@ -115,6 +117,7 @@ export async function handleTextUpload(c: Context) {
     fileName: file.name,
     sizeBytes: file.size,
   });
+  await mq.sendEvent(mq.queues.SUMMARIZE, uploadId);
   return c.json({
     message: "File uploaded",
     uploadId,
