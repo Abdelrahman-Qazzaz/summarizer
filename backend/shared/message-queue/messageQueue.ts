@@ -5,6 +5,8 @@ class MQ {
   queues = {
     TRANSCRIBE: "transcribe",
     SUMMARIZE: "summarize",
+    TRANSCRIBE_DONE: "transcribe_done",
+    SUMMARIZE_DONE: "summarize_done",
   } as const;
   private conn!: ChannelModel;
   private channel!: Channel;

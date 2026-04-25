@@ -3,6 +3,7 @@ import { db, TextSummarizationJobs } from "../../../shared/db";
 import { and, eq } from "drizzle-orm";
 import { readTextFile } from "../../api/src/bucket";
 import { summarize } from "../../../shared/ai/summarize";
+import { mq } from "../../../shared/message-queue/messageQueue";
 
 export async function handleSummarize(uploadId: UploadId) {
   const TABLE = TextSummarizationJobs;
@@ -21,6 +22,8 @@ export async function handleSummarize(uploadId: UploadId) {
       .update(TABLE)
       .set({ status: "completed", summary })
       .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
+
+    await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId });
   } catch (err) {
     await db
       .update(TABLE)
