@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { uploadRouter } from "./src/routes/upload.router";
 import { mq } from "./../../shared/message-queue/messageQueue";
+import "./src/sockets/socketManager";
+
 import { serve } from "@hono/node-server";
 
 export function registerRoutes(app: Hono) {
@@ -18,8 +20,7 @@ async function startMQ() {
 
   mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId }) => {
     console.log("Summary done:", uploadId);
-
-    // later: notify client via websocket/SSE
+    // notify(uploadId, { type: "summarize_done", uploadId });
   });
 }
 
