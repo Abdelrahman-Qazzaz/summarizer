@@ -1,3 +1,9 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/typescript-node"
+  "image": "mcr.microsoft.com/devcontainers/typescript-node",
+  "forwardPorts": [3001, 4000, 5173],
+  "portsAttributes": {
+    "3001": { "label": "API" },
+    "4000": { "label": "WebSocket" },
+    "5173": { "label": "Vite" }
+  }
 }
