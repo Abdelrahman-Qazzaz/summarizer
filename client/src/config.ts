@@ -10,6 +10,15 @@ export function wsUrl(): string {
   return "ws://127.0.0.1:4000";
 }
 
+/** Socket.IO server URL (HTTP origin — Engine.IO handshake). */
+export function socketIoUrl(): string {
+  const ws = wsUrl();
+  if (ws.startsWith("ws://")) return `http://${ws.slice("ws://".length)}`;
+  if (ws.startsWith("wss://")) return `https://${ws.slice("wss://".length)}`;
+  if (/^https?:\/\//i.test(ws)) return ws.replace(/\/$/, "");
+  return "http://127.0.0.1:4000";
+}
+
 function uploadPath(suffix: "audio" | "text") {
   const path = `/upload/${suffix}`;
   return apiBase ? `${apiBase}${path}` : path;

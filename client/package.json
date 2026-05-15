@@ -15,7 +15,8 @@
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "0.12.2",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "socket.io-client": "4.8.3"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
