@@ -2,9 +2,11 @@
 node_modules
 uploads
 
-# Enforce bun as the package manager (single lockfile)
-package-lock.json
+# Package manager lockfiles
+# (We use npm; commit `package-lock.json` in each package directory)
 npm-shrinkwrap.json
 yarn.lock
 pnpm-lock.yaml
+bun.lock
+bun.lockb
 backend/erl_crash.dump
