@@ -2,14 +2,15 @@
   "name": "summarizer-server",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.3.11",
+  "packageManager": "npm@11.14.1",
   "scripts": {
-    "dev": "bun run --inspect --watch services/api/index.ts & bun run --inspect --watch services/transcribe-summarize-service/index.ts",
-    "mq": "CONF_ENV_FILE=/opt/homebrew/etc/rabbitmq/rabbitmq-env.conf /opt/homebrew/opt/rabbitmq/sbin/rabbitmq-server",
+    "dev": "concurrently -k -n api,transcribe \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
+    "mq": "sudo service rabbitmq-server start",
     "typecheck": "tsc --noEmit",
     "db": "drizzle-kit push"
   },
   "dependencies": {
+    "@hono/node-server": "1.19.2",
     "@neondatabase/serverless": "1.0.2",
     "@supabase/supabase-js": "2.103.0",
     "amqplib": "1.0.3",
@@ -22,10 +23,11 @@
   },
   "devDependencies": {
     "@types/amqplib": "0.10.8",
-    "@types/bun": "1.2.22",
     "@types/node": "25.6.0",
     "@types/node-cron": "3.0.11",
+    "concurrently": "9.2.1",
     "drizzle-kit": "0.31.10",
+    "tsx": "4.20.5",
     "typescript": "5.7.3"
   }
 }

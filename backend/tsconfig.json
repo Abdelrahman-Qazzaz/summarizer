@@ -10,11 +10,13 @@
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
-    "types": ["bun-types"]
+    "types": ["node"]
   },
   "include": [
     "services/api/src/**/*.ts",
     "services/api/index.ts",
-    "services/transcribe-summarize-service/index.ts"
+    "services/api/server.ts",
+    "services/transcribe-summarize-service/index.ts",
+    "services/transcribe-summarize-service/server.ts"
   ]
 }

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { uploadRouter } from "./src/routes/upload.router";
 import { mq } from "./../../shared/message-queue/messageQueue";
+import { serve } from "@hono/node-server";
 
 export function registerRoutes(app: Hono) {
   app.route("/upload", uploadRouter);
@@ -24,7 +25,4 @@ async function startMQ() {
 
 startMQ();
 
-export default {
-  port,
-  fetch: app.fetch,
-};
+serve({ fetch: app.fetch, port });
