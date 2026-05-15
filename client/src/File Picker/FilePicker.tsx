@@ -1,36 +1,24 @@
-export function FilePicker({
-  inputId,
-  accept,
-  pickFiles,
-  dragOver,
-  setDragOver,
-  onDrop,
-  dropTitle,
-  dropHint,
-  file,
-  uploading,
-  phase,
-  uploadError,
-  uploadMessage,
-  onUpload,
-  mode,
-}: {
-  inputId: string;
-  accept: string;
-  pickFiles: (files: FileList | null) => void;
-  dragOver: boolean;
-  setDragOver: (dragOver: boolean) => void;
-  onDrop: (e: React.DragEvent) => void;
-  dropTitle: string;
-  dropHint: string;
-  file: File | null;
-  uploading: boolean;
-  phase: "extract" | "upload" | null;
-  uploadError: string | null;
-  uploadMessage: string | null;
-  onUpload: () => void;
-  mode: string;
-}) {
+import { useSummarizerUpload } from "../hooks/useSummarizerUpload";
+
+export function FilePicker() {
+  const {
+    inputId,
+    accept,
+    pickFiles,
+    dragOver,
+    setDragOver,
+    onDrop,
+    dropTitle,
+    dropHint,
+    file,
+    uploading,
+    phase,
+    uploadError,
+    uploadMessage,
+    onUpload,
+    mode,
+  } = useSummarizerUpload();
+
   return (
     <main className="main">
       <input

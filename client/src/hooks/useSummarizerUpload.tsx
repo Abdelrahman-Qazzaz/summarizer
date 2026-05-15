@@ -1,0 +1,168 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useId,
+  useState,
+  type ReactNode,
+} from "react";
+import { uploadAudioEndpoint, uploadTextEndpoint } from "../config";
+import { extractAudioFromVideo } from "../lib/extractAudio";
+import {
+  acceptForMode,
+  dropZoneCopy,
+  type SourceMode,
+} from "../sourceMode";
+
+function errorMessageFromBody(data: unknown, res: Response): string {
+  if (
+    data &&
+    typeof data === "object" &&
+    "message" in data
+  ) {
+    return String((data as { message: unknown }).message);
+  }
+  return res.statusText;
+}
+
+function successMessageFromBody(data: unknown): string | null {
+  if (
+    data &&
+    typeof data === "object" &&
+    "message" in data &&
+    typeof (data as { message: unknown }).message === "string"
+  ) {
+    return (data as { message: string }).message;
+  }
+  return null;
+}
+
+function useSummarizerUploadState() {
+  const inputId = useId();
+  const [mode, setMode] = useState<SourceMode>("text");
+  const [file, setFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [phase, setPhase] = useState<"extract" | "upload" | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+
+  const accept = acceptForMode(mode);
+  const { title: dropTitle, hint: dropHint } = dropZoneCopy(mode);
+
+  const pickFiles = useCallback((list: FileList | null) => {
+    const next = list?.[0];
+    setFile(next ?? null);
+    setUploadError(null);
+    setUploadMessage(null);
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      pickFiles(e.dataTransfer.files);
+    },
+    [pickFiles],
+  );
+
+  const onUpload = useCallback(async () => {
+    if (!file) return;
+    setUploadError(null);
+    setUploadMessage(null);
+    setUploading(true);
+    setPhase(null);
+    try {
+      const body = new FormData();
+      let url: string;
+
+      if (mode === "text") {
+        body.append("file", file);
+        url = uploadTextEndpoint();
+      } else {
+        let uploadFile = file;
+        if (mode === "video") {
+          setPhase("extract");
+          uploadFile = await extractAudioFromVideo(file);
+        }
+        setPhase("upload");
+        body.append("file", uploadFile);
+        body.append("source", mode === "video" ? "video" : "audio");
+        url = uploadAudioEndpoint();
+      }
+
+      if (mode === "text") {
+        setPhase("upload");
+      }
+
+      const res = await fetch(url, {
+        method: "POST",
+        body,
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = errorMessageFromBody(data, res);
+        throw new Error(msg || `Upload failed (${res.status})`);
+      }
+      const okMsg = successMessageFromBody(data);
+      setUploadMessage(okMsg ?? "Upload complete.");
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      setPhase(null);
+    }
+  }, [file, mode]);
+
+  return {
+    inputId,
+    mode,
+    setMode,
+    accept,
+    file,
+    setFile,
+    dragOver,
+    setDragOver,
+    pickFiles,
+    onDrop,
+    uploading,
+    phase,
+    uploadError,
+    setUploadError,
+    uploadMessage,
+    setUploadMessage,
+    onUpload,
+    dropTitle,
+    dropHint,
+  };
+}
+
+type SummarizerUploadContextValue = ReturnType<
+  typeof useSummarizerUploadState
+>;
+
+const SummarizerUploadContext =
+  createContext<SummarizerUploadContextValue | null>(null);
+
+export function SummarizerUploadProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const value = useSummarizerUploadState();
+  return (
+    <SummarizerUploadContext.Provider value={value}>
+      {children}
+    </SummarizerUploadContext.Provider>
+  );
+}
+
+export function useSummarizerUpload(): SummarizerUploadContextValue {
+  const ctx = useContext(SummarizerUploadContext);
+  if (ctx === null) {
+    throw new Error(
+      "useSummarizerUpload must be used within SummarizerUploadProvider",
+    );
+  }
+  return ctx;
+}

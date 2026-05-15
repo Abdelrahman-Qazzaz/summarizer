@@ -1,16 +1,14 @@
-export function FileTypePicker({
-  mode,
-  setMode,
-  setFile,
-  setUploadError,
-  setUploadMessage,
-}: {
-  mode: string;
-  setMode: (mode: string) => void;
-  setFile: (file: File | null) => void;
-  setUploadError: (error: string | null) => void;
-  setUploadMessage: (message: string | null) => void;
-}) {
+import { useSummarizerUpload } from "../hooks/useSummarizerUpload";
+
+export function FileTypePicker() {
+  const {
+    mode,
+    setMode,
+    setFile,
+    setUploadError,
+    setUploadMessage,
+  } = useSummarizerUpload();
+
   return (
     <div className="mode" role="tablist" aria-label="Source type">
       <button
