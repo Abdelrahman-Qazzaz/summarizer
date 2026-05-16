@@ -5,7 +5,7 @@ import {
   AudioTranscriptionJobs,
   TextSummarizationJobs,
 } from "../../../../shared/db";
-import { uploadTextToBucket, uploadAudioToBucket } from "../bucket";
+import { uploadTextToBucket, uploadAudioToBucket } from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
 
@@ -14,14 +14,6 @@ const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
 const TEXT_PREVIEW_CHARS = 2000;
 
 type AudioSource = "video" | "audio";
-
-async function uploadTextFile(uploadId: UploadId, text: string) {
-  await uploadTextToBucket(uploadId, text);
-}
-
-async function uploadAudioFile(uploadId: UploadId, file: File) {
-  await uploadAudioToBucket(uploadId, file);
-}
 
 async function readMultipartFile(
   c: Context,
@@ -74,7 +66,7 @@ export async function handleAudioUpload(c: Context) {
   }
 
   const uploadId: UploadId = randomUUID();
-  await uploadAudioFile(uploadId, file);
+  await uploadAudioToBucket(uploadId, file);
 
   await db.insert(AudioTranscriptionJobs).values({
     uploadId,
@@ -116,7 +108,7 @@ export async function handleTextUpload(c: Context) {
   const uploadId: UploadId = randomUUID();
   const text = await file.text();
 
-  await uploadTextFile(uploadId, text);
+  await uploadTextToBucket(uploadId, text);
   await db.insert(TextSummarizationJobs).values({
     uploadId,
     fileName: file.name,

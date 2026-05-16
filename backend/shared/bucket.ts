@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { UploadId } from "../../../shared/types/mq.types";
+import type { UploadId } from "./types/mq.types";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
