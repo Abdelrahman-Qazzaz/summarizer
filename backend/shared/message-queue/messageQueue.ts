@@ -1,5 +1,6 @@
 import amqplib from "amqplib";
 import type { Channel, ChannelModel, ConsumeMessage } from "amqplib";
+import type { MQQueues } from "../types/mq.types";
 
 class MQ {
   queues = {
@@ -29,12 +30,12 @@ class MQ {
     await this.connecting;
     this.connecting = undefined;
   }
-  async sendEvent(queue: string, data: unknown) {
+  async sendEvent(queue: MQQueues, data: unknown) {
     await this.channel.assertQueue(queue);
     this.channel.sendToQueue(queue, Buffer.from(JSON.stringify(data)));
   }
 
-  async listen(queue: string, handler: (data: any) => Promise<void>) {
+  async listen(queue: MQQueues, handler: (data: any) => Promise<void>) {
     await this.channel.assertQueue(queue);
 
     this.channel.consume(queue, async (msg: ConsumeMessage | null) => {
@@ -54,4 +55,16 @@ class MQ {
 
 const mq = new MQ();
 await mq.connect(process.env.MQ_URL!);
+
+export async function startMQ() {
+  await mq.connect(process.env.MQ_URL!);
+
+  mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId }) => {
+    console.log("Summary done:", uploadId);
+    // notify(uploadId, { type: "summarize_done", uploadId });
+  });
+}
+
+
+
 export { mq };

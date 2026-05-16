@@ -1,11 +1,11 @@
 import type { UploadId } from "../../../shared/types/mq.types";
 import { db, TextSummarizationJobs } from "../../../shared/db";
 import { and, eq } from "drizzle-orm";
-import { readTextFile } from "../../api/src/bucket";
+import { readTextFile } from "../../../shared/bucket";
 import { summarize } from "../../../shared/ai/summarize";
 import { mq } from "../../../shared/message-queue/messageQueue";
 
-export async function handleSummarize(uploadId: UploadId) {
+export async function handleSummarizeJob(uploadId: UploadId) {
   const TABLE = TextSummarizationJobs;
   try {
     const [job] = await db

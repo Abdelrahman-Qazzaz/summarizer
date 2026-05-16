@@ -18,5 +18,5 @@
     "services/api/server.ts",
     "services/transcribe-summarize-service/index.ts",
     "services/transcribe-summarize-service/server.ts"
-  ]
+, "shared/bucket.ts"  ]
 }
