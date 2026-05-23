@@ -5,7 +5,7 @@ export async function startSocketServer() {
 
   const io = new Server(port, {
     cors: {
-      origin: process.env.CORS_ORIGIN?.split(",") ?? [],
+      origin: "*", // TODO: fix this
       credentials: true,
     },
   });
