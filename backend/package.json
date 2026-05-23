@@ -5,7 +5,6 @@
   "packageManager": "npm@11.14.1",
   "scripts": {
     "dev": "concurrently -k -n api,transcribe \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
-    "mq": "sudo service rabbitmq-server start",
     "typecheck": "tsc --noEmit",
     "db": "drizzle-kit push"
   },
