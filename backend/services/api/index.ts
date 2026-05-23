@@ -17,6 +17,6 @@ registerRoutes(app);
 const port = Number(process.env.PORT) || 3001;
 
 await startMQ();
-await startSocketServer();
+export const io = await startSocketServer();
 
 serve({ fetch: app.fetch, port });
