@@ -58,13 +58,6 @@ await mq.connect(process.env.MQ_URL!);
 
 export async function startMQ() {
   await mq.connect(process.env.MQ_URL!);
-
-  mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId }) => {
-    console.log("Summary done:", uploadId);
-    // notify(uploadId, { type: "summarize_done", uploadId });
-  });
 }
-
-
 
 export { mq };
