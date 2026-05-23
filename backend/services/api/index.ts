@@ -21,6 +21,7 @@ await startMQ();
 export const io = await startSocketServer();
 mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId }) => {
   console.log("Summary done:", uploadId);
+  // TODO: emit socket "jobUpdated" event to client (roomId = userId)
 });
 
 serve({ fetch: app.fetch, port });
