@@ -5,5 +5,15 @@
     "3001": { "label": "API" },
     "4000": { "label": "WebSocket" },
     "5173": { "label": "Vite" }
+  },
+  "runArgs": [
+    "--security-opt=no-new-privileges:true",
+    "--cap-drop=ALL",
+    "--cap-add=CHOWN",
+    "--cap-add=SETUID",
+    "--cap-add=SETGID"
+  ],
+  "containerEnv": {
+    "NODE_OPTIONS": "--disable-proto=delete"
   }
 }
