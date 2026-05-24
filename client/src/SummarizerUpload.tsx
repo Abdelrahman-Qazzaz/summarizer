@@ -1,3 +1,4 @@
+import { SignInButton } from "./components/SignInButton";
 import { FilePicker } from "./File Picker/FilePicker";
 import { FileTypePicker } from "./File Picker/FileTypePicker";
 import { SummarizerUploadProvider } from "./hooks/useSummarizerUpload";
@@ -8,7 +9,10 @@ export function SummarizerUpload() {
       <div className="app">
         <header className="top">
           <h1 className="title">Summarizer</h1>
-          <FileTypePicker />
+          <div className="topActions">
+            <FileTypePicker />
+            <SignInButton />
+          </div>
         </header>
         <FilePicker />
       </div>

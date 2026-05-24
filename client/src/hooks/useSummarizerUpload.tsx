@@ -98,6 +98,7 @@ function useSummarizerUploadState() {
       const res = await fetch(url, {
         method: "POST",
         body,
+        credentials: "include",
       });
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) {

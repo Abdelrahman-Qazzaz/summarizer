@@ -1,6 +1,8 @@
+import { useAuth } from "../hooks/auth/useAuth";
 import { useSummarizerUpload } from "../hooks/useSummarizerUpload";
 
 export function FilePicker() {
+  const { user, loading: authLoading } = useAuth();
   const {
     inputId,
     accept,
@@ -58,10 +60,16 @@ export function FilePicker() {
         </p>
       )}
 
+      {!authLoading && !user && (
+        <p className="uploadErr" role="status">
+          Sign in to upload files.
+        </p>
+      )}
+
       <button
         type="button"
         className="uploadBtn"
-        disabled={!file || uploading}
+        disabled={!file || uploading || authLoading || !user}
         onClick={() => void onUpload()}
       >
         {uploading && phase === "extract"

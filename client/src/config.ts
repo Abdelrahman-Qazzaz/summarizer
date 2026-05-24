@@ -1,5 +1,19 @@
-/** API origin without trailing slash. Empty = same origin (use Vite proxy in dev). */
-export const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+/** API origin without trailing slash (session cookies are set on this host). */
+export const apiBase = (
+  import.meta.env.VITE_API_URL ?? "http://localhost:3001"
+).replace(/\/$/, "");
+
+export function authLoginUrl(): string {
+  return `${apiBase}/auth/login`;
+}
+
+export function authMeEndpoint(): string {
+  return `${apiBase}/auth/me`;
+}
+
+export function authLogoutEndpoint(): string {
+  return `${apiBase}/auth/logout`;
+}
 
 /** WebSocket URL for job notifications (forward WS_PORT in dev containers). */
 export function wsUrl(): string {

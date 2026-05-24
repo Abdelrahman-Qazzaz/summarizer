@@ -22,6 +22,50 @@
   letter-spacing: -0.5px;
 }
 
+.topActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.signInBtn {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.signInBtn:hover {
+  border-color: color-mix(in srgb, var(--text) 35%, var(--border));
+  background: color-mix(in srgb, var(--border) 35%, var(--bg));
+}
+
+.signInBtn:focus-visible {
+  outline: 2px solid var(--text-h);
+  outline-offset: 2px;
+}
+
+.authStatus {
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.authSignedIn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .mode {
   display: inline-flex;
   padding: 4px;
