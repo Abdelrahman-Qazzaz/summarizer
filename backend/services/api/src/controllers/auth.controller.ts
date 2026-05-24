@@ -5,14 +5,14 @@ import { sign } from "hono/jwt";
 import { getRiderctUrl, getUserIdFromCode } from "../auth/auth";
 import { clearSessionToken } from "../cookies/session";
 import { COOKIE_KEYS } from "../cookies/keys";
-import type { AuthEnv } from "../middleware/auth.middleware";
+import { CTX_KEYS } from "../auth/contextKeys";
 
 export async function handleLogin(c: Context) {
   return c.redirect(getRiderctUrl());
 }
 
-export async function handleMe(c: Context<AuthEnv>) {
-  return c.json({ userId: c.get("userId") });
+export async function handleMe(c: Context) {
+  return c.json({ userId: c.get(CTX_KEYS.userId) });
 }
 
 export async function handleLogout(c: Context) {
