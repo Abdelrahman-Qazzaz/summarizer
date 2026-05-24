@@ -3,10 +3,21 @@ import { setCookie } from "hono/cookie";
 import { sign } from "hono/jwt";
 
 import { getRiderctUrl, getUserIdFromCode } from "../auth/auth";
+import { clearSessionToken } from "../cookies/session";
 import { COOKIE_KEYS } from "../cookies/keys";
+import type { AuthEnv } from "../middleware/auth.middleware";
 
 export async function handleLogin(c: Context) {
-  c.redirect(getRiderctUrl());
+  return c.redirect(getRiderctUrl());
+}
+
+export async function handleMe(c: Context<AuthEnv>) {
+  return c.json({ userId: c.get("userId") });
+}
+
+export async function handleLogout(c: Context) {
+  clearSessionToken(c);
+  return c.body(null, 204);
 }
 
 export async function handleCallback(c: Context) {

@@ -15,7 +15,13 @@ export function registerRoutes(app: Hono) {
 }
 
 const app = new Hono();
-app.use("*", cors());
+app.use(
+  "*",
+  cors({
+    origin: process.env.CLIENT_URL ?? "http://localhost:5173",
+    credentials: true,
+  }),
+);
 registerRoutes(app);
 const port = Number(process.env.PORT) || 3001;
 

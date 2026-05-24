@@ -5,7 +5,10 @@ import {
   AudioTranscriptionJobs,
   TextSummarizationJobs,
 } from "../../../../shared/db";
-import { uploadTextToBucket, uploadAudioToBucket } from "../../../../shared/bucket";
+import {
+  uploadTextToBucket,
+  uploadAudioToBucket,
+} from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
 
@@ -89,6 +92,8 @@ export async function handleAudioUpload(c: Context) {
 
 /** POST /upload/text — plain text files for summarization. */
 export async function handleTextUpload(c: Context) {
+  console.log(c.get("userId"));
+  debugger;
   const parsed = await readMultipartFile(c);
   if (!parsed.ok) return parsed.response;
 
