@@ -11,6 +11,7 @@ import {
 } from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
+import { CTX_KEYS } from "../auth/contextKeys";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
@@ -44,6 +45,7 @@ function parseAudioSource(raw: unknown): AudioSource | null {
 
 /** POST /upload/audio — speech audio (from direct upload or client-extracted from video). */
 export async function handleAudioUpload(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
   const parsed = await readMultipartFile(c);
   if (!parsed.ok) return parsed.response;
 
@@ -73,6 +75,7 @@ export async function handleAudioUpload(c: Context) {
 
   await db.insert(AudioTranscriptionJobs).values({
     uploadId,
+    userId,
     source,
     fileName: file.name,
     mimeType: file.type || null,
@@ -92,7 +95,7 @@ export async function handleAudioUpload(c: Context) {
 
 /** POST /upload/text — plain text files for summarization. */
 export async function handleTextUpload(c: Context) {
-  debugger;
+  const userId = c.get(CTX_KEYS.userId);
   const parsed = await readMultipartFile(c);
   if (!parsed.ok) return parsed.response;
 
@@ -115,6 +118,7 @@ export async function handleTextUpload(c: Context) {
   await uploadTextToBucket(uploadId, text);
   await db.insert(TextSummarizationJobs).values({
     uploadId,
+    userId,
     fileName: file.name,
     sizeBytes: file.size,
   });
