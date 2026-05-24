@@ -7,9 +7,11 @@ import { startMQ } from "../../shared/message-queue/messageQueue";
 import { mq } from "../../shared/message-queue/messageQueue";
 
 import { serve } from "@hono/node-server";
+import { authRouter } from "./src/routes/auth.router";
 
 export function registerRoutes(app: Hono) {
   app.route("/upload", uploadRouter);
+  app.route("/auth",authRouter)
 }
 
 const app = new Hono();
