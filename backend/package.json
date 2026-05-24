@@ -12,6 +12,7 @@
     "@hono/node-server": "1.19.2",
     "@neondatabase/serverless": "1.0.2",
     "@supabase/supabase-js": "2.103.0",
+    "@workos-inc/node": "^9.1.0",
     "amqplib": "1.0.3",
     "dotenv": "17.3.1",
     "drizzle-orm": "0.45.2",
