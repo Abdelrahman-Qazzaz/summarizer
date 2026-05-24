@@ -6,6 +6,7 @@ import { getRiderctUrl, getUserIdFromCode } from "../auth/auth";
 import { clearSessionToken } from "../cookies/session";
 import { COOKIE_KEYS } from "../cookies/keys";
 import { CTX_KEYS } from "../auth/contextKeys";
+import { db, users } from "../../../../shared/db";
 
 export async function handleLogin(c: Context) {
   return c.redirect(getRiderctUrl());
@@ -25,6 +26,8 @@ export async function handleCallback(c: Context) {
   if (!code) return c.status(400);
 
   const id = await getUserIdFromCode(code);
+  await db.insert(users).values({ id }).onConflictDoNothing();
+
   const week = 60 * 60 * 24 * 7;
   const token = await sign(
     { sub: id, exp: Math.floor(Date.now() / 1000) + week },
