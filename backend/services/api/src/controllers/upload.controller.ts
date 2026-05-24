@@ -92,7 +92,6 @@ export async function handleAudioUpload(c: Context) {
 
 /** POST /upload/text — plain text files for summarization. */
 export async function handleTextUpload(c: Context) {
-  console.log(c.get("userId"));
   debugger;
   const parsed = await readMultipartFile(c);
   if (!parsed.ok) return parsed.response;

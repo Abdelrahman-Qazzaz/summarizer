@@ -2,14 +2,9 @@ import { createMiddleware } from "hono/factory";
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
 import { COOKIE_KEYS } from "../cookies/keys";
+import { CTX_KEYS } from "../auth/contextKeys";
 
-export type AuthEnv = {
-  Variables: {
-    userId: string;
-  };
-};
-
-export const requireAuth = createMiddleware<AuthEnv>(async (c, next) => {
+export const requireAuth = createMiddleware(async (c, next) => {
   const token = getCookie(c, COOKIE_KEYS.session);
   if (!token) return c.json({ message: "Unauthorized" }, 401);
   try {
@@ -18,7 +13,7 @@ export const requireAuth = createMiddleware<AuthEnv>(async (c, next) => {
     if (typeof userId !== "string") {
       return c.json({ message: "Unauthorized" }, 401);
     }
-    c.set("userId", userId);
+    c.set(CTX_KEYS.userId, userId);
     await next();
   } catch {
     return c.json({ message: "Unauthorized" }, 401);
