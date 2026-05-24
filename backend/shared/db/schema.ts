@@ -1,3 +1,4 @@
+import { relations } from "drizzle-orm";
 import { bigint, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
 
@@ -26,6 +27,10 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
 });
 
 export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
@@ -43,7 +48,20 @@ export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
 });
-export type AudioTranscriptionJob = typeof AudioTranscriptionJobs.$inferSelect;
-export type NewAudioTranscriptionJob =
-  typeof AudioTranscriptionJobs.$inferInsert;
+
+export const users = pgTable("users", {
+  // WorkOS user id (eg "user_01...")
+  id: text("id").primaryKey(),
+
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
