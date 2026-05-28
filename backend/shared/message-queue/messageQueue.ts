@@ -1,5 +1,6 @@
 import amqplib from "amqplib";
 import type { Channel, ChannelModel, ConsumeMessage } from "amqplib";
+import { getBaseEnv } from "../env";
 import type { MQQueues } from "../types/mq.types";
 
 class MQ {
@@ -54,10 +55,9 @@ class MQ {
 }
 
 const mq = new MQ();
-await mq.connect(process.env.MQ_URL!);
 
 export async function startMQ() {
-  await mq.connect(process.env.MQ_URL!);
+  await mq.connect(getBaseEnv().MQ_URL);
 }
 
 export { mq };
