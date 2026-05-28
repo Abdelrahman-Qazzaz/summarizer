@@ -1,3 +1,7 @@
+import { getApiEnv } from "../../shared/env";
+
+const env = getApiEnv();
+
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -18,12 +22,12 @@ const app = new Hono();
 app.use(
   "*",
   cors({
-    origin: process.env.CLIENT_URL ?? "http://localhost:5173",
+    origin: env.CLIENT_URL,
     credentials: true,
   }),
 );
 registerRoutes(app);
-const port = Number(process.env.PORT) || 3001;
+const port = env.PORT;
 
 await startMQ();
 export const io = await startSocketServer();

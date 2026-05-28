@@ -13,10 +13,8 @@
     "types": ["node"]
   },
   "include": [
-    "services/api/src/**/*.ts",
-    "services/api/index.ts",
-    "services/api/server.ts",
-    "services/transcribe-summarize-service/index.ts",
-    "services/transcribe-summarize-service/server.ts"
-, "shared/bucket.ts"  ]
+    "services/**/*.ts",
+    "shared/**/*.ts",
+    "drizzle.config.ts"
+  ]
 }

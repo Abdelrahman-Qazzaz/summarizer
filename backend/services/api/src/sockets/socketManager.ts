@@ -1,7 +1,8 @@
 import { Server } from "socket.io";
+import { getApiEnv } from "../../../../shared/env";
 
 export async function startSocketServer() {
-  const port = Number(process.env.WS_PORT) || 4000;
+  const port = getApiEnv().WS_PORT;
 
   const io = new Server(port, {
     cors: {

@@ -1,7 +1,8 @@
 import { WorkOS } from "@workos-inc/node";
+import { getApiEnv } from "../../../../shared/env";
 
-const workos = new WorkOS(process.env.WORKOS_API_KEY, {
-  clientId: process.env.WORKOS_CLIENT_ID,
+const workos = new WorkOS(getApiEnv().WORKOS_API_KEY, {
+  clientId: getApiEnv().WORKOS_CLIENT_ID,
 });
 
 export function getRiderctUrl() {
@@ -11,14 +12,14 @@ export function getRiderctUrl() {
 
     // The callback endpoint that WorkOS will redirect to after a user authenticates
     redirectUri: "http://localhost:3001/auth/callback",
-    clientId: process.env.WORKOS_CLIENT_ID,
+    clientId: getApiEnv().WORKOS_CLIENT_ID,
   });
 }
 
 export async function getUserIdFromCode(code: string) {
   const { user } = await workos.userManagement.authenticateWithCode({
     code,
-    clientId: process.env.WORKOS_CLIENT_ID!,
+    clientId: getApiEnv().WORKOS_CLIENT_ID,
   });
   return user.id;
 }

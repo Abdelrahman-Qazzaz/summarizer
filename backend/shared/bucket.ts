@@ -1,10 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import type { UploadId } from "./types/mq.types";
+import { getBaseEnv } from "./env";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = getBaseEnv();
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const BUCKET = "Audio & Text files";
 
