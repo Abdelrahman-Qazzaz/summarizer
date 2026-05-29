@@ -15,8 +15,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     const newSocket = io(socketIoUrl(), {
       transports: ["websocket"],
       autoConnect: true,
-      // auth: { token: localStorage.getItem("token") },
-      // withCredentials: true,
+      auth: { token: localStorage.getItem("token") },
+      withCredentials: true,
     });
 
     attachListeners(newSocket);
