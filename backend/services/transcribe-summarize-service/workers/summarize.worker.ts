@@ -23,7 +23,8 @@ export async function handleSummarizeJob(uploadId: UploadId) {
       .set({ status: "completed", summary })
       .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
 
-    await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId });
+    const userId = job.userId;
+    await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId, userId });
   } catch (err) {
     await db
       .update(TABLE)
