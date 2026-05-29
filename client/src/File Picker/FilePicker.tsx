@@ -17,9 +17,16 @@ export function FilePicker() {
     phase,
     uploadError,
     uploadMessage,
+    job,
+    jobLoading,
     onUpload,
     mode,
   } = useSummarizerUpload();
+
+  const isSummarizing =
+    jobLoading ||
+    (job?.kind === "text" &&
+      (job.status === "queued" || job.status === "processing"));
 
   return (
     <main className="main">
@@ -82,6 +89,22 @@ export function FilePicker() {
       {uploadMessage && (
         <p className="uploadOk" role="status">
           {uploadMessage}
+        </p>
+      )}
+      {isSummarizing && (
+        <p className="uploadOk" role="status">
+          Summarizing your file…
+        </p>
+      )}
+      {job?.kind === "text" && job.status === "completed" && job.summary && (
+        <section className="summaryBlock" aria-live="polite">
+          <h2 className="summaryTitle">Summary</h2>
+          <p className="summaryText">{job.summary}</p>
+        </section>
+      )}
+      {job?.status === "failed" && job.error && (
+        <p className="uploadErr" role="alert">
+          {job.error}
         </p>
       )}
       {uploadError && (

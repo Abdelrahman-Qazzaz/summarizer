@@ -18,6 +18,10 @@ export function authLogoutEndpoint(): string {
   return `${apiBase}/auth/logout`;
 }
 
+export function jobEndpoint(uploadId: string): string {
+  return `${apiBase}/jobs/${uploadId}`;
+}
+
 /** WebSocket URL for job notifications (forward WS_PORT in dev containers). */
 export function wsUrl(): string {
   const fromEnv = import.meta.env.VITE_WS_URL;

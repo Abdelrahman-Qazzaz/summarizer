@@ -7,7 +7,10 @@ import {
   type ReactNode,
 } from "react";
 import { uploadAudioEndpoint, uploadTextEndpoint } from "../config";
+import { useAuth } from "./auth/useAuth";
+import { fetchJob, type Job } from "../lib/jobs";
 import { extractAudioFromVideo } from "../lib/extractAudio";
+import { useJobUpdated } from "./socket/useJobUpdated";
 import {
   acceptForMode,
   dropZoneCopy,
@@ -37,7 +40,20 @@ function successMessageFromBody(data: unknown): string | null {
   return null;
 }
 
+function uploadIdFromBody(data: unknown): string | null {
+  if (
+    data &&
+    typeof data === "object" &&
+    "uploadId" in data &&
+    typeof (data as { uploadId: unknown }).uploadId === "string"
+  ) {
+    return (data as { uploadId: string }).uploadId;
+  }
+  return null;
+}
+
 function useSummarizerUploadState() {
+  const { user } = useAuth();
   const inputId = useId();
   const [mode, setMode] = useState<SourceMode>("text");
   const [file, setFile] = useState<File | null>(null);
@@ -46,6 +62,24 @@ function useSummarizerUploadState() {
   const [phase, setPhase] = useState<"extract" | "upload" | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [jobLoading, setJobLoading] = useState(false);
+
+  const loadJob = useCallback(async (uploadId: string) => {
+    setJobLoading(true);
+    try {
+      setJob(await fetchJob(uploadId));
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Failed to load job");
+    } finally {
+      setJobLoading(false);
+    }
+  }, []);
+
+  useJobUpdated(!!user, activeUploadId, (uploadId) => {
+    void loadJob(uploadId);
+  });
 
   const accept = acceptForMode(mode);
   const { title: dropTitle, hint: dropHint } = dropZoneCopy(mode);
@@ -55,6 +89,8 @@ function useSummarizerUploadState() {
     setFile(next ?? null);
     setUploadError(null);
     setUploadMessage(null);
+    setActiveUploadId(null);
+    setJob(null);
   }, []);
 
   const onDrop = useCallback(
@@ -105,8 +141,20 @@ function useSummarizerUploadState() {
         const msg = errorMessageFromBody(data, res);
         throw new Error(msg || `Upload failed (${res.status})`);
       }
-      const okMsg = successMessageFromBody(data);
-      setUploadMessage(okMsg ?? "Upload complete.");
+      const uploadId = uploadIdFromBody(data);
+      if (uploadId) {
+        setActiveUploadId(uploadId);
+        setJob(null);
+        if (mode === "text") {
+          setUploadMessage("Upload complete. Summarizing…");
+        } else {
+          const okMsg = successMessageFromBody(data);
+          setUploadMessage(okMsg ?? "Upload complete.");
+        }
+      } else {
+        const okMsg = successMessageFromBody(data);
+        setUploadMessage(okMsg ?? "Upload complete.");
+      }
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -132,6 +180,8 @@ function useSummarizerUploadState() {
     setUploadError,
     uploadMessage,
     setUploadMessage,
+    job,
+    jobLoading,
     onUpload,
     dropTitle,
     dropHint,
