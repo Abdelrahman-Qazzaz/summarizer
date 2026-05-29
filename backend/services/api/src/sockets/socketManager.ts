@@ -12,7 +12,6 @@ export function startSocketServer() {
       credentials: true,
     },
   });
-
   io.use(async (socket, next) => {
     const raw = socket.handshake.headers.cookie;
     if (!raw) return next(new Error("Unauthorized"));
@@ -31,7 +30,6 @@ export function startSocketServer() {
   });
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
-
     socket.on("disconnect", (reason) => {
       console.log("Client disconnected:", socket.id, reason);
     });
