@@ -15,7 +15,7 @@ import { authRouter } from "./src/routes/auth.router";
 
 export function registerRoutes(app: Hono) {
   app.route("/upload", uploadRouter);
-  app.route("/auth",authRouter)
+  app.route("/auth", authRouter);
 }
 
 const app = new Hono();
@@ -31,9 +31,8 @@ const port = env.PORT;
 
 await startMQ();
 export const io = await startSocketServer();
-mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId }) => {
-  console.log("Summary done:", uploadId);
-  // TODO: emit socket "jobUpdated" event to client (roomId = userId)
+mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId, userId }) => {
+  io.to(userId).emit("jobUpdated", { uploadId });
 });
 
 serve({ fetch: app.fetch, port });
