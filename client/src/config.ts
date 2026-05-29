@@ -1,6 +1,9 @@
+/** Dev host — keep API + WebSocket on the same hostname so session cookies are sent. */
+const DEV_HOST = "localhost";
+
 /** API origin without trailing slash (session cookies are set on this host). */
 export const apiBase = (
-  import.meta.env.VITE_API_URL ?? "http://localhost:3001"
+  import.meta.env.VITE_API_URL ?? `http://${DEV_HOST}:3001`
 ).replace(/\/$/, "");
 
 export function authLoginUrl(): string {
@@ -21,7 +24,7 @@ export function wsUrl(): string {
   if (typeof fromEnv === "string" && fromEnv.trim()) {
     return fromEnv.trim();
   }
-  return "ws://127.0.0.1:4000";
+  return `ws://${DEV_HOST}:4000`;
 }
 
 /** Socket.IO server URL (HTTP origin — Engine.IO handshake). */
@@ -30,7 +33,7 @@ export function socketIoUrl(): string {
   if (ws.startsWith("ws://")) return `http://${ws.slice("ws://".length)}`;
   if (ws.startsWith("wss://")) return `https://${ws.slice("wss://".length)}`;
   if (/^https?:\/\//i.test(ws)) return ws.replace(/\/$/, "");
-  return "http://127.0.0.1:4000";
+  return `http://${DEV_HOST}:4000`;
 }
 
 function uploadPath(suffix: "audio" | "text") {
