@@ -210,6 +210,32 @@
   color: #b91c1c;
 }
 
+.summaryBlock {
+  width: 100%;
+  max-width: 28rem;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--border) 20%, transparent);
+}
+
+.summaryTitle {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.summaryText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (prefers-color-scheme: dark) {
   .uploadErr {
     color: #fca5a5;
