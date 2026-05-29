@@ -5,6 +5,7 @@ const env = getApiEnv();
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
+import { jobsRouter } from "./src/routes/jobs.router";
 import { uploadRouter } from "./src/routes/upload.router";
 import { startSocketServer } from "./src/sockets/socketManager";
 import { startMQ } from "../../shared/message-queue/messageQueue";
@@ -16,6 +17,7 @@ import { authRouter } from "./src/routes/auth.router";
 export function registerRoutes(app: Hono) {
   app.route("/upload", uploadRouter);
   app.route("/auth", authRouter);
+  app.route("/jobs", jobsRouter);
 }
 
 const app = new Hono();
