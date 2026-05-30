@@ -4,13 +4,16 @@ import "./index.css";
 import App from "./App.tsx";
 import { AuthProvider } from "./hooks/auth/AuthProvider";
 import { SocketProvider } from "./hooks/socket/SocketProvider";
+import { ThemeProvider } from "./hooks/theme/ThemeProvider";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AuthProvider>
-      <SocketProvider>
-        <App />
-      </SocketProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <SocketProvider>
+          <App />
+        </SocketProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
