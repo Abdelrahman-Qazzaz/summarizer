@@ -1,35 +1,15 @@
-import { getApiEnv } from "../../shared/env";
-
 const env = getApiEnv();
 
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-
-import { jobsRouter } from "./src/routes/jobs.router";
-import { uploadRouter } from "./src/routes/upload.router";
+import { getApiEnv } from "../../shared/env";
 import { startSocketServer } from "./src/sockets/socketManager";
 import { startMQ } from "../../shared/message-queue/messageQueue";
 import { mq } from "../../shared/message-queue/messageQueue";
 
 import { serve } from "@hono/node-server";
-import { authRouter } from "./src/routes/auth.router";
+import { createApp } from "./app";
 
-export function registerRoutes(app: Hono) {
-  app.route("/upload", uploadRouter);
-  app.route("/auth", authRouter);
-  app.route("/jobs", jobsRouter);
-}
-
-const app = new Hono();
-app.use(
-  "*",
-  cors({
-    origin: env.CLIENT_URL,
-    credentials: true,
-  }),
-);
-registerRoutes(app);
-const port = env.PORT;
+const app = createApp();
+export const port = env.PORT;
 
 await startMQ();
 export const io = await startSocketServer();
