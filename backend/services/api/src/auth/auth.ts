@@ -1,7 +1,7 @@
 import { WorkOS } from "@workos-inc/node";
 import { getApiEnv } from "../../../../shared/env";
 
-export const WORKOS_REDIRECT_URI = "http://localhost:3001/auth/callback";
+export const WORKOS_REDIRECT_URI = `http://localhost:${getApiEnv().PORT}/auth/callback`;
 
 const workos = new WorkOS(getApiEnv().WORKOS_API_KEY, {
   clientId: getApiEnv().WORKOS_CLIENT_ID,
