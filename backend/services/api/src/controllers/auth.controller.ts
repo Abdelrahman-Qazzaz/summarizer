@@ -19,12 +19,12 @@ export async function handleMe(c: Context) {
 
 export async function handleLogout(c: Context) {
   clearSessionToken(c);
-  return c.body(null, 204);
+  return c.json(null, 200);
 }
 
 export async function handleCallback(c: Context) {
   const code = c.req.query("code");
-  if (!code) return c.status(400);
+  if (!code) return c.json({ message: "code required" }, 400);
 
   const id = await getUserIdFromCode(code);
   await db.insert(users).values({ id }).onConflictDoNothing();
