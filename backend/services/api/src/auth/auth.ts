@@ -1,6 +1,8 @@
 import { WorkOS } from "@workos-inc/node";
 import { getApiEnv } from "../../../../shared/env";
 
+export const WORKOS_REDIRECT_URI = "http://localhost:3001/auth/callback";
+
 const workos = new WorkOS(getApiEnv().WORKOS_API_KEY, {
   clientId: getApiEnv().WORKOS_CLIENT_ID,
 });
@@ -11,7 +13,7 @@ export function getRiderctUrl() {
     provider: "authkit",
 
     // The callback endpoint that WorkOS will redirect to after a user authenticates
-    redirectUri: "http://localhost:3001/auth/callback",
+    redirectUri: WORKOS_REDIRECT_URI,
     clientId: getApiEnv().WORKOS_CLIENT_ID,
   });
 }
