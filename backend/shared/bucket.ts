@@ -55,6 +55,13 @@ export async function readTextFile(uploadId: UploadId) {
 
   return await data.text();
 }
+export async function getAudioFile(uploadId: UploadId) {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .download(uploadId);
+  if (error) throw error;
+  return data; // Blob
+}
 /**
  * If you need to read it back from a private bucket, generate a signed URL.
  */
