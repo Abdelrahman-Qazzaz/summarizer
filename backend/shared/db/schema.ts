@@ -11,8 +11,7 @@ export const jobStatusEnum = pgEnum("job_status", [
 
 /** Speech jobs after audio upload (transcription pipeline). */
 export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  uploadId: text("upload_id").notNull().unique(),
+  uploadId: text("upload_id").notNull().primaryKey(),
   source: text("source").notNull(), // 'video' | 'audio'
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type"),
@@ -31,11 +30,14 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
+
+  textJobUploadId: text("text_job_upload_id")
+    .unique()
+    .references(() => TextSummarizationJobs.uploadId),
 });
 
 export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  uploadId: text("upload_id").notNull().unique(),
+  uploadId: text("upload_id").notNull().primaryKey(),
   fileName: text("file_name").notNull(),
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
   status: jobStatusEnum("status").notNull().default("queued"),
