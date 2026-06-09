@@ -50,7 +50,7 @@ export async function handleGetJob(c: Context) {
       uploadId: audioJob.uploadId,
       fileName: audioJob.fileName,
       status: audioJob.status,
-      transcript: audioJob.transcript,
+
       error: audioJob.error,
     });
 

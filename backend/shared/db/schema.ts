@@ -18,7 +18,6 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
   status: jobStatusEnum("status").notNull().default("queued"),
   // queued | processing | completed | failed
-  transcript: text("transcript"),
   error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
