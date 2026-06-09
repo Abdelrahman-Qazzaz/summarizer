@@ -16,5 +16,8 @@ export const io = await startSocketServer();
 mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId, userId }) => {
   io.to(userId).emit("jobUpdated", { uploadId });
 });
+mq.listen(mq.queues.TRANSCRIBE_DONE, async ({ uploadId, userId }) => {
+  io.to(userId).emit("jobUpdated", { uploadId });
+});
 
 serve({ fetch: app.fetch, port });
