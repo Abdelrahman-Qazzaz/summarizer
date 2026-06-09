@@ -10,19 +10,12 @@ import { uploadAudioEndpoint, uploadTextEndpoint } from "../config";
 import { useAuth } from "./auth/useAuth";
 import { fetchJob, type Job } from "../lib/jobs";
 import { extractAudioFromVideo } from "../lib/extractAudio";
+import { compressAudioForSpeech } from "../lib/compressAudio";
 import { useJobUpdated } from "./socket/useJobUpdated";
-import {
-  acceptForMode,
-  dropZoneCopy,
-  type SourceMode,
-} from "../sourceMode";
+import { acceptForMode, dropZoneCopy, type SourceMode } from "../sourceMode";
 
 function errorMessageFromBody(data: unknown, res: Response): string {
-  if (
-    data &&
-    typeof data === "object" &&
-    "message" in data
-  ) {
+  if (data && typeof data === "object" && "message" in data) {
     return String((data as { message: unknown }).message);
   }
   return res.statusText;
@@ -59,7 +52,9 @@ function useSummarizerUploadState() {
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [phase, setPhase] = useState<"extract" | "upload" | null>(null);
+  const [phase, setPhase] = useState<"extract" | "compress" | "upload" | null>(
+    null,
+  );
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
@@ -121,7 +116,10 @@ function useSummarizerUploadState() {
           setPhase("extract");
           uploadFile = await extractAudioFromVideo(file);
         }
+        setPhase("compress");
+        uploadFile = await compressAudioForSpeech(uploadFile);
         setPhase("upload");
+
         body.append("file", uploadFile);
         body.append("source", mode === "video" ? "video" : "audio");
         url = uploadAudioEndpoint();
@@ -188,9 +186,7 @@ function useSummarizerUploadState() {
   };
 }
 
-type SummarizerUploadContextValue = ReturnType<
-  typeof useSummarizerUploadState
->;
+type SummarizerUploadContextValue = ReturnType<typeof useSummarizerUploadState>;
 
 const SummarizerUploadContext =
   createContext<SummarizerUploadContextValue | null>(null);
@@ -208,6 +204,7 @@ export function SummarizerUploadProvider({
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSummarizerUpload(): SummarizerUploadContextValue {
   const ctx = useContext(SummarizerUploadContext);
   if (ctx === null) {
