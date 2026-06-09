@@ -30,10 +30,6 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
-
-  textJobUploadId: text("text_job_upload_id")
-    .unique()
-    .references(() => TextSummarizationJobs.uploadId),
 });
 
 export const TextSummarizationJobs = pgTable("text_summarization_jobs", {

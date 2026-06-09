@@ -26,7 +26,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     const textUploadId: UploadId = randomUUID();
     await db
       .update(TABLE)
-      .set({ status: "completed", transcript, textJobUploadId: textUploadId })
+      .set({ status: "completed", transcript })
       .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
 
     const userId = job.userId;
