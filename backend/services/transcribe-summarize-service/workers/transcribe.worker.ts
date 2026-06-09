@@ -23,10 +23,11 @@ export async function handleTranscribeJob(uploadId: UploadId) {
 
     const audio = await getAudioFile(uploadId);
     const transcript = await transcribe(audio);
+    console.log("trnascript:::", transcript);
     const textUploadId: UploadId = randomUUID();
     await db
       .update(TABLE)
-      .set({ status: "completed", transcript })
+      .set({ status: "completed" })
       .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
 
     const userId = job.userId;
