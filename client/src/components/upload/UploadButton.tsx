@@ -2,7 +2,7 @@ type UploadButtonProps = {
   onClick: () => void;
   disabled?: boolean;
   uploading?: boolean;
-  phase?: "extract" | "upload" | null;
+  phase?: "extract" | "compress" | "upload" | null;
 };
 
 function Spinner() {
@@ -25,9 +25,13 @@ function Spinner() {
   );
 }
 
-function getButtonText(uploading: boolean, phase: "extract" | "upload" | null) {
+function getButtonText(
+  uploading: boolean,
+  phase: "extract" | "compress" | "upload" | null,
+) {
   if (!uploading) return "Upload & Process";
   if (phase === "extract") return "Extracting audio…";
+  if (phase === "compress") return "Compressing audio…";
   if (phase === "upload") return "Uploading…";
   return "Processing…";
 }
