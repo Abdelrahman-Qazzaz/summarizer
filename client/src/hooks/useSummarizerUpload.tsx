@@ -12,7 +12,13 @@ import { fetchJob, type Job } from "../lib/jobs";
 import { extractAudioFromVideo } from "../lib/extractAudio";
 import { compressAudioForSpeech } from "../lib/compressAudio";
 import { useJobUpdated } from "./socket/useJobUpdated";
-import { acceptForMode, dropZoneCopy, type SourceMode } from "../sourceMode";
+import {
+  acceptForMode,
+  dropZoneCopy,
+  isFileAcceptedForMode,
+  rejectedFileMessage,
+  type SourceMode,
+} from "../sourceMode";
 
 function errorMessageFromBody(data: unknown, res: Response): string {
   if (data && typeof data === "object" && "message" in data) {
@@ -79,9 +85,37 @@ function useSummarizerUploadState() {
   const accept = acceptForMode(mode);
   const { title: dropTitle, hint: dropHint } = dropZoneCopy(mode);
 
-  const pickFiles = useCallback((list: FileList | null) => {
-    const next = list?.[0];
-    setFile(next ?? null);
+  const pickFiles = useCallback(
+    (list: FileList | null) => {
+      const next = list?.[0];
+      if (!next) {
+        setFile(null);
+        return;
+      }
+
+      if (!isFileAcceptedForMode(next, mode)) {
+        setFile(null);
+        setUploadError(rejectedFileMessage(mode));
+        setUploadMessage(null);
+        setActiveUploadId(null);
+        setJob(null);
+        return;
+      }
+
+      setFile(next);
+      setUploadError(null);
+      setUploadMessage(null);
+      setActiveUploadId(null);
+      setJob(null);
+    },
+    [mode],
+  );
+
+  const changeMode = useCallback((nextMode: SourceMode) => {
+    setMode(nextMode);
+    setFile((current) =>
+      current && !isFileAcceptedForMode(current, nextMode) ? null : current,
+    );
     setUploadError(null);
     setUploadMessage(null);
     setActiveUploadId(null);
@@ -164,7 +198,7 @@ function useSummarizerUploadState() {
   return {
     inputId,
     mode,
-    setMode,
+    setMode: changeMode,
     accept,
     file,
     setFile,
