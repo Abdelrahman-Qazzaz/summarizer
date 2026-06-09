@@ -29,6 +29,7 @@ export function DropZone({
 }: DropZoneProps) {
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     onFileSelect(e.target.files);
+    e.target.value = "";
   };
 
   return (

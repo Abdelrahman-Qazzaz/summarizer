@@ -97,6 +97,7 @@ export function Dashboard() {
                   />
                 ) : (
                   <DropZone
+                    key={mode}
                     inputId={inputId}
                     accept={accept}
                     title={dropTitle}
