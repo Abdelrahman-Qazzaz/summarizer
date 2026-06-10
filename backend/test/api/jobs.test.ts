@@ -53,6 +53,31 @@ describe("GET /jobs/:uploadId", () => {
     });
     expect(mockSelect).toHaveBeenCalledTimes(1);
   });
+  it("returns an audio job when no text job exists", async () => {
+    mockLimit
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          uploadId,
+          fileName: "clip.mp3",
+          status: "processing",
+          error: null,
+        },
+      ]);
+    const userId = "user_01OWNER";
+    const res = await createApp().request(`http://localhost/jobs/${uploadId}`, {
+      headers: { Cookie: await sessionCookieHeader(userId) },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      kind: "audio",
+      uploadId,
+      fileName: "clip.mp3",
+      status: "processing",
+      error: null,
+    });
+    expect(mockSelect).toHaveBeenCalledTimes(2);
+  });
   it("returns 404 when no job exists for the user", async () => {
     mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     const res = await createApp().request(`http://localhost/jobs/${uploadId}`, {
