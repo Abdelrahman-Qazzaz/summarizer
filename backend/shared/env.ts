@@ -1,7 +1,10 @@
 import "dotenv/config";
 import { z } from "zod";
 
-function parseEnv<S extends z.ZodTypeAny>(schema: S, label: string): z.infer<S> {
+function parseEnv<S extends z.ZodTypeAny>(
+  schema: S,
+  label: string,
+): z.infer<S> {
   const result = schema.safeParse(process.env);
   if (!result.success) {
     console.error(`Invalid environment variables (${label}):`);
@@ -36,6 +39,13 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CLIENT_URL: z.string().url().default("http://localhost:5173"),
   PORT: z.coerce.number().int().positive().default(3001),
   WS_PORT: z.coerce.number().int().positive().default(4000),
+  UPSTASH_REDIS_REST_URL: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), {
+      message: "UPSTASH_REDIS_REST_URL must use HTTPS",
+    }),
+  UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
 });
 
 export const workerEnvSchema = baseEnvSchema.extend({
