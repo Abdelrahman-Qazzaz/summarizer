@@ -112,7 +112,13 @@ describe("POST /upload/text", () => {
       body: textUploadBody("sample text"),
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      message: string;
+      fileName: string;
+      mode: string;
+      preview: string;
+      uploadId: string;
+    };
     expect(body.message).toBe("File uploaded");
     expect(body.fileName).toBe("notes.txt");
     expect(body.mode).toBe("text");
@@ -176,7 +182,12 @@ describe("POST /upload/audio", () => {
       body: audioUploadBody(100, { source: "video", fileName: "clip.mp3" }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      message: string;
+      fileName: string;
+      source: string;
+      uploadId: string;
+    };
     expect(body.message).toBe("File uploaded");
     expect(body.fileName).toBe("clip.mp3");
     expect(body.source).toBe("video");

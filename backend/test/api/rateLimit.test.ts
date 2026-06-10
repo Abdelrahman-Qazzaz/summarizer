@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { resetRateLimitMock } from "../helpers/rateLimitStoreMock";
+import {
+  resetRateLimitMock,
+  setRateLimitStoreUnavailable,
+} from "../helpers/rateLimitStoreMock";
 
 const { mockLimit, mockWhere, mockFrom, mockSelect, mockGetUserIdFromCode } =
   vi.hoisted(() => ({
@@ -87,5 +90,26 @@ describe("rate limiting", () => {
       message: "Too many requests, please try again later.",
     });
     expect(mockGetUserIdFromCode).toHaveBeenCalledTimes(20);
+  });
+
+  it("returns 503 when the rate limit store is unavailable", async () => {
+    setRateLimitStoreUnavailable(true);
+    mockLimit.mockResolvedValueOnce([
+      {
+        uploadId,
+        fileName: "notes.txt",
+        status: "completed",
+        summary: "A short summary.",
+        error: null,
+      },
+    ]);
+    const res = await createApp().request(`http://localhost/jobs/${uploadId}`, {
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      message:
+        "Rate limiting is temporarily unavailable. Please try again later.",
+    });
   });
 });

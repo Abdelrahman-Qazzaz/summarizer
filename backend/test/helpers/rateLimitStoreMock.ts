@@ -1,8 +1,11 @@
+import { RateLimitStoreUnavailableError } from "../../services/api/src/rateLimit/errors";
+
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
 type Entry = { totalHits: number; resetTime: Date };
 
 const stores = new Map<string, Entry>();
+let storeUnavailable = false;
 
 function storeKey(prefix: string, key: string): string {
   return `${prefix}${key}`;
@@ -10,6 +13,11 @@ function storeKey(prefix: string, key: string): string {
 
 export function resetRateLimitMock(): void {
   stores.clear();
+  storeUnavailable = false;
+}
+
+export function setRateLimitStoreUnavailable(unavailable: boolean): void {
+  storeUnavailable = unavailable;
 }
 
 export function createMockRateLimitStore(prefix: string) {
@@ -20,6 +28,9 @@ export function createMockRateLimitStore(prefix: string) {
       windowMs = options.windowMs;
     },
     async increment(key: string) {
+      if (storeUnavailable) {
+        throw new RateLimitStoreUnavailableError(new Error("redis down"));
+      }
       const id = storeKey(prefix, key);
       const now = Date.now();
       let entry = stores.get(id);
@@ -31,11 +42,17 @@ export function createMockRateLimitStore(prefix: string) {
       return { totalHits: entry.totalHits, resetTime: entry.resetTime };
     },
     async decrement(key: string) {
+      if (storeUnavailable) {
+        throw new RateLimitStoreUnavailableError(new Error("redis down"));
+      }
       const id = storeKey(prefix, key);
       const entry = stores.get(id);
       if (entry && entry.totalHits > 0) entry.totalHits -= 1;
     },
     async resetKey(key: string) {
+      if (storeUnavailable) {
+        throw new RateLimitStoreUnavailableError(new Error("redis down"));
+      }
       stores.delete(storeKey(prefix, key));
     },
   };
