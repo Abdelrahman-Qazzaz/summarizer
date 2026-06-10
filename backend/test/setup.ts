@@ -1,3 +1,5 @@
+import { vi } from "vitest";
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL =
   "postgresql://user:password@host.tld/dbname?option=value";
@@ -11,3 +13,12 @@ process.env.SESSION_SECRET = "test-session-secret-must-be-32-chars-min";
 process.env.CLIENT_URL = "http://localhost:5173";
 process.env.PORT = "3001";
 process.env.WS_PORT = "4000";
+process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+
+vi.mock("../services/api/src/rateLimit/storage", async () => {
+  const { createMockRateLimitStore } = await import(
+    "./helpers/rateLimitStoreMock"
+  );
+  return { createRateLimitStore: createMockRateLimitStore };
+});
