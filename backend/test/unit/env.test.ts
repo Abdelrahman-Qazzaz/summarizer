@@ -10,24 +10,47 @@ const validBase = {
   NODE_ENV: "test" as const,
 };
 
+const validUpstash = {
+  UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
+  UPSTASH_REDIS_REST_TOKEN: "test-token",
+};
+
+const validApi = {
+  ...validBase,
+  ...validUpstash,
+  SESSION_SECRET: "a".repeat(32),
+  WORKOS_API_KEY: "sk_test",
+  WORKOS_CLIENT_ID: "client_test",
+};
+
 describe("apiEnvSchema", () => {
   it("accepts valid api env", () => {
-    const result = apiEnvSchema.safeParse({
-      ...validBase,
-      SESSION_SECRET: "a".repeat(32),
-      WORKOS_API_KEY: "sk_test",
-      WORKOS_CLIENT_ID: "client_test",
-    });
+    const result = apiEnvSchema.safeParse(validApi);
     expect(result.success).toBe(true);
   });
 
   it("rejects SESSION_SECRET shorter than 32 chars", () => {
     const result = apiEnvSchema.safeParse({
-      ...validBase,
+      ...validApi,
       SESSION_SECRET: "a".repeat(31),
-      WORKOS_API_KEY: "sk_test",
-      WORKOS_CLIENT_ID: "client_test",
     });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty UPSTASH_REDIS_REST_TOKEN", () => {
+    const result = apiEnvSchema.safeParse({
+      ...validApi,
+      UPSTASH_REDIS_REST_TOKEN: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects non-HTTPS UPSTASH_REDIS_REST_URL", () => {
+    const result = apiEnvSchema.safeParse({
+      ...validApi,
+      UPSTASH_REDIS_REST_URL: "http://example.upstash.io",
+    });
+    expect(result.success).toBe(false);
   });
 });
 
