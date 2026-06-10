@@ -46,6 +46,15 @@ function createLimiter(
   });
 }
 
+function createAuthIpLimiter(limit: number, route: string) {
+  return createLimiter(limit, `rate-limit:auth:${route}:`, getClientIpKey);
+}
+
+export const authLoginRateLimiter = createAuthIpLimiter(60, "login");
+export const authCallbackRateLimiter = createAuthIpLimiter(20, "callback");
+export const authLogoutRateLimiter = createAuthIpLimiter(60, "logout");
+export const authMeRateLimiter = createAuthIpLimiter(200, "me");
+
 export const jobRateLimiter = createLimiter(100, "rate-limit:job:", getUserId);
 
 export const uploadRateLimiter = createLimiter(
