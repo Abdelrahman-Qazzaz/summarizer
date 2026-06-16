@@ -1,4 +1,4 @@
-import { openai } from "./ai_client";
+import { ai_client } from "./ai_client";
 
 function audioFormat(blob: Blob): string {
   const mime = blob.type || "application/octet-stream";
@@ -11,16 +11,20 @@ function audioFormat(blob: Blob): string {
   throw new Error(`Unsupported audio type: ${mime}`);
 }
 
-type TranscriptionResponse = { text: string };
-
-export async function transcribe(audio: Blob) {
+export async function transcribe(
+  model = "openai/gpt-4o-mini-transcribe",
+  audio: Blob,
+): Promise<string> {
   const format = audioFormat(audio);
   const base64 = Buffer.from(await audio.arrayBuffer()).toString("base64");
 
-  const result = await openai.post<TranscriptionResponse>("/audio/transcriptions", {
-    body: {
-      model: "openai/gpt-4o-mini-transcribe",
-      input_audio: { data: base64, format },
+  const result = await ai_client.stt.createTranscription({
+    sttRequest: {
+      model,
+      inputAudio: {
+        data: base64,
+        format,
+      },
     },
   });
 

@@ -22,7 +22,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     if (!job) return;
 
     const audio = await getAudioFile(uploadId);
-    const transcript = await transcribe(audio);
+    const transcript = await transcribe("openai/gpt-4o-mini-transcribe", audio);
     console.log("trnascript:::", transcript);
     const textUploadId: UploadId = randomUUID();
     await db
