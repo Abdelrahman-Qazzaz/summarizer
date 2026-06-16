@@ -13,6 +13,7 @@
   "dependencies": {
     "@hono/node-server": "1.19.2",
     "@neondatabase/serverless": "1.0.2",
+    "@openrouter/sdk": "^0.12.79",
     "@supabase/supabase-js": "2.103.0",
     "@upstash/redis": "1.38.0",
     "@workos-inc/node": "9.1.0",
@@ -22,7 +23,6 @@
     "hono": "4.12.12",
     "hono-rate-limiter": "0.5.3",
     "node-cron": "4.2.1",
-    "openai": "6.34.0",
     "socket.io": "4.8.3",
     "zod": "3.25.76"
   },
