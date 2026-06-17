@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import { getApiEnv } from "./env";
+import type { RedisCacheOptions } from "./types/redis.types";
 
 let client: Redis | undefined;
 export function getRedisClient(): Redis {
@@ -9,4 +10,24 @@ export function getRedisClient(): Redis {
     token: env.UPSTASH_REDIS_REST_TOKEN,
   });
   return client;
+}
+
+export async function checkCache(cacheKey: RedisCacheOptions["key"]) {
+  try {
+    const hit = await getRedisClient().get<unknown>(cacheKey);
+    return hit;
+  } catch (error) {
+    console.error("Cache read failed:", error);
+    return null;
+  }
+}
+export async function setCache(
+  cacheKey: RedisCacheOptions["key"],
+  data: unknown,
+) {
+  try {
+    await getRedisClient().set(cacheKey, data);
+  } catch (error) {
+    console.error("Cache write failed:", error);
+  }
 }
