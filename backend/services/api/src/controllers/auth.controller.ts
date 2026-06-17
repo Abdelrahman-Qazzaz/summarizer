@@ -5,8 +5,8 @@ import { sign } from "hono/jwt";
 import { getApiEnv } from "../../../../shared/env";
 import { getRiderctUrl, getUserIdFromCode } from "../auth/auth";
 import { clearSessionToken } from "../cookies/session";
-import { COOKIE_KEYS } from "../cookies/keys";
-import { CTX_KEYS } from "../auth/contextKeys";
+
+import { COOKIE_KEYS, CTX_KEYS } from "../../../../shared/keys";
 import { db, users } from "../../../../shared/db";
 
 export async function handleLogin(c: Context) {

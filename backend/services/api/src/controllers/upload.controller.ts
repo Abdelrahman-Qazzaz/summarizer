@@ -11,7 +11,7 @@ import {
 } from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
-import { CTX_KEYS } from "../auth/contextKeys";
+import { CTX_KEYS } from "../../../../shared/keys";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
@@ -46,6 +46,7 @@ function parseAudioSource(raw: unknown): AudioSource | null {
 /** POST /upload/audio — speech audio (from direct upload or client-extracted from video). */
 export async function handleAudioUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
+  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
   const parsed = await readMultipartFile(c);
   if (!parsed.ok) return parsed.response;
 
@@ -80,6 +81,7 @@ export async function handleAudioUpload(c: Context) {
     fileName: file.name,
     mimeType: file.type || null,
     sizeBytes: file.size,
+    chosenModelId,
   });
 
   await mq.sendEvent(mq.queues.TRANSCRIBE, uploadId);
@@ -96,6 +98,7 @@ export async function handleAudioUpload(c: Context) {
 /** POST /upload/text — plain text files for summarization. */
 export async function handleTextUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
+  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
   const parsed = await readMultipartFile(c);
   if (!parsed.ok) return parsed.response;
 
@@ -121,6 +124,7 @@ export async function handleTextUpload(c: Context) {
     userId,
     fileName: file.name,
     sizeBytes: file.size,
+    chosenModelId,
   });
   await mq.sendEvent(mq.queues.SUMMARIZE, uploadId);
   return c.json({
