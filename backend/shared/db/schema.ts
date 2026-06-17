@@ -29,6 +29,8 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
+
+  chosenModelId: text("chosen_model_id").notNull(),
 });
 
 export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
@@ -49,6 +51,8 @@ export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
+
+  chosenModelId: text("chosen_model_id").notNull(),
 });
 
 export const users = pgTable("users", {
