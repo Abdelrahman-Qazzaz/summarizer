@@ -79,6 +79,12 @@ export const authMeRateLimiter = createAuthIpLimiter(200, "me");
 
 export const jobRateLimiter = createLimiter(100, "rate-limit:job:", getUserId);
 
+export const modelRateLimiter = createLimiter(
+  100,
+  "rate-limit:model:",
+  getUserId,
+);
+
 export const uploadRateLimiter = createLimiter(
   30,
   "rate-limit:upload:",
