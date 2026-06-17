@@ -31,14 +31,19 @@ export async function handleTranscribeJob(uploadId: UploadId) {
       .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
 
     const userId = job.userId;
+    const chosenModelId = job.chosenModelId;
     await mq.sendEvent(mq.queues.TRANSCRIBE_DONE, { uploadId, userId });
 
     await uploadTextToBucket(textUploadId, transcript);
     const fileName = `${job.fileName}.txt`;
     const sizeBytes = Buffer.byteLength(transcript, "utf8");
-    await db
-      .insert(TextSummarizationJobs)
-      .values({ uploadId: textUploadId, userId, fileName, sizeBytes });
+    await db.insert(TextSummarizationJobs).values({
+      uploadId: textUploadId,
+      userId,
+      fileName,
+      sizeBytes,
+      chosenModelId,
+    });
     await mq.sendEvent(mq.queues.SUMMARIZE, textUploadId);
   } catch (err) {
     await db

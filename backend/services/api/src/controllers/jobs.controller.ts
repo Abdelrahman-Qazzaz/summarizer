@@ -5,7 +5,7 @@ import {
   db,
   TextSummarizationJobs,
 } from "../../../../shared/db";
-import { CTX_KEYS } from "../auth/contextKeys";
+import { CTX_KEYS } from "../../../../shared/keys";
 
 export async function handleGetJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);

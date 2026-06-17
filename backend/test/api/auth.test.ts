@@ -29,7 +29,7 @@ vi.mock("../../shared/db", () => ({
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
 import { WORKOS_REDIRECT_URI } from "../../services/api/src/auth/auth";
-import { COOKIE_KEYS } from "../../services/api/src/cookies/keys";
+import { COOKIE_KEYS } from "../../shared/keys";
 
 describe("GET /auth/me", () => {
   it("returns 401 without a session cookie", async () => {

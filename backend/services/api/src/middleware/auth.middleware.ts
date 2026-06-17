@@ -2,8 +2,8 @@ import { createMiddleware } from "hono/factory";
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
 import { getApiEnv } from "../../../../shared/env";
-import { COOKIE_KEYS } from "../cookies/keys";
-import { CTX_KEYS } from "../auth/contextKeys";
+
+import { COOKIE_KEYS, CTX_KEYS } from "../../../../shared/keys";
 
 export const requireAuth = createMiddleware(async (c, next) => {
   const token = getCookie(c, COOKIE_KEYS.session);
