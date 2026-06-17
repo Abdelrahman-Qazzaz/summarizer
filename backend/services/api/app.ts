@@ -4,6 +4,7 @@ import { getApiEnv } from "../../shared/env";
 import { jobsRouter } from "./src/routes/jobs.router";
 import { uploadRouter } from "./src/routes/upload.router";
 import { authRouter } from "./src/routes/auth.router";
+import { modelsRouter } from "./src/routes/models.router";
 
 export function createApp() {
   const env = getApiEnv();
@@ -13,5 +14,6 @@ export function createApp() {
   app.route("/upload", uploadRouter);
   app.route("/auth", authRouter);
   app.route("/jobs", jobsRouter);
+  app.route("/models", modelsRouter);
   return app;
 }
