@@ -1,7 +1,7 @@
 import { Server } from "socket.io";
 import { parse } from "hono/utils/cookie";
 import { verify } from "hono/jwt";
-import { COOKIE_KEYS } from "../cookies/keys";
+import { COOKIE_KEYS } from "../../../../shared/keys";
 import { getApiEnv } from "../../../../shared/env";
 
 const port = getApiEnv().WS_PORT;

@@ -3,7 +3,7 @@ import { rateLimiter } from "hono-rate-limiter";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { createRateLimitStore } from "../rateLimit/storage";
 import { RateLimitStoreUnavailableError } from "../rateLimit/errors";
-import { CTX_KEYS } from "../auth/contextKeys";
+import { CTX_KEYS } from "../../../../shared/keys";
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
