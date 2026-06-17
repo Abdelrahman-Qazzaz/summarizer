@@ -1,18 +1,6 @@
-import { Redis } from "@upstash/redis";
 import { RedisStore } from "hono-rate-limiter";
-import { getApiEnv } from "../../../../shared/env";
 import { RateLimitStoreUnavailableError } from "./errors";
-
-let client: Redis | undefined;
-
-function getRedisClient(): Redis {
-  const env = getApiEnv();
-  client ??= new Redis({
-    url: env.UPSTASH_REDIS_REST_URL,
-    token: env.UPSTASH_REDIS_REST_TOKEN,
-  });
-  return client;
-}
+import { getRedisClient } from "../../../../shared/redis";
 
 async function wrapStoreMethod<T>(fn: () => Promise<T>): Promise<T> {
   try {
