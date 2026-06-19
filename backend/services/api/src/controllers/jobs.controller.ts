@@ -9,8 +9,7 @@ import { CTX_KEYS } from "../../../../shared/keys";
 
 export async function handleGetJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  const uploadId = c.req.param("uploadId");
-  if (!uploadId) return c.json({ message: "uploadId required" }, 400);
+  const uploadId = c.get(CTX_KEYS.uploadId);
 
   const [textJob] = await db
     .select()
