@@ -1,6 +1,7 @@
 export const CTX_KEYS = {
   userId: "userId",
   chosenModelId: "chosenModelId",
+  uploadId: "uploadId",
 } as const;
 
 export const COOKIE_KEYS = {
