@@ -2,7 +2,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useId,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -12,6 +14,12 @@ import { fetchJob, type Job } from "../lib/jobs";
 import { extractAudioFromVideo } from "../lib/extractAudio";
 import { compressAudioForSpeech } from "../lib/compressAudio";
 import { useJobUpdated } from "./socket/useJobUpdated";
+import { useModels } from "./useModels";
+import {
+  filterModelsForMode,
+  modelLabelForMode,
+  resolveDefaultModel,
+} from "../lib/modelFilters";
 import {
   acceptForMode,
   dropZoneCopy,
@@ -54,7 +62,9 @@ function uploadIdFromBody(data: unknown): string | null {
 function useSummarizerUploadState() {
   const { user } = useAuth();
   const inputId = useId();
+  const { loading: modelsLoading, error: modelsError, entries } = useModels(!!user);
   const [mode, setMode] = useState<SourceMode>("text");
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -84,6 +94,26 @@ function useSummarizerUploadState() {
 
   const accept = acceptForMode(mode);
   const { title: dropTitle, hint: dropHint } = dropZoneCopy(mode);
+
+  const filteredModelEntries = useMemo(
+    () => filterModelsForMode(entries, mode),
+    [entries, mode],
+  );
+
+  const modelOptions = useMemo(
+    () =>
+      filteredModelEntries.map(([id, info]) => ({
+        id,
+        label: id,
+        info,
+      })),
+    [filteredModelEntries],
+  );
+
+  useEffect(() => {
+    if (entries.length === 0) return;
+    setSelectedModel(resolveDefaultModel(entries, mode));
+  }, [entries, mode]);
 
   const pickFiles = useCallback(
     (list: FileList | null) => {
@@ -132,7 +162,7 @@ function useSummarizerUploadState() {
   );
 
   const onUpload = useCallback(async () => {
-    if (!file) return;
+    if (!file || !selectedModel) return;
     setUploadError(null);
     setUploadMessage(null);
     setUploading(true);
@@ -158,6 +188,8 @@ function useSummarizerUploadState() {
         body.append("source", mode === "video" ? "video" : "audio");
         url = uploadAudioEndpoint();
       }
+
+      body.append("chosenModelId", selectedModel);
 
       if (mode === "text") {
         setPhase("upload");
@@ -193,7 +225,7 @@ function useSummarizerUploadState() {
       setUploading(false);
       setPhase(null);
     }
-  }, [file, mode]);
+  }, [file, mode, selectedModel]);
 
   return {
     inputId,
@@ -217,6 +249,12 @@ function useSummarizerUploadState() {
     onUpload,
     dropTitle,
     dropHint,
+    selectedModel,
+    setSelectedModel,
+    modelsLoading,
+    modelsError,
+    modelOptions,
+    modelLabel: modelLabelForMode(mode),
   };
 }
 

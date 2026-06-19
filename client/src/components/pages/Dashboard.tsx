@@ -9,6 +9,7 @@ import { FilePreview } from "../upload/FilePreview";
 import { UploadButton } from "../upload/UploadButton";
 import { JobStatus } from "../job/JobStatus";
 import { JobResult } from "../job/JobResult";
+import { ModelSelector } from "../models/ModelSelector";
 import { useSummarizerUpload } from "../../hooks/useSummarizerUpload";
 
 export function Dashboard() {
@@ -32,6 +33,12 @@ export function Dashboard() {
     onUpload,
     dropTitle,
     dropHint,
+    selectedModel,
+    setSelectedModel,
+    modelsLoading,
+    modelsError,
+    modelOptions,
+    modelLabel,
   } = useSummarizerUpload();
 
   const handleDragOver = (e: DragEvent) => {
@@ -48,7 +55,7 @@ export function Dashboard() {
     setFile(null);
   };
 
-  const canUpload = file && !uploading;
+  const canUpload = file && selectedModel && !uploading;
 
   return (
     <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 via-white to-primary-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-primary-950/30">
@@ -88,6 +95,16 @@ export function Dashboard() {
                     disabled={uploading}
                   />
                 </div>
+
+                <ModelSelector
+                  label={modelLabel}
+                  models={modelOptions}
+                  value={selectedModel}
+                  onChange={setSelectedModel}
+                  disabled={uploading || modelsLoading}
+                  loading={modelsLoading}
+                  error={modelsError}
+                />
 
                 {file ? (
                   <FilePreview
