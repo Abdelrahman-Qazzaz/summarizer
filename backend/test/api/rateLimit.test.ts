@@ -4,14 +4,21 @@ import {
   setRateLimitStoreUnavailable,
 } from "../helpers/rateLimitStoreMock";
 
-const { mockLimit, mockWhere, mockFrom, mockSelect, mockGetUserIdFromCode } =
-  vi.hoisted(() => ({
-    mockLimit: vi.fn(),
-    mockWhere: vi.fn(),
-    mockFrom: vi.fn(),
-    mockSelect: vi.fn(),
-    mockGetUserIdFromCode: vi.fn(),
-  }));
+const {
+  mockLimit,
+  mockWhere,
+  mockFrom,
+  mockSelect,
+  mockGetUserIdFromCode,
+  mockGetModelData,
+} = vi.hoisted(() => ({
+  mockLimit: vi.fn(),
+  mockWhere: vi.fn(),
+  mockFrom: vi.fn(),
+  mockSelect: vi.fn(),
+  mockGetUserIdFromCode: vi.fn(),
+  mockGetModelData: vi.fn(),
+}));
 
 vi.mock("../../shared/db", () => ({
   db: { select: mockSelect },
@@ -28,6 +35,10 @@ vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {
   };
 });
 
+vi.mock("../../shared/ai/ai_client", () => ({
+  getModelData: mockGetModelData,
+}));
+
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
 
@@ -38,6 +49,7 @@ describe("rate limiting", () => {
     resetRateLimitMock();
     vi.clearAllMocks();
     mockGetUserIdFromCode.mockRejectedValue(new Error("WorkOS unavailable"));
+    mockGetModelData.mockResolvedValue({});
     mockWhere.mockImplementation(() => ({ limit: mockLimit }));
     mockFrom.mockImplementation(() => ({ where: mockWhere }));
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
@@ -104,6 +116,44 @@ describe("rate limiting", () => {
       },
     ]);
     const res = await createApp().request(`http://localhost/jobs/${uploadId}`, {
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      message:
+        "Rate limiting is temporarily unavailable. Please try again later.",
+    });
+  });
+});
+
+describe("GET /models rate limiting", () => {
+  beforeEach(() => {
+    resetRateLimitMock();
+    vi.clearAllMocks();
+    mockGetModelData.mockResolvedValue({});
+  });
+
+  it("returns 429 when model limit is exceeded", async () => {
+    const app = createApp();
+    const cookie = await sessionCookieHeader("user_01");
+    for (let i = 0; i < 100; i++) {
+      const res = await app.request("http://localhost/models", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).not.toBe(429);
+    }
+    const res = await app.request("http://localhost/models", {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({
+      message: "Too many requests, please try again later.",
+    });
+  });
+
+  it("returns 503 when the rate limit store is unavailable", async () => {
+    setRateLimitStoreUnavailable(true);
+    const res = await createApp().request("http://localhost/models", {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(503);
