@@ -13,28 +13,9 @@ import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../../shared/keys";
 
-const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
-const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
-const TEXT_PREVIEW_CHARS = 2000;
-
 type AudioSource = "video" | "audio";
 
-async function readMultipartFile(
-  c: Context,
-): Promise<
-  { ok: true; formData: FormData } | { ok: false; response: Response }
-> {
-  let formData: FormData;
-  try {
-    formData = await c.req.formData();
-  } catch {
-    return {
-      ok: false,
-      response: c.json({ message: "Invalid multipart body" }, 400),
-    };
-  }
-  return { ok: true, formData };
-}
+const TEXT_PREVIEW_CHARS = 2000;
 
 function parseAudioSource(raw: unknown): AudioSource | null {
   if (raw === null || raw === "") return "audio";
@@ -46,30 +27,9 @@ function parseAudioSource(raw: unknown): AudioSource | null {
 /** POST /upload/audio — speech audio (from direct upload or client-extracted from video). */
 export async function handleAudioUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
+  const file = c.get(CTX_KEYS.uploadFile);
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
-  const parsed = await readMultipartFile(c);
-  if (!parsed.ok) return parsed.response;
-
-  const { formData } = parsed;
-  const file = formData.get("file");
-  if (!(file instanceof File)) {
-    return c.json({ message: 'Expected a file field named "file"' }, 400);
-  }
-
-  const source = parseAudioSource(formData.get("source"));
-  if (source === null) {
-    return c.json(
-      { message: 'Invalid source; use "video" or "audio" (or omit)' },
-      400,
-    );
-  }
-  const isMaxAudioSize = file.size > MAX_AUDIO_BYTES;
-  if (isMaxAudioSize) {
-    return c.json(
-      { message: "Audio file is too large", maxBytes: MAX_AUDIO_BYTES },
-      413,
-    );
-  }
+  const source = c.get(CTX_KEYS.audioSource);
 
   const uploadId: UploadId = randomUUID();
   await uploadAudioToBucket(uploadId, file);
@@ -99,21 +59,7 @@ export async function handleAudioUpload(c: Context) {
 export async function handleTextUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
-  const parsed = await readMultipartFile(c);
-  if (!parsed.ok) return parsed.response;
-
-  const file = parsed.formData.get("file");
-  if (!(file instanceof File)) {
-    return c.json({ message: 'Expected a file field named "file"' }, 400);
-  }
-
-  const isMaxTextSize = file.size > MAX_TEXT_BYTES;
-  if (isMaxTextSize) {
-    return c.json(
-      { message: "Text file is too large", maxBytes: MAX_TEXT_BYTES },
-      413,
-    );
-  }
+  const file = c.get(CTX_KEYS.uploadFile);
 
   const uploadId: UploadId = randomUUID();
   const text = await file.text();
