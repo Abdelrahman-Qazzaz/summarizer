@@ -18,5 +18,19 @@
   ],
   "containerEnv": {
     "NODE_OPTIONS": "--disable-proto=delete"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Anthropic.claude-code",
+        "VisualStudioExptTeam.vscodeintellicode",
+        "ms-vscode-remote.remote-containers",
+        "Prisma.prisma",
+        "esbenp.prettier-vscode",
+        "databricks.neon-local-connect",
+        "ms-vscode.vscode-typescript-next",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
   }
 }
