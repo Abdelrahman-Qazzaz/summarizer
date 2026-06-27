@@ -7,6 +7,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const BUCKET = "Audio & Text files";
 
+/** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
+export async function pingBucket(): Promise<void> {
+  const { error } = await supabase.storage.getBucket(BUCKET);
+  if (error) throw error;
+}
+
 /**
  * Directly upload a text string to Supabase Storage (no local write).
  * Returns the storage path.
