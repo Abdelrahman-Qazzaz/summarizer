@@ -12,7 +12,6 @@ import {
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../../shared/keys";
-import { DEFAULT_MODELS, validateModel } from "../../../../shared/ai/ai_client";
 
 type AudioSource = "video" | "audio";
 
@@ -29,9 +28,7 @@ function parseAudioSource(raw: unknown): AudioSource | null {
 export async function handleAudioUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const file = c.get(CTX_KEYS.uploadFile);
-  let chosenModelId = c.get(CTX_KEYS.chosenModelId);
-  const isValid = await validateModel(chosenModelId);
-  if (!isValid) chosenModelId = DEFAULT_MODELS.TRANSCRIBE;
+  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
 
   const source = c.get(CTX_KEYS.audioSource);
 
@@ -62,9 +59,7 @@ export async function handleAudioUpload(c: Context) {
 /** POST /upload/text — plain text files for summarization. */
 export async function handleTextUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  let chosenModelId = c.get(CTX_KEYS.chosenModelId);
-  const isValid = await validateModel(chosenModelId);
-  if (!isValid) chosenModelId = DEFAULT_MODELS.PROMPT;
+  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
   const file = c.get(CTX_KEYS.uploadFile);
 
   const uploadId: UploadId = randomUUID();
