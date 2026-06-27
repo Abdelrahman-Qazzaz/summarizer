@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../../shared/keys";
+import { validateModel } from "../../../../shared/ai/ai_client";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
@@ -11,14 +12,21 @@ const fileField = z.instanceof(File, {
 export const textUploadSchema = z
   .object({
     [FORM_KEYS.uploadFile]: fileField,
-    [FORM_KEYS.chosenModelId]: z.string().min(1), // optional until client sends model
+    [FORM_KEYS.chosenModelId]: z.string().min(1),
   })
-  .superRefine((data, ctx) => {
+  .superRefine(async (data, ctx) => {
     if (data[FORM_KEYS.uploadFile].size > MAX_TEXT_BYTES) {
       ctx.addIssue({
         code: "custom",
         message: "Text file is too large",
         path: [FORM_KEYS.uploadFile],
+      });
+    }
+    if (!(await validateModel(data[FORM_KEYS.chosenModelId]))) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid model",
+        path: [FORM_KEYS.chosenModelId],
       });
     }
   })
@@ -36,12 +44,19 @@ export const audioUploadSchema = z
     ),
     [FORM_KEYS.chosenModelId]: z.string().min(1),
   })
-  .superRefine((data, ctx) => {
+  .superRefine(async (data, ctx) => {
     if (data[FORM_KEYS.uploadFile].size > MAX_AUDIO_BYTES) {
       ctx.addIssue({
         code: "custom",
         message: "Audio file is too large",
         path: [FORM_KEYS.uploadFile],
+      });
+    }
+    if (!(await validateModel(data[FORM_KEYS.chosenModelId]))) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid model",
+        path: [FORM_KEYS.chosenModelId],
       });
     }
   })
