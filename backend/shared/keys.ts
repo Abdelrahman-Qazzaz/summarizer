@@ -1,15 +1,20 @@
+const uploadFile = "uploadFile";
+const audioSource = "audioSource";
+const chosenModelId = "chosenModelId";
+
 export const CTX_KEYS = {
   userId: "userId",
-  chosenModelId: "chosenModelId",
   uploadId: "uploadId",
-  uploadFile: "uploadFile",
-  audioSource: "audioSource",
+
+  uploadFile,
+  chosenModelId,
+  audioSource,
 } as const;
 
 export const FORM_KEYS = {
-  file: "file",
-  source: "source",
-  model: "chosenModelId",
+  uploadFile,
+  chosenModelId,
+  audioSource,
 } as const;
 
 export const COOKIE_KEYS = {

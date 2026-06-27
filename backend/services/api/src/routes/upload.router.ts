@@ -12,15 +12,18 @@ uploadRouter.use("*", requireAuth, uploadRateLimiter);
 
 uploadRouter.post(
   "/text",
-  validateMultipart(textUploadSchema, [FORM_KEYS.file, FORM_KEYS.model]),
+  validateMultipart(textUploadSchema, [
+    FORM_KEYS.uploadFile,
+    FORM_KEYS.chosenModelId,
+  ]),
   uploadController.handleTextUpload,
 );
 uploadRouter.post(
   "/audio",
   validateMultipart(audioUploadSchema, [
-    FORM_KEYS.file,
-    FORM_KEYS.source,
-    FORM_KEYS.model,
+    FORM_KEYS.uploadFile,
+    FORM_KEYS.audioSource,
+    FORM_KEYS.chosenModelId,
   ]),
   uploadController.handleAudioUpload,
 );
