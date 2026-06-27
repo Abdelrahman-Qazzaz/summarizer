@@ -12,6 +12,11 @@ export function getRedisClient(): Redis {
   return client;
 }
 
+/** Startup health check: fails if Redis is unreachable or rejects the token. */
+export async function pingRedis(): Promise<void> {
+  await getRedisClient().ping();
+}
+
 export async function checkCache(cacheKey: RedisCacheOptions["key"]) {
   try {
     const hit = await getRedisClient().get<unknown>(cacheKey);
