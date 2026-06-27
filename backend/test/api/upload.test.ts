@@ -8,12 +8,32 @@ const {
   mockSendEvent,
   mockUploadTextToBucket,
   mockUploadAudioToBucket,
+  mockValidateModel,
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockSendEvent: vi.fn(),
   mockUploadTextToBucket: vi.fn(),
   mockUploadAudioToBucket: vi.fn(),
+  mockValidateModel: vi.fn(),
 }));
+
+const { mockGetModelData } = vi.hoisted(() => ({
+  mockGetModelData: vi.fn(),
+}));
+vi.mock("../../shared/ai/ai_client", async (importActual) => {
+  // importActual is the correct way to get real values inside vi.mock
+  const actual =
+    await importActual<typeof import("../../shared/ai/ai_client")>();
+  return {
+    ...actual, // preserves DEFAULT_MODELS and anything else
+    getModelData: mockGetModelData, // override only what needs mocking
+    validateModel: mockValidateModel,
+  };
+});
+
+import { DEFAULT_MODELS } from "../../shared/ai/ai_client";
+
+const VALID_MODEL = DEFAULT_MODELS.PROMPT;
 
 vi.mock("../../shared/db", () => ({
   db: { insert: mockInsert },
@@ -41,7 +61,11 @@ import { sessionCookieHeader } from "../helpers/session";
 
 function textUploadBody(content = "hello", fileName = "notes.txt"): FormData {
   const formData = new FormData();
-  formData.append("file", new File([content], fileName, { type: "text/plain" }));
+  formData.append(
+    "uploadFile",
+    new File([content], fileName, { type: "text/plain" }),
+  );
+  formData.append("chosenModelId", VALID_MODEL);
   return formData;
 }
 
@@ -51,23 +75,27 @@ function audioUploadBody(
 ): FormData {
   const formData = new FormData();
   formData.append(
-    "file",
+    "uploadFile",
     new File([new Uint8Array(sizeBytes)], options?.fileName ?? "clip.mp3", {
       type: "audio/mpeg",
     }),
   );
   if (options?.source !== undefined) {
-    formData.append("source", options.source);
+    formData.append("audioSource", options.source);
   }
+  formData.append("chosenModelId", VALID_MODEL);
   return formData;
 }
 
 describe("POST /upload/text", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    });
     mockUploadTextToBucket.mockResolvedValue(undefined);
     mockSendEvent.mockResolvedValue(undefined);
+    mockValidateModel.mockResolvedValue(true);
   });
 
   it("returns 401 without a session cookie", async () => {
@@ -81,6 +109,7 @@ describe("POST /upload/text", () => {
 
   it("returns 400 when file field is missing", async () => {
     const formData = new FormData();
+    formData.append("chosenModelId", VALID_MODEL);
     const res = await createApp().request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
@@ -136,9 +165,12 @@ describe("POST /upload/text", () => {
 describe("POST /upload/audio", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    });
     mockUploadAudioToBucket.mockResolvedValue(undefined);
     mockSendEvent.mockResolvedValue(undefined);
+    mockValidateModel.mockResolvedValue(true);
   });
 
   it("returns 400 when file field is missing", async () => {
@@ -150,6 +182,8 @@ describe("POST /upload/audio", () => {
     expect(res.status).toBe(400);
   });
 
+  // Streams a real 100MB+ body through multipart parsing, so it needs a
+  // generous timeout beyond the 5s default.
   it("returns 413 when audio file is too large", async () => {
     const res = await createApp().request("http://localhost/upload/audio", {
       method: "POST",
@@ -161,7 +195,7 @@ describe("POST /upload/audio", () => {
       message: "Audio file is too large",
       maxBytes: MAX_AUDIO_BYTES,
     });
-  });
+  }, 20000);
 
   it("returns 400 for invalid source", async () => {
     const res = await createApp().request("http://localhost/upload/audio", {

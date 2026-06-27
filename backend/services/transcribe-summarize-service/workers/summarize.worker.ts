@@ -4,7 +4,6 @@ import { and, eq } from "drizzle-orm";
 import { readTextFile } from "../../../shared/bucket";
 import { summarize } from "../../../shared/ai/summarize";
 import { mq } from "../../../shared/message-queue/messageQueue";
-import { DEFAULT_MODELS } from "../../../shared/ai/ai_client";
 
 export async function handleSummarizeJob(uploadId: UploadId) {
   const TABLE = TextSummarizationJobs;
