@@ -78,7 +78,7 @@ export function validateMultipart<T extends Record<string, unknown>>(
       raw[name] = formData.get(name); // File | string | null
     }
 
-    const result = schema.safeParse(raw);
+    const result = await schema.safeParseAsync(raw);
     if (!result.success) {
       return multipartErrorResponse(c, result.error);
     }
