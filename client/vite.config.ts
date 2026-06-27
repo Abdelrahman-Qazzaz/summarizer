@@ -9,6 +9,7 @@ export default defineConfig({
     exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"],
   },
   server: {
+    host: true,
     proxy: {
       "/upload": {
         target: "http://localhost:3001",
