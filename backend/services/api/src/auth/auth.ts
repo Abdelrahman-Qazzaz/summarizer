@@ -7,6 +7,11 @@ const workos = new WorkOS(getApiEnv().WORKOS_API_KEY, {
   clientId: getApiEnv().WORKOS_CLIENT_ID,
 });
 
+/** Startup health check: fails if WorkOS is unreachable or rejects the API key. */
+export async function pingWorkos(): Promise<void> {
+  await workos.userManagement.listUsers({ limit: 1 });
+}
+
 export function getRiderctUrl() {
   return workos.userManagement.getAuthorizationUrl({
     // Specify that we'd like AuthKit to handle the authentication flow

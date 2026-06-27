@@ -14,6 +14,11 @@ export const ai_client = new OpenRouter({
   apiKey: getBaseEnv().OPENROUTER_API_KEY,
 });
 
+/** Startup health check: fails if OpenRouter is unreachable or rejects the API key. */
+export async function pingAi(): Promise<void> {
+  await ai_client.models.list();
+}
+
 export async function promptAI(
   model: string = DEFAULT_MODELS.PROMPT,
   prompt: string,
