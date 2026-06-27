@@ -40,7 +40,14 @@ export const audioUploadSchema = z
     [FORM_KEYS.uploadFile]: fileField,
     [FORM_KEYS.audioSource]: z.preprocess(
       (v) => (v === "" || v === null ? undefined : v),
-      z.enum(["video", "audio"]).optional().default("audio"),
+      z
+        .enum(["video", "audio"], {
+          errorMap: () => ({
+            message: 'Invalid source; use "video" or "audio" (or omit)',
+          }),
+        })
+        .optional()
+        .default("audio"),
     ),
     [FORM_KEYS.chosenModelId]: z.string().min(1),
   })
