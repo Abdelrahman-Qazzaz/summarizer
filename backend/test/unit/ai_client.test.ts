@@ -18,11 +18,15 @@ vi.mock("@openrouter/sdk", () => ({
   },
 }));
 
-import { getModelData, validateModel } from "../../shared/ai/ai_client";
+import {
+  DEFAULT_MODELS,
+  getModelData,
+  validateModel,
+} from "../../shared/ai/ai_client";
 
 const sampleModelData = {
-  "openai/gpt-4o-mini": {
-    id: "openai/gpt-4o-mini",
+  [DEFAULT_MODELS.PROMPT]: {
+    id: DEFAULT_MODELS.PROMPT,
     name: "GPT-4o Mini",
     description: "Fast chat model",
     knowledgeCutoff: null,
@@ -34,7 +38,7 @@ const sampleModelData = {
 };
 
 const openRouterListModel = {
-  id: "openai/gpt-4o-mini",
+  id: DEFAULT_MODELS.PROMPT,
   name: "GPT-4o Mini",
   description: "Fast chat model",
   knowledgeCutoff: null,
@@ -89,7 +93,7 @@ describe("validateModel", () => {
   it("returns true for a known model id from cache", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    const result = await validateModel("openai/gpt-4o-mini");
+    const result = await validateModel(DEFAULT_MODELS.PROMPT);
 
     expect(result).toBe(true);
     expect(mockModelsList).not.toHaveBeenCalled();
@@ -109,7 +113,7 @@ describe("validateModel", () => {
     mockCheckCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
-    const result = await validateModel("openai/gpt-4o-mini");
+    const result = await validateModel(DEFAULT_MODELS.PROMPT);
 
     expect(result).toBe(true);
     expect(mockModelsList).toHaveBeenCalled();

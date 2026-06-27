@@ -1,19 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Only hoist the mock function factory — no async work here
 const { mockGetModelData } = vi.hoisted(() => ({
   mockGetModelData: vi.fn(),
 }));
 
-vi.mock("../../shared/ai/ai_client", () => ({
-  getModelData: mockGetModelData,
-}));
+vi.mock("../../shared/ai/ai_client", async (importActual) => {
+  // importActual is the correct way to get real values inside vi.mock
+  const actual =
+    await importActual<typeof import("../../shared/ai/ai_client")>();
+  return {
+    ...actual, // preserves DEFAULT_MODELS and anything else
+    getModelData: mockGetModelData, // override only what needs mocking
+  };
+});
 
+// Now this import gets the mocked module, with real DEFAULT_MODELS intact
+import { DEFAULT_MODELS } from "../../shared/ai/ai_client";
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
 
 const sampleModelData = {
-  "openai/gpt-4o-mini": {
-    id: "openai/gpt-4o-mini",
+  [DEFAULT_MODELS.PROMPT]: {
+    id: DEFAULT_MODELS.PROMPT,
     name: "GPT-4o Mini",
     description: "Fast chat model",
     knowledgeCutoff: null,
