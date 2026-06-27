@@ -15,7 +15,7 @@ export const ai_client = new OpenRouter({
 });
 
 export async function promptAI(
-  model: string = "openai/gpt-4o-mini",
+  model: string = DEFAULT_MODELS.PROMPT,
   prompt: string,
 ) {
   const completion = await ai_client.chat.send({
@@ -78,3 +78,8 @@ export async function validateModel(modelId: string): Promise<boolean> {
   if (byId) return true;
   return false;
 }
+
+export const DEFAULT_MODELS = {
+  TRANSCRIBE: "openai/gpt-4o-mini-transcribe",
+  PROMPT: "openai/gpt-4o-mini",
+};

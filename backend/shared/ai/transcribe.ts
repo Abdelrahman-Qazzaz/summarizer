@@ -11,10 +11,7 @@ function audioFormat(blob: Blob): string {
   throw new Error(`Unsupported audio type: ${mime}`);
 }
 
-export async function transcribe(
-  model = "openai/gpt-4o-mini-transcribe",
-  audio: Blob,
-): Promise<string> {
+export async function transcribe(model: string, audio: Blob): Promise<string> {
   const format = audioFormat(audio);
   const base64 = Buffer.from(await audio.arrayBuffer()).toString("base64");
 
