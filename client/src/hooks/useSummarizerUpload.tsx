@@ -172,7 +172,7 @@ function useSummarizerUploadState() {
       let url: string;
 
       if (mode === "text") {
-        body.append("file", file);
+        body.append("uploadFile", file);
         url = uploadTextEndpoint();
       } else {
         let uploadFile = file;
@@ -184,8 +184,8 @@ function useSummarizerUploadState() {
         uploadFile = await compressAudioForSpeech(uploadFile);
         setPhase("upload");
 
-        body.append("file", uploadFile);
-        body.append("source", mode === "video" ? "video" : "audio");
+        body.append("uploadFile", uploadFile);
+        body.append("audioSource", mode === "video" ? "video" : "audio");
         url = uploadAudioEndpoint();
       }
 
