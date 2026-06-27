@@ -3,7 +3,9 @@
     "allow": [
       "Bash(curl -sv http://localhost:3000/api/auth/me)",
       "Bash(curl -sv http://localhost:3001/auth/me)",
-      "Bash(curl -sv -H \"Origin: http://localhost:5173\" http://localhost:3001/auth/me)"
+      "Bash(curl -sv -H \"Origin: http://localhost:5173\" http://localhost:3001/auth/me)",
+      "Bash(cat src/config.ts)",
+      "Bash(cat src/lib/models.ts)"
     ]
   }
 }
