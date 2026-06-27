@@ -10,43 +10,43 @@ const fileField = z.instanceof(File, {
 
 export const textUploadSchema = z
   .object({
-    [FORM_KEYS.file]: fileField,
-    [FORM_KEYS.model]: z.string().min(1), // optional until client sends model
+    [FORM_KEYS.uploadFile]: fileField,
+    [FORM_KEYS.chosenModelId]: z.string().min(1), // optional until client sends model
   })
   .superRefine((data, ctx) => {
-    if (data[FORM_KEYS.file].size > MAX_TEXT_BYTES) {
+    if (data[FORM_KEYS.uploadFile].size > MAX_TEXT_BYTES) {
       ctx.addIssue({
         code: "custom",
         message: "Text file is too large",
-        path: [FORM_KEYS.file],
+        path: [FORM_KEYS.uploadFile],
       });
     }
   })
   .transform((data) => ({
-    [CTX_KEYS.uploadFile]: data[FORM_KEYS.file],
-    [CTX_KEYS.chosenModelId]: data[FORM_KEYS.model],
+    [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
+    [CTX_KEYS.chosenModelId]: data[FORM_KEYS.chosenModelId],
   }));
 
 export const audioUploadSchema = z
   .object({
-    [FORM_KEYS.file]: fileField,
-    [FORM_KEYS.source]: z.preprocess(
+    [FORM_KEYS.uploadFile]: fileField,
+    [FORM_KEYS.audioSource]: z.preprocess(
       (v) => (v === "" || v === null ? undefined : v),
       z.enum(["video", "audio"]).optional().default("audio"),
     ),
-    [FORM_KEYS.model]: z.string().min(1),
+    [FORM_KEYS.chosenModelId]: z.string().min(1),
   })
   .superRefine((data, ctx) => {
-    if (data[FORM_KEYS.file].size > MAX_AUDIO_BYTES) {
+    if (data[FORM_KEYS.uploadFile].size > MAX_AUDIO_BYTES) {
       ctx.addIssue({
         code: "custom",
         message: "Audio file is too large",
-        path: [FORM_KEYS.file],
+        path: [FORM_KEYS.uploadFile],
       });
     }
   })
   .transform((data) => ({
-    [CTX_KEYS.uploadFile]: data[FORM_KEYS.file],
-    [CTX_KEYS.chosenModelId]: data[FORM_KEYS.model],
-    [CTX_KEYS.audioSource]: data[FORM_KEYS.source],
+    [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
+    [CTX_KEYS.chosenModelId]: data[FORM_KEYS.chosenModelId],
+    [CTX_KEYS.audioSource]: data[FORM_KEYS.audioSource],
   }));
