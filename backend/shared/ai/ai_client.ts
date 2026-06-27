@@ -4,7 +4,7 @@ import { OpenRouter } from "@openrouter/sdk";
 import { CACHE_KEYS } from "../keys";
 import { checkCache, setCache } from "../redis";
 import type {
-  Model,
+  OutputModality,
   Parameter,
   PublicPricing,
   TopProviderInfo,
@@ -37,6 +37,7 @@ type ModelData = {
     topProvider: TopProviderInfo;
     pricing: PublicPricing;
     supportedParameters: Parameter[];
+    outputModalities: OutputModality[];
   };
 };
 
@@ -58,6 +59,7 @@ export async function getModelData() {
         topProvider: model.topProvider,
         pricing: model.pricing,
         supportedParameters: model.supportedParameters,
+        outputModalities: model.architecture.outputModalities,
       },
     ]),
   );
