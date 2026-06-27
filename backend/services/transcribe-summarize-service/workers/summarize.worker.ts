@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { readTextFile } from "../../../shared/bucket";
 import { summarize } from "../../../shared/ai/summarize";
 import { mq } from "../../../shared/message-queue/messageQueue";
+import { DEFAULT_MODELS } from "../../../shared/ai/ai_client";
 
 export async function handleSummarizeJob(uploadId: UploadId) {
   const TABLE = TextSummarizationJobs;
@@ -16,7 +17,7 @@ export async function handleSummarizeJob(uploadId: UploadId) {
 
     if (!job) return;
     const text = await readTextFile(uploadId);
-    const summary = await summarize(text);
+    const summary = await summarize(DEFAULT_MODELS.PROMPT, text);
 
     await db
       .update(TABLE)

@@ -9,6 +9,7 @@ import { getAudioFile, uploadTextToBucket } from "../../../shared/bucket";
 import { transcribe } from "../../../shared/ai/transcribe";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { randomUUID } from "crypto";
+import { DEFAULT_MODELS } from "../../../shared/ai/ai_client";
 
 export async function handleTranscribeJob(uploadId: UploadId) {
   const TABLE = AudioTranscriptionJobs;
@@ -22,7 +23,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     if (!job) return;
 
     const audio = await getAudioFile(uploadId);
-    const transcript = await transcribe("openai/gpt-4o-mini-transcribe", audio);
+    const transcript = await transcribe(DEFAULT_MODELS.TRANSCRIBE, audio);
     console.log("trnascript:::", transcript);
     const textUploadId: UploadId = randomUUID();
     await db
