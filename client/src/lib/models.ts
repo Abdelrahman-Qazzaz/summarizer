@@ -29,6 +29,7 @@ export type ModelInfo = {
   topProvider?: ModelTopProvider;
   pricing?: ModelPricing;
   supportedParameters?: string[];
+  outputModalities?: string[];
 };
 
 export type ModelsResponse = {

@@ -29,6 +29,7 @@ const sampleModelData = {
     topProvider: { contextLength: 128000, isModerated: true },
     pricing: { prompt: "0.00000015", completion: "0.0000006" },
     supportedParameters: ["temperature", "max_tokens"],
+    outputModalities: ["text"],
   },
 };
 
@@ -40,6 +41,11 @@ const openRouterListModel = {
   topProvider: { contextLength: 128000, isModerated: true },
   pricing: { prompt: "0.00000015", completion: "0.0000006" },
   supportedParameters: ["temperature", "max_tokens"],
+  architecture: {
+    outputModalities: ["text"],
+    inputModalities: ["text"],
+    modality: "text",
+  },
 };
 
 describe("getModelData", () => {
