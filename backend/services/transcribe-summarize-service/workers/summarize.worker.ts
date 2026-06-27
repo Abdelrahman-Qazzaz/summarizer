@@ -17,7 +17,7 @@ export async function handleSummarizeJob(uploadId: UploadId) {
 
     if (!job) return;
     const text = await readTextFile(uploadId);
-    const summary = await summarize(DEFAULT_MODELS.PROMPT, text);
+    const summary = await summarize(job.chosenModelId, text);
 
     await db
       .update(TABLE)
