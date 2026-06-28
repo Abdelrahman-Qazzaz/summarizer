@@ -30,3 +30,9 @@ export const jobsListQuerySchema = z.object({
   kind: z.enum(jobKindValues).optional(),
   q: z.string().trim().min(1).optional(),
 });
+
+export const jobCursorSchema = z.object({
+  createdAt: z.string(),
+  uploadId: z.string(),
+});
+export type JobCursor = z.infer<typeof jobCursorSchema>;
