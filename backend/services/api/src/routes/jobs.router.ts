@@ -11,9 +11,15 @@ export const jobsRouter = new Hono();
 jobsRouter.use("*", requireAuth, jobRateLimiter);
 
 jobsRouter.get(
-  `/:${CTX_KEYS.uploadId}`,
+  `/transcribe/:${CTX_KEYS.uploadId}`,
   validateReqParams(jobReqParamSchema),
-  jobsController.handleGetJob,
+  jobsController.handleGetTranscribeJob,
 );
 
-jobsRouter.get("/",jobsController.getUserJobs)
+jobsRouter.get(
+  `/summarize/:${CTX_KEYS.uploadId}`,
+  validateReqParams(jobReqParamSchema),
+  jobsController.handleGetSummarizeJob,
+);
+
+jobsRouter.get("/", jobsController.getUserJobs);
