@@ -53,6 +53,14 @@ export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
     .references(() => users.id),
 
   chosenModelId: text("chosen_model_id").notNull(),
+
+  // Set when this summary was derived from an audio upload. Null for jobs the
+  // user uploaded as text directly. Lets an audio job expose its summary +
+  // summaryStatus, and lets the history list hide these derived rows.
+  audioUploadId: text("audio_upload_id").references(
+    () => AudioTranscriptionJobs.uploadId,
+    { onDelete: "cascade" },
+  ),
 });
 
 export const users = pgTable("users", {
