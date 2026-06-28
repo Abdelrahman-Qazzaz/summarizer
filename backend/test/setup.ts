@@ -22,3 +22,9 @@ vi.mock("../services/api/src/rateLimit/storage", async () => {
   );
   return { createRateLimitStore: createMockRateLimitStore };
 });
+
+// createApp() runs a fail-fast preflight against real third-party services.
+// Tests build the app against fake hosts, so stub the preflight to a no-op.
+vi.mock("../services/api/startup", () => ({
+  verifyApiServices: vi.fn(async () => {}),
+}));
