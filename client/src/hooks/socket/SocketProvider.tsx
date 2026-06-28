@@ -4,21 +4,22 @@ import { socketIoUrl } from "../../config";
 import { SocketContext } from "./context";
 
 export function SocketProvider({ children }: { children: ReactNode }) {
-  const [socket, setSocket] = useState<Socket | null>(null);
-
-  useEffect(() => {
-    const newSocket = io(socketIoUrl(), {
+  // Create the socket once via a lazy state initializer; only tear it down on unmount.
+  const [socket] = useState<Socket>(() =>
+    io(socketIoUrl(), {
       transports: ["websocket"],
       autoConnect: true,
       withCredentials: true,
-    });
+    }),
+  );
 
-    setSocket(newSocket);
-
+  useEffect(() => {
+    // Reconnect on (re)mount — covers StrictMode's mount→unmount→remount in dev.
+    socket.connect();
     return () => {
-      newSocket.disconnect();
+      socket.disconnect();
     };
-  }, []);
+  }, [socket]);
 
   return (
     <SocketContext.Provider value={socket}>{children}</SocketContext.Provider>

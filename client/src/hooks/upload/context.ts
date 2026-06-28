@@ -1,0 +1,19 @@
+import type { UploadPhase } from "../../lib/uploadJob";
+import type { SourceMode } from "../../sourceMode";
+
+export type QueueItemStatus = "processing" | "uploaded" | "error";
+
+export type QueueItem = {
+  /** Local id for the queue row (not the server uploadId). */
+  id: string;
+  fileName: string;
+  mode: SourceMode;
+  model: string;
+  phase: UploadPhase | null;
+  status: QueueItemStatus;
+  /** Server uploadId once the upload completes; drives result polling. */
+  uploadId: string | null;
+  error: string | null;
+};
+
+export type InputMethod = "file" | "text";
