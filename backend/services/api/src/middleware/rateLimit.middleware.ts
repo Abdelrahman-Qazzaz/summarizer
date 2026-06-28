@@ -4,6 +4,7 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { createRateLimitStore } from "../rateLimit/storage";
 import { RateLimitStoreUnavailableError } from "../rateLimit/errors";
 import { CTX_KEYS } from "../../../../shared/keys";
+import { logger } from "../../../../shared/logger";
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
@@ -42,7 +43,7 @@ function withStoreUnavailableHandler(
       return await limiter(c, next);
     } catch (error) {
       if (error instanceof RateLimitStoreUnavailableError) {
-        console.error("Rate limit store error:", error.cause);
+        logger.error("Rate limit store error", error.cause);
         return c.json(rateLimitUnavailableMessage, 503);
       }
       throw error;

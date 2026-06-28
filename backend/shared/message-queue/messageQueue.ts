@@ -1,6 +1,7 @@
 import amqplib from "amqplib";
 import type { Channel, ChannelModel, ConsumeMessage } from "amqplib";
 import { getBaseEnv } from "../env";
+import { logger } from "../logger";
 import type { MQQueues } from "../types/mq.types";
 
 class MQ {
@@ -47,7 +48,7 @@ class MQ {
         await handler(data);
         this.channel.ack(msg);
       } catch (err) {
-        console.error("Failed to process message", err);
+        logger.error("Failed to process message", err, { queue });
         this.channel.nack(msg, false, false);
       }
     });
