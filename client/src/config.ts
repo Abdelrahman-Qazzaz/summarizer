@@ -22,6 +22,14 @@ export function jobEndpoint(uploadId: string): string {
   return `${apiBase}/jobs/${uploadId}`;
 }
 
+export function jobsListEndpoint(): string {
+  return `${apiBase}/jobs`;
+}
+
+export function jobRerunEndpoint(uploadId: string): string {
+  return `${apiBase}/jobs/${uploadId}/rerun`;
+}
+
 export function modelsEndpoint(): string {
   return `${apiBase}/models`;
 }

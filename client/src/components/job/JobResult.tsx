@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Job } from "../../lib/jobs";
+import { downloadTextFile, resultFileName } from "../../lib/download";
 
 type JobResultProps = {
   job: Job;
@@ -45,6 +46,58 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function DownloadButton({ filename, content }: { filename: string; content: string }) {
+  return (
+    <button
+      onClick={() => downloadTextFile(filename, content)}
+      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+        text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-lg
+        hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-150"
+    >
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+      Download
+    </button>
+  );
+}
+
+function ResultSection({
+  title,
+  content,
+  downloadName,
+}: {
+  title: string;
+  content: string;
+  downloadName: string;
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+        <div className="flex items-center gap-2">
+          <CopyButton text={content} />
+          <DownloadButton filename={downloadName} content={content} />
+        </div>
+      </div>
+      <div className="p-4">
+        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+          {content}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function EmptySection({ label }: { label: string }) {
+  return (
+    <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl">
+      <p className="text-sm text-gray-600 dark:text-gray-400">No {label} available yet.</p>
+    </div>
+  );
+}
+
 export function JobResult({ job }: JobResultProps) {
   if (job.status === "failed") {
     return (
@@ -73,50 +126,39 @@ export function JobResult({ job }: JobResultProps) {
     return null;
   }
 
-  const content = job.kind === "text" ? job.summary : job.transcript;
-  const title = job.kind === "text" ? "Summary" : "Transcript";
-
-  if (!content) {
-    return (
-      <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl">
-        <p className="text-sm text-gray-600 dark:text-gray-400">No {title.toLowerCase()} available.</p>
-      </div>
+  if (job.kind === "text") {
+    return job.summary ? (
+      <ResultSection
+        title="Summary"
+        content={job.summary}
+        downloadName={resultFileName(job.fileName, "summary")}
+      />
+    ) : (
+      <EmptySection label="summary" />
     );
   }
 
+  // Audio: show summary (if the downstream summarize step produced one) + transcript.
   return (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm">
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
-            {job.kind === "text" ? (
-              <svg className="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-            )}
-          </div>
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
-        </div>
-        <CopyButton text={content} />
-      </div>
-
-      <div className="p-4">
-        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-          {content}
-        </p>
-      </div>
-
-      <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          From: {job.fileName}
-        </p>
-      </div>
+    <div className="space-y-4">
+      {job.summary ? (
+        <ResultSection
+          title="Summary"
+          content={job.summary}
+          downloadName={resultFileName(job.fileName, "summary")}
+        />
+      ) : (
+        <EmptySection label="summary" />
+      )}
+      {job.transcript ? (
+        <ResultSection
+          title="Transcript"
+          content={job.transcript}
+          downloadName={resultFileName(job.fileName, "transcript")}
+        />
+      ) : (
+        <EmptySection label="transcript" />
+      )}
     </div>
   );
 }
