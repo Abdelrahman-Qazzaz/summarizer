@@ -1,3 +1,5 @@
+import { logger } from "./logger";
+
 export type ServiceCheck = {
   /** Human-readable service name, shown in the startup error. */
   name: string;
@@ -20,6 +22,9 @@ export async function verifyServices(checks: ServiceCheck[]): Promise<void> {
   );
 
   if (failures.length > 0) {
+    for (const { name, reason } of failures) 
+      logger.error(`Service unavailable at startup: ${name}`, reason);
+    
     const detail = failures
       .map(({ name, reason }) => {
         const message = reason instanceof Error ? reason.message : String(reason);

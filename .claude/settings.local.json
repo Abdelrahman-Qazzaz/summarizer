@@ -7,7 +7,9 @@
       "Bash(cat src/config.ts)",
       "Bash(cat src/lib/models.ts)",
       "Bash(node -e \"console.log\\(require.resolve\\('@supabase/supabase-js'\\)\\)\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(npx vitest *)"
     ]
   }
 }

@@ -4,6 +4,7 @@ import { verify } from "hono/jwt";
 import { getApiEnv } from "../../../../shared/env";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../../shared/keys";
+import { logger } from "../../../../shared/logger";
 
 export const requireAuth = createMiddleware(async (c, next) => {
   const token = getCookie(c, COOKIE_KEYS.session);
@@ -16,7 +17,8 @@ export const requireAuth = createMiddleware(async (c, next) => {
     }
     c.set(CTX_KEYS.userId, userId);
     await next();
-  } catch {
+  } catch (error) {
+    logger.debug("Session token verification failed", { error: String(error) });
     return c.json({ message: "Unauthorized" }, 401);
   }
 });

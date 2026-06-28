@@ -10,6 +10,9 @@ import { transcribe } from "../../../shared/ai/transcribe";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { randomUUID } from "crypto";
 import { DEFAULT_MODELS } from "../../../shared/ai/ai_client";
+import { logger } from "../../../shared/logger";
+
+const log = logger.child({ worker: "transcribe" });
 
 export async function handleTranscribeJob(uploadId: UploadId) {
   const TABLE = AudioTranscriptionJobs;
@@ -24,7 +27,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
 
     const audio = await getAudioFile(uploadId);
     const transcript = await transcribe(DEFAULT_MODELS.TRANSCRIBE, audio);
-    console.log("trnascript:::", transcript);
+    log.debug("Transcription produced", { uploadId, length: transcript.length });
     const textUploadId: UploadId = randomUUID();
     await db
       .update(TABLE)
@@ -47,6 +50,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     });
     await mq.sendEvent(mq.queues.SUMMARIZE, textUploadId);
   } catch (err) {
+    log.error("Transcription job failed", err, { uploadId });
     await db
       .update(TABLE)
       .set({ status: "failed" })

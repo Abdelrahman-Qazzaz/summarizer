@@ -3,7 +3,9 @@ import { parse } from "hono/utils/cookie";
 import { verify } from "hono/jwt";
 import { COOKIE_KEYS } from "../../../../shared/keys";
 import { getApiEnv } from "../../../../shared/env";
+import { logger } from "../../../../shared/logger";
 
+const log = logger.child({ component: "socket" });
 const port = getApiEnv().WS_PORT;
 export function startSocketServer() {
   const io = new Server(port, {
@@ -24,14 +26,15 @@ export function startSocketServer() {
       // socket.data.userId = userId;
       socket.join(userId);
       next();
-    } catch {
+    } catch (error) {
+      log.debug("Socket auth rejected", { error: String(error) });
       return next(new Error("Unauthorized"));
     }
   });
   io.on("connection", (socket) => {
-    console.log("Client connected:", socket.id);
+    log.info("Client connected", { socketId: socket.id });
     socket.on("disconnect", (reason) => {
-      console.log("Client disconnected:", socket.id, reason);
+      log.info("Client disconnected", { socketId: socket.id, reason });
     });
   });
 

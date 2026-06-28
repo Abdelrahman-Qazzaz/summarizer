@@ -4,6 +4,9 @@ import { and, eq } from "drizzle-orm";
 import { readTextFile } from "../../../shared/bucket";
 import { summarize } from "../../../shared/ai/summarize";
 import { mq } from "../../../shared/message-queue/messageQueue";
+import { logger } from "../../../shared/logger";
+
+const log = logger.child({ worker: "summarize" });
 
 export async function handleSummarizeJob(uploadId: UploadId) {
   const TABLE = TextSummarizationJobs;
@@ -26,6 +29,7 @@ export async function handleSummarizeJob(uploadId: UploadId) {
     const userId = job.userId;
     await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId, userId });
   } catch (err) {
+    log.error("Summarization job failed", err, { uploadId });
     await db
       .update(TABLE)
       .set({ status: "failed" })
