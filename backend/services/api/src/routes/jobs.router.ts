@@ -15,3 +15,5 @@ jobsRouter.get(
   validateReqParams(jobReqParamSchema),
   jobsController.handleGetJob,
 );
+
+jobsRouter.get("/",jobsController.getUserJobs)
