@@ -7,7 +7,7 @@ export const jobStatusEnum = pgEnum("job_status", [
   "processing",
   "completed",
   "failed",
-]);
+] as const);
 
 /** Speech jobs after audio upload (transcription pipeline). */
 export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
