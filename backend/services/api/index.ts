@@ -8,11 +8,10 @@ import { mq } from "../../shared/message-queue/messageQueue";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 
+// createApp() runs the fail-fast preflight: if any third-party dependency is
+// down (incl. RabbitMQ, which it also connects), the API never starts.
 const app = await createApp();
 export const port = env.PORT;
-
-// Fail fast: if any third-party dependency is down, the API never starts.
-
 
 export const io = await startSocketServer();
 mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId, userId }) => {
