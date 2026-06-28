@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-const { mockLimit, mockWhere, mockFrom, mockSelect } = vi.hoisted(() => ({
-  mockLimit: vi.fn(),
-  mockWhere: vi.fn(),
-  mockFrom: vi.fn(),
-  mockSelect: vi.fn(),
-}));
+const { mockLimit, mockWhere, mockFrom, mockSelect, mockOrderBy } = vi.hoisted(
+  () => ({
+    mockLimit: vi.fn(),
+    mockWhere: vi.fn(),
+    mockFrom: vi.fn(),
+    mockSelect: vi.fn(),
+    mockOrderBy: vi.fn(),
+  }),
+);
 
 vi.mock("../../shared/db", () => ({
   db: { select: mockSelect },
