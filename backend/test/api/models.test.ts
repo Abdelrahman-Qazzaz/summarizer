@@ -40,13 +40,13 @@ describe("GET /models", () => {
   });
 
   it("returns 401 without a session cookie", async () => {
-    const res = await createApp().request("http://localhost/models");
+    const res = await (await createApp()).request("http://localhost/models");
     expect(res.status).toBe(401);
     expect(mockGetModelData).not.toHaveBeenCalled();
   });
 
   it("returns modelData for a valid session", async () => {
-    const res = await createApp().request("http://localhost/models", {
+    const res = await (await createApp()).request("http://localhost/models", {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(200);
@@ -55,7 +55,7 @@ describe("GET /models", () => {
   });
 
   it("returns RateLimit draft-6 headers on success", async () => {
-    const res = await createApp().request("http://localhost/models", {
+    const res = await (await createApp()).request("http://localhost/models", {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(200);
