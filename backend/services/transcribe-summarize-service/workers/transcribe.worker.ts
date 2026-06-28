@@ -47,6 +47,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
       fileName,
       sizeBytes,
       chosenModelId,
+      audioUploadId: uploadId,
     });
     await mq.sendEvent(mq.queues.SUMMARIZE, textUploadId);
   } catch (err) {

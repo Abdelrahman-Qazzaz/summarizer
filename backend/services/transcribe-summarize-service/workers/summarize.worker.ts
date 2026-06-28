@@ -27,7 +27,10 @@ export async function handleSummarizeJob(uploadId: UploadId) {
       .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
 
     const userId = job.userId;
-    await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId, userId });
+    // For audio-derived summaries the client tracks the parent audio job, so
+    // notify that id; for direct text uploads this is the job's own id.
+    const notifyId = job.audioUploadId ?? uploadId;
+    await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId: notifyId, userId });
   } catch (err) {
     log.error("Summarization job failed", err, { uploadId });
     await db
