@@ -99,7 +99,7 @@ describe("POST /upload/text", () => {
   });
 
   it("returns 401 without a session cookie", async () => {
-    const res = await createApp().request("http://localhost/upload/text", {
+    const res = await (await createApp()).request("http://localhost/upload/text", {
       method: "POST",
       body: textUploadBody(),
     });
@@ -110,7 +110,7 @@ describe("POST /upload/text", () => {
   it("returns 400 when file field is missing", async () => {
     const formData = new FormData();
     formData.append("chosenModelId", VALID_MODEL);
-    const res = await createApp().request("http://localhost/upload/text", {
+    const res = await (await createApp()).request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: formData,
@@ -122,7 +122,7 @@ describe("POST /upload/text", () => {
   });
 
   it("returns 413 when text file is too large", async () => {
-    const res = await createApp().request("http://localhost/upload/text", {
+    const res = await (await createApp()).request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: textUploadBody("x".repeat(MAX_TEXT_BYTES + 1)),
@@ -135,7 +135,7 @@ describe("POST /upload/text", () => {
   });
 
   it("uploads text and enqueues summarize", async () => {
-    const res = await createApp().request("http://localhost/upload/text", {
+    const res = await (await createApp()).request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: textUploadBody("sample text"),
@@ -174,7 +174,7 @@ describe("POST /upload/audio", () => {
   });
 
   it("returns 400 when file field is missing", async () => {
-    const res = await createApp().request("http://localhost/upload/audio", {
+    const res = await (await createApp()).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: new FormData(),
@@ -185,7 +185,7 @@ describe("POST /upload/audio", () => {
   // Streams a real 100MB+ body through multipart parsing, so it needs a
   // generous timeout beyond the 5s default.
   it("returns 413 when audio file is too large", async () => {
-    const res = await createApp().request("http://localhost/upload/audio", {
+    const res = await (await createApp()).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: audioUploadBody(MAX_AUDIO_BYTES + 1),
@@ -198,7 +198,7 @@ describe("POST /upload/audio", () => {
   }, 20000);
 
   it("returns 400 for invalid source", async () => {
-    const res = await createApp().request("http://localhost/upload/audio", {
+    const res = await (await createApp()).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: audioUploadBody(100, { source: "invalid" }),
@@ -210,7 +210,7 @@ describe("POST /upload/audio", () => {
   });
 
   it("uploads audio and enqueues transcribe", async () => {
-    const res = await createApp().request("http://localhost/upload/audio", {
+    const res = await (await createApp()).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: audioUploadBody(100, { source: "video", fileName: "clip.mp3" }),

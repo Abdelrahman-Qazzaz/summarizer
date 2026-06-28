@@ -33,19 +33,19 @@ import { COOKIE_KEYS } from "../../shared/keys";
 
 describe("GET /auth/me", () => {
   it("returns 401 without a session cookie", async () => {
-    const res = await createApp().request("http://localhost/auth/me");
+    const res = await (await createApp()).request("http://localhost/auth/me");
     expect(res.status).toBe(401);
   });
 
   it("returns 401 for an invalid session cookie", async () => {
-    const res = await createApp().request("http://localhost/auth/me", {
+    const res = await (await createApp()).request("http://localhost/auth/me", {
       headers: { Cookie: `${COOKIE_KEYS.session}=not.a.valid.jwt` },
     });
     expect(res.status).toBe(401);
   });
 
   it("returns userId for a valid session", async () => {
-    const res = await createApp().request("http://localhost/auth/me", {
+    const res = await (await createApp()).request("http://localhost/auth/me", {
       headers: { Cookie: await sessionCookieHeader("user_01TEST") },
     });
     expect(res.status).toBe(200);
@@ -68,7 +68,7 @@ describe("GET /auth/login", () => {
   });
 
   it("redirects to the WorkOS authorization URL", async () => {
-    const res = await createApp().request("http://localhost/auth/login", {
+    const res = await (await createApp()).request("http://localhost/auth/login", {
       redirect: "manual",
     });
     expect(res.status).toBe(302);
@@ -89,12 +89,12 @@ describe("GET /auth/callback", () => {
   });
 
   it("returns 400 when code is missing (route exists)", async () => {
-    const res = await createApp().request("http://localhost/auth/callback");
+    const res = await (await createApp()).request("http://localhost/auth/callback");
     expect(res.status).toBe(400);
   });
 
   it("exchanges code, sets session cookie, and redirects to client", async () => {
-    const res = await createApp().request(
+    const res = await (await createApp()).request(
       "http://localhost/auth/callback?code=oauth_code_123",
       { redirect: "manual" },
     );
@@ -109,7 +109,7 @@ describe("GET /auth/callback", () => {
 
 describe("POST /auth/logout", () => {
   it("clears the session cookie", async () => {
-    const res = await createApp().request("http://localhost/auth/logout", {
+    const res = await (await createApp()).request("http://localhost/auth/logout", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01TEST") },
     });

@@ -24,7 +24,7 @@ describe("GET /jobs/:uploadId", () => {
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
   });
   it("returns 401 without a session cookie", async () => {
-    const res = await createApp().request(`http://localhost/jobs/${uploadId}`);
+    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`);
     expect(res.status).toBe(401);
     expect(mockSelect).not.toHaveBeenCalled();
   });
@@ -39,7 +39,7 @@ describe("GET /jobs/:uploadId", () => {
       },
     ]);
     const userId = "user_01OWNER";
-    const res = await createApp().request(`http://localhost/jobs/${uploadId}`, {
+    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader(userId) },
     });
     expect(res.status).toBe(200);
@@ -65,7 +65,7 @@ describe("GET /jobs/:uploadId", () => {
         },
       ]);
     const userId = "user_01OWNER";
-    const res = await createApp().request(`http://localhost/jobs/${uploadId}`, {
+    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader(userId) },
     });
     expect(res.status).toBe(200);
@@ -80,7 +80,7 @@ describe("GET /jobs/:uploadId", () => {
   });
   it("returns 404 when no job exists for the user", async () => {
     mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
-    const res = await createApp().request(`http://localhost/jobs/${uploadId}`, {
+    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01OTHER") },
     });
     expect(res.status).toBe(404);
