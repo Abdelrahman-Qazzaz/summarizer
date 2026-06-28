@@ -9,7 +9,12 @@
       "Bash(node -e \"console.log\\(require.resolve\\('@supabase/supabase-js'\\)\\)\")",
       "Bash(npm run *)",
       "Bash(npm test *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(file test/sample/*)",
+      "Bash(grep -iE \"^\\(postgres|pg\\)$\")",
+      "Bash(npm install *)",
+      "Bash(npm uninstall *)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }
