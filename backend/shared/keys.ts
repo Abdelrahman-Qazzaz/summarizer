@@ -5,6 +5,11 @@ const chosenModelId = "chosenModelId";
 export const CTX_KEYS = {
   userId: "userId",
   uploadId: "uploadId",
+  limit: "limit",
+  cursor: "cursor",
+  status: "status",
+  kind: "kind",
+  q: "q",
 
   uploadFile,
   chosenModelId,
