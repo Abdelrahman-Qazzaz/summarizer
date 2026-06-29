@@ -18,16 +18,22 @@ export function JobDetailPage() {
   const [rerunOpen, setRerunOpen] = useState(false);
 
   const handleDelete = () => {
-    if (!uploadId) return;
+    if (!uploadId || !job) return;
     if (window.confirm("Delete this job? This can't be undone.")) {
-      deleteMutation.mutate(uploadId, { onSuccess: () => navigate("/history") });
+      deleteMutation.mutate(
+        { uploadId, kind: job.kind },
+        { onSuccess: () => navigate("/history") },
+      );
     }
   };
 
-  const handleRerun = (modelId: string) => {
-    if (!uploadId) return;
+  const handleRerun = (models: {
+    chosenModelId: string;
+    transcriptionModelId?: string;
+  }) => {
+    if (!uploadId || !job) return;
     rerunMutation.mutate(
-      { uploadId, chosenModelId: modelId },
+      { uploadId, kind: job.kind, ...models },
       {
         onSuccess: (newUploadId) => {
           setRerunOpen(false);
