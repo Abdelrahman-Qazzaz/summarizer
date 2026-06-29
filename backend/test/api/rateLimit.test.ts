@@ -24,6 +24,7 @@ vi.mock("../../shared/db", () => ({
   db: { select: mockSelect },
   TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
   AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
+  jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
 }));
 
 vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {
@@ -65,9 +66,12 @@ describe("rate limiting", () => {
         error: null,
       },
     ]);
-    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-    });
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/summarize/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader("user_01") },
+      },
+    );
     expect(res.status).toBe(200);
   });
 
