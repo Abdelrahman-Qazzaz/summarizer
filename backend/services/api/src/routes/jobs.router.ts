@@ -25,6 +25,17 @@ jobsRouter.get(
   jobsController.handleGetSummarizeJob,
 );
 
+jobsRouter.delete(
+  `/transcribe/:${CTX_KEYS.uploadId}`,
+  validateReqParams(jobReqParamSchema),
+  jobsController.handleDeleteTranscribeJob,
+);
+jobsRouter.delete(
+  `/summarize/:${CTX_KEYS.uploadId}`,
+  validateReqParams(jobReqParamSchema),
+  jobsController.handleDeleteSummarizeJob,
+);
+
 jobsRouter.get(
   "/",
   validateReqQuery(jobsListQuerySchema),
