@@ -2,9 +2,9 @@ import type { UploadId } from "../../../shared/types/mq.types";
 import { db, TextSummarizationJobs } from "../../../shared/db";
 import { and, eq } from "drizzle-orm";
 import { readTextFile } from "../../../shared/bucket";
-import { summarize } from "../../../shared/ai/summarize";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { logger } from "../../../shared/logger";
+import { promptAI } from "../../../shared/ai/ai_client";
 
 const log = logger.child({ worker: "summarize" });
 
@@ -19,7 +19,10 @@ export async function handleSummarizeJob(uploadId: UploadId) {
 
     if (!job) return;
     const text = await readTextFile(uploadId);
-    const summary = await summarize(job.chosenModelId, text);
+    const summary = await promptAI(
+      job.chosenModelId,
+      `Summarize the following text:\n\n${text}`,
+    );
 
     await db
       .update(TABLE)
@@ -30,7 +33,10 @@ export async function handleSummarizeJob(uploadId: UploadId) {
     // For audio-derived summaries the client tracks the parent audio job, so
     // notify that id; for direct text uploads this is the job's own id.
     const notifyId = job.audioUploadId ?? uploadId;
-    await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId: notifyId, userId });
+    await mq.sendEvent(mq.queues.SUMMARIZE_DONE, {
+      uploadId: notifyId,
+      userId,
+    });
   } catch (err) {
     log.error("Summarization job failed", err, { uploadId });
     await db
