@@ -36,9 +36,14 @@ vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {
   };
 });
 
-vi.mock("../../shared/ai/ai_client", () => ({
-  getModelData: mockGetModelData,
-}));
+vi.mock("../../shared/ai/ai_client", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/ai/ai_client")>();
+  return {
+    ...actual, // preserves DEFAULT_MODELS, used at upload.schema import time
+    getModelData: mockGetModelData,
+  };
+});
 
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
