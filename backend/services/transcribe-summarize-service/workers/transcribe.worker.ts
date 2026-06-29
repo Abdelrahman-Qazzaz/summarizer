@@ -26,9 +26,9 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     if (!job) return;
 
     const audio = await getAudioFile(uploadId);
-    const transcript = await transcribe(DEFAULT_MODELS.TRANSCRIBE, audio);
+    const model = job.transcriptionModelId ?? DEFAULT_MODELS.TRANSCRIBE;
+    const transcript = await transcribe(model, audio);
     log.debug("Transcription produced", { uploadId, length: transcript.length });
-    const textUploadId: UploadId = randomUUID();
     await db
       .update(TABLE)
       .set({ status: "completed" })
@@ -38,17 +38,38 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     const chosenModelId = job.chosenModelId;
     await mq.sendEvent(mq.queues.TRANSCRIBE_DONE, { uploadId, userId });
 
-    await uploadTextToBucket(textUploadId, transcript);
     const fileName = `${job.fileName}.txt`;
     const sizeBytes = Buffer.byteLength(transcript, "utf8");
-    await db.insert(TextSummarizationJobs).values({
-      uploadId: textUploadId,
-      userId,
-      fileName,
-      sizeBytes,
-      chosenModelId,
-      audioUploadId: uploadId,
-    });
+
+    // Re-summarization rides on a child text row linked back via audioUploadId.
+    // Reuse it on a re-run (idempotent) instead of inserting a duplicate.
+    const [existing] = await db
+      .select({ uploadId: TextSummarizationJobs.uploadId })
+      .from(TextSummarizationJobs)
+      .where(eq(TextSummarizationJobs.audioUploadId, uploadId))
+      .limit(1);
+
+    const textUploadId: UploadId =
+      (existing?.uploadId as UploadId) ?? randomUUID();
+    await uploadTextToBucket(textUploadId, transcript);
+
+    if (existing) {
+      // Reset the summary so the new transcript is summarized afresh with the
+      // (possibly updated) model carried on the audio job.
+      await db
+        .update(TextSummarizationJobs)
+        .set({ status: "queued", summary: null, error: null, sizeBytes, chosenModelId })
+        .where(eq(TextSummarizationJobs.uploadId, textUploadId));
+    } else {
+      await db.insert(TextSummarizationJobs).values({
+        uploadId: textUploadId,
+        userId,
+        fileName,
+        sizeBytes,
+        chosenModelId,
+        audioUploadId: uploadId,
+      });
+    }
     await mq.sendEvent(mq.queues.SUMMARIZE, textUploadId);
   } catch (err) {
     log.error("Transcription job failed", err, { uploadId });

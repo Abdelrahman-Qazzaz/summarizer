@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../../shared/keys";
-import { validateModel } from "../../../../shared/ai/ai_client";
+import { validateModel, DEFAULT_MODELS } from "../../../../shared/ai/ai_client";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
@@ -50,6 +50,11 @@ export const audioUploadSchema = z
         .default("audio"),
     ),
     [FORM_KEYS.chosenModelId]: z.string().min(1),
+    // Optional; omit (or send empty) to use the default transcription model.
+    [FORM_KEYS.transcriptionModelId]: z.preprocess(
+      (v) => (v === "" || v === null ? undefined : v),
+      z.string().min(1).optional().default(DEFAULT_MODELS.TRANSCRIBE),
+    ),
   })
   .superRefine(async (data, ctx) => {
     if (data[FORM_KEYS.uploadFile].size > MAX_AUDIO_BYTES) {
@@ -66,9 +71,17 @@ export const audioUploadSchema = z
         path: [FORM_KEYS.chosenModelId],
       });
     }
+    if (!(await validateModel(data[FORM_KEYS.transcriptionModelId]))) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid transcription model",
+        path: [FORM_KEYS.transcriptionModelId],
+      });
+    }
   })
   .transform((data) => ({
     [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
     [CTX_KEYS.chosenModelId]: data[FORM_KEYS.chosenModelId],
+    [CTX_KEYS.transcriptionModelId]: data[FORM_KEYS.transcriptionModelId],
     [CTX_KEYS.audioSource]: data[FORM_KEYS.audioSource],
   }));

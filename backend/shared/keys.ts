@@ -1,6 +1,7 @@
 const uploadFile = "uploadFile";
 const audioSource = "audioSource";
 const chosenModelId = "chosenModelId";
+const transcriptionModelId = "transcriptionModelId";
 
 export const CTX_KEYS = {
   userId: "userId",
@@ -13,12 +14,14 @@ export const CTX_KEYS = {
 
   uploadFile,
   chosenModelId,
+  transcriptionModelId,
   audioSource,
 } as const;
 
 export const FORM_KEYS = {
   uploadFile,
   chosenModelId,
+  transcriptionModelId,
   audioSource,
 } as const;
 

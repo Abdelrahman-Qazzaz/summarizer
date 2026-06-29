@@ -24,6 +24,7 @@ uploadRouter.post(
     FORM_KEYS.uploadFile,
     FORM_KEYS.audioSource,
     FORM_KEYS.chosenModelId,
+    FORM_KEYS.transcriptionModelId,
   ]),
   uploadController.handleAudioUpload,
 );
