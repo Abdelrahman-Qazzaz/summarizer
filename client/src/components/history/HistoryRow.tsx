@@ -20,7 +20,7 @@ export function HistoryRow({ job }: { job: JobSummary }) {
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     if (window.confirm(`Delete “${job.fileName}”? This can't be undone.`)) {
-      deleteMutation.mutate(job.uploadId);
+      deleteMutation.mutate({ uploadId: job.uploadId, kind: job.kind });
     }
   };
 
