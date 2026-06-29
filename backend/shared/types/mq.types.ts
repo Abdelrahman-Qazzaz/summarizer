@@ -14,4 +14,10 @@ export type SummarizeDoneEvent = {
   userId: string;
 };
 
+export type SummarizeChunkEvent = {
+  uploadId: UploadId;
+  userId: string;
+  delta: string;
+};
+
 export type MQQueues = (typeof mq.queues)[keyof typeof mq.queues];
