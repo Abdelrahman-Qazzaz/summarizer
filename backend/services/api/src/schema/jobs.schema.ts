@@ -37,7 +37,16 @@ export const jobCursorSchema = z.object({
 });
 export type JobCursor = z.infer<typeof jobCursorSchema>;
 
-/** Body for re-running a job's summarization with a different model. */
+/** Body for re-summarizing an existing transcript/text with a different model. */
 export const jobRerunBodySchema = z.object({
+  [CTX_KEYS.chosenModelId]: z.string().min(1),
+});
+
+/**
+ * Body for re-running an audio job: a new transcription model produces a fresh
+ * transcript, then it's re-summarized with the given summary model.
+ */
+export const jobTranscribeRerunBodySchema = z.object({
+  [CTX_KEYS.transcriptionModelId]: z.string().min(1),
   [CTX_KEYS.chosenModelId]: z.string().min(1),
 });

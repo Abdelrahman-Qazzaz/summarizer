@@ -12,6 +12,7 @@ import {
   jobReqParamSchema,
   jobsListQuerySchema,
   jobRerunBodySchema,
+  jobTranscribeRerunBodySchema,
 } from "../schema/jobs.schema";
 
 export const jobsRouter = new Hono();
@@ -44,7 +45,7 @@ jobsRouter.delete(
 jobsRouter.post(
   `/transcribe/:${CTX_KEYS.uploadId}/rerun`,
   validateReqParams(jobReqParamSchema),
-  validateReqBody(jobRerunBodySchema),
+  validateReqBody(jobTranscribeRerunBodySchema),
   jobsController.handleRerunTranscribeJob,
 );
 jobsRouter.post(
