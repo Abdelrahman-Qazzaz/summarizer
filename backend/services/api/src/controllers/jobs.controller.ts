@@ -279,45 +279,37 @@ export async function handleRerunSummarizeJob(c: Context) {
 }
 
 /**
- * Re-run an audio job with a different model. The transcript already exists, so
- * this only re-summarizes it — the summary lives on the derived text row that
- * points back here via `audioUploadId`. Returns the audio id the client tracks.
+ * Re-run an audio job end to end: transcribe again with a new transcription
+ * model and re-summarize the fresh transcript with a new summary model. Resets
+ * the audio job to `queued` and re-enqueues TRANSCRIBE; the worker reuses the
+ * existing child summary row and propagates the new summary model to it.
+ * Returns the audio id the client tracks.
  */
 export async function handleRerunTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const uploadId = c.get(CTX_KEYS.uploadId);
+  const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
 
-  if (!(await validateModel(chosenModelId)))
+  if (
+    !(await validateModel(transcriptionModelId)) ||
+    !(await validateModel(chosenModelId))
+  )
     return c.json({ message: "Invalid model" }, 400);
 
-  const [audioJob] = await db
-    .select({ uploadId: AudioTranscriptionJobs.uploadId })
-    .from(AudioTranscriptionJobs)
+  const [job] = await db
+    .update(AudioTranscriptionJobs)
+    .set({ status: "queued", error: null, transcriptionModelId, chosenModelId })
     .where(
       and(
         eq(AudioTranscriptionJobs.uploadId, uploadId),
         eq(AudioTranscriptionJobs.userId, userId),
       ),
     )
-    .limit(1);
-
-  if (!audioJob) return c.json({ message: "Job not found" }, 404);
-
-  const [child] = await db
-    .update(TextSummarizationJobs)
-    .set({ status: "queued", summary: null, error: null, chosenModelId })
-    .where(
-      and(
-        eq(TextSummarizationJobs.audioUploadId, uploadId),
-        eq(TextSummarizationJobs.userId, userId),
-      ),
-    )
     .returning();
 
-  if (!child) return c.json({ message: "Transcript not ready" }, 409);
+  if (!job) return c.json({ message: "Job not found" }, 404);
 
-  // Summarize the transcript row; the worker notifies the parent audio id.
-  await mq.sendEvent(mq.queues.SUMMARIZE, child.uploadId);
+  await mq.sendEvent(mq.queues.TRANSCRIBE, uploadId);
   return c.json({ uploadId });
 }

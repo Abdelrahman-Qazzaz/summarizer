@@ -29,6 +29,7 @@ export async function handleAudioUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const file = c.get(CTX_KEYS.uploadFile);
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
+  const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
 
   const source = c.get(CTX_KEYS.audioSource);
 
@@ -43,6 +44,7 @@ export async function handleAudioUpload(c: Context) {
     mimeType: file.type || null,
     sizeBytes: file.size,
     chosenModelId,
+    transcriptionModelId,
   });
 
   await mq.sendEvent(mq.queues.TRANSCRIBE, uploadId);
