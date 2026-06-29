@@ -68,6 +68,14 @@ export async function getAudioFile(uploadId: UploadId) {
   if (error) throw error;
   return data; // Blob
 }
+export async function deleteFileFromBucket(uploadId: UploadId) {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .remove([uploadId]);
+
+  if (error) throw error;
+  return data;
+}
 /**
  * If you need to read it back from a private bucket, generate a signed URL.
  */
