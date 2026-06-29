@@ -10,6 +10,7 @@ const {
   mockSet,
   mockUpdate,
   mockInsert,
+  mockSelect,
   mockGetAudioFile,
   mockTranscribe,
   mockUploadTextToBucket,
@@ -20,6 +21,7 @@ const {
   mockSet: vi.fn(),
   mockUpdate: vi.fn(),
   mockInsert: vi.fn(),
+  mockSelect: vi.fn(),
   mockGetAudioFile: vi.fn(),
   mockTranscribe: vi.fn(),
   mockUploadTextToBucket: vi.fn(),
@@ -49,12 +51,15 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
 }));
 
 vi.mock("../../shared/db", () => ({
-  db: { update: mockUpdate, insert: mockInsert },
+  db: { update: mockUpdate, insert: mockInsert, select: mockSelect },
   AudioTranscriptionJobs: {
     uploadId: "upload_id",
     status: "status",
   },
-  TextSummarizationJobs: {},
+  TextSummarizationJobs: {
+    uploadId: "upload_id",
+    audioUploadId: "audio_upload_id",
+  },
 }));
 
 import { handleTranscribeJob } from "../../services/transcribe-summarize-service/workers/transcribe.worker";
@@ -82,6 +87,14 @@ describe("handleTranscribeJob", () => {
     mockSendEvent.mockResolvedValue(undefined);
     mockInsert.mockReturnValue({
       values: vi.fn().mockResolvedValue(undefined),
+    });
+    // No existing child summary row → worker takes the insert (first-run) path.
+    mockSelect.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
     });
     setupUpdateChain([
       {
