@@ -13,13 +13,14 @@ vi.mock("../../shared/db", () => ({
   db: { select: mockSelect },
   TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
   AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
+  jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
 }));
 
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
 const uploadId = "550e8400-e29b-41d4-a716-446655440000";
 
-describe("GET /jobs/:uploadId", () => {
+describe("GET /jobs/summarize/:uploadId", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockWhere.mockImplementation(() => ({ limit: mockLimit }));
@@ -27,7 +28,9 @@ describe("GET /jobs/:uploadId", () => {
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
   });
   it("returns 401 without a session cookie", async () => {
-    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`);
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/summarize/${uploadId}`,
+    );
     expect(res.status).toBe(401);
     expect(mockSelect).not.toHaveBeenCalled();
   });
@@ -42,9 +45,12 @@ describe("GET /jobs/:uploadId", () => {
       },
     ]);
     const userId = "user_01OWNER";
-    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
-    });
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/summarize/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader(userId) },
+      },
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       kind: "text",
@@ -56,9 +62,29 @@ describe("GET /jobs/:uploadId", () => {
     });
     expect(mockSelect).toHaveBeenCalledTimes(1);
   });
-  it("returns an audio job when no text job exists", async () => {
+  it("returns 404 when no text job exists for the user", async () => {
+    mockLimit.mockResolvedValueOnce([]);
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/summarize/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader("user_01OTHER") },
+      },
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ message: "Job not found" });
+    expect(mockSelect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("GET /jobs/transcribe/:uploadId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockWhere.mockImplementation(() => ({ limit: mockLimit }));
+    mockFrom.mockImplementation(() => ({ where: mockWhere }));
+    mockSelect.mockImplementation(() => ({ from: mockFrom }));
+  });
+  it("returns an audio job for the owner", async () => {
     mockLimit
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
           uploadId,
@@ -66,26 +92,34 @@ describe("GET /jobs/:uploadId", () => {
           status: "processing",
           error: null,
         },
-      ]);
+      ])
+      .mockResolvedValueOnce([]);
     const userId = "user_01OWNER";
-    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
-    });
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader(userId) },
+      },
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       kind: "audio",
       uploadId,
       fileName: "clip.mp3",
       status: "processing",
+      summary: null,
       error: null,
     });
     expect(mockSelect).toHaveBeenCalledTimes(2);
   });
-  it("returns 404 when no job exists for the user", async () => {
+  it("returns 404 when no audio job exists for the user", async () => {
     mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
-    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OTHER") },
-    });
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader("user_01OTHER") },
+      },
+    );
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Job not found" });
     expect(mockSelect).toHaveBeenCalledTimes(2);
