@@ -30,7 +30,12 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
     .notNull()
     .references(() => users.id),
 
+  // Summarization model for the downstream transcript summary.
   chosenModelId: text("chosen_model_id").notNull(),
+
+  // Model used to transcribe the audio. Null falls back to the worker default
+  // (DEFAULT_MODELS.TRANSCRIBE); a transcribe re-run overwrites it.
+  transcriptionModelId: text("transcription_model_id"),
 });
 
 export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
