@@ -15,6 +15,8 @@ import {
 } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
 import { deleteFileFromBucket } from "../../../../shared/bucket";
+import { mq } from "../../../../shared/message-queue/messageQueue";
+import { validateModel } from "../../../../shared/ai/ai_client";
 
 export async function handleGetSummarizeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -245,4 +247,77 @@ export async function handleDeleteSummarizeJob(c: Context) {
 
   await deleteFileFromBucket(uploadId);
   return c.json({ message: "Job Deleted" }, 200);
+}
+
+/**
+ * Re-summarize a directly-uploaded text job with a different model. Resets the
+ * row to `queued` (clearing the old summary/error) and re-enqueues it.
+ */
+export async function handleRerunSummarizeJob(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const uploadId = c.get(CTX_KEYS.uploadId);
+  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
+
+  if (!(await validateModel(chosenModelId)))
+    return c.json({ message: "Invalid model" }, 400);
+
+  const [job] = await db
+    .update(TextSummarizationJobs)
+    .set({ status: "queued", summary: null, error: null, chosenModelId })
+    .where(
+      and(
+        eq(TextSummarizationJobs.uploadId, uploadId),
+        eq(TextSummarizationJobs.userId, userId),
+      ),
+    )
+    .returning();
+
+  if (!job) return c.json({ message: "Job not found" }, 404);
+
+  await mq.sendEvent(mq.queues.SUMMARIZE, uploadId);
+  return c.json({ uploadId });
+}
+
+/**
+ * Re-run an audio job with a different model. The transcript already exists, so
+ * this only re-summarizes it — the summary lives on the derived text row that
+ * points back here via `audioUploadId`. Returns the audio id the client tracks.
+ */
+export async function handleRerunTranscribeJob(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const uploadId = c.get(CTX_KEYS.uploadId);
+  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
+
+  if (!(await validateModel(chosenModelId)))
+    return c.json({ message: "Invalid model" }, 400);
+
+  const [audioJob] = await db
+    .select({ uploadId: AudioTranscriptionJobs.uploadId })
+    .from(AudioTranscriptionJobs)
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.uploadId, uploadId),
+        eq(AudioTranscriptionJobs.userId, userId),
+      ),
+    )
+    .limit(1);
+
+  if (!audioJob) return c.json({ message: "Job not found" }, 404);
+
+  const [child] = await db
+    .update(TextSummarizationJobs)
+    .set({ status: "queued", summary: null, error: null, chosenModelId })
+    .where(
+      and(
+        eq(TextSummarizationJobs.audioUploadId, uploadId),
+        eq(TextSummarizationJobs.userId, userId),
+      ),
+    )
+    .returning();
+
+  if (!child) return c.json({ message: "Transcript not ready" }, 409);
+
+  // Summarize the transcript row; the worker notifies the parent audio id.
+  await mq.sendEvent(mq.queues.SUMMARIZE, child.uploadId);
+  return c.json({ uploadId });
 }

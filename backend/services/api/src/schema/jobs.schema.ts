@@ -36,3 +36,8 @@ export const jobCursorSchema = z.object({
   uploadId: z.string(),
 });
 export type JobCursor = z.infer<typeof jobCursorSchema>;
+
+/** Body for re-running a job's summarization with a different model. */
+export const jobRerunBodySchema = z.object({
+  [CTX_KEYS.chosenModelId]: z.string().min(1),
+});
