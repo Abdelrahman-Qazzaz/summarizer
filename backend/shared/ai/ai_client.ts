@@ -22,15 +22,36 @@ export async function pingAi(): Promise<void> {
 export async function promptAI(
   model: string = DEFAULT_MODELS.PROMPT,
   prompt: string,
+  opts: { onDelta?: (delta: string) => void } = {},
 ) {
-  const completion = await ai_client.chat.send({
-    chatRequest: {
-      model,
-      messages: [{ role: "user", content: prompt }],
-    },
+  const messages = [{ role: "user" as const, content: prompt }];
+
+  // Non-streaming path (unchanged): return the full content at once.
+  if (!opts.onDelta) {
+    const completion = await ai_client.chat.send({
+      chatRequest: { model, messages },
+    });
+
+    return completion.choices[0]?.message?.content ?? "";
+  }
+
+  // Streaming path: emit each delta as it arrives, but still accumulate and
+  // return the full string so callers see the same contract.
+  const stream = await ai_client.chat.send({
+    chatRequest: { model, messages, stream: true },
   });
 
-  return completion.choices[0]?.message?.content ?? "";
+  let full = "";
+  for await (const chunk of stream) {
+    if (chunk.error) throw new Error(chunk.error.message);
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) {
+      full += delta;
+      opts.onDelta(delta);
+    }
+  }
+
+  return full;
 }
 
 type ModelData = {

@@ -8,6 +8,7 @@ class MQ {
   queues = {
     TRANSCRIBE: "transcribe",
     SUMMARIZE: "summarize",
+    SUMMARIZE_CHUNK: "summarize_chunk",
     TRANSCRIBE_DONE: "transcribe_done",
     SUMMARIZE_DONE: "summarize_done",
   } as const;
