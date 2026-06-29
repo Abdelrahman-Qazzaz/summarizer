@@ -14,7 +14,15 @@
       "Bash(grep -iE \"^\\(postgres|pg\\)$\")",
       "Bash(npm install *)",
       "Bash(npm uninstall *)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npx tsc *)",
+      "Bash(grep -rn \"jobs/\\\\${uploadId}\\\\|jobs/\\\\\" +\" test/api/rateLimit.test.ts)",
+      "Bash(sed -n '/vi.mock\\(\".*ai_client/,/}\\);/p' test/api/rateLimit.test.ts)",
+      "Bash(sed -n '/vi.mock\\(\".*ai_client/,/}\\);/p' test/api/models.test.ts)",
+      "Bash(echo \"=== exit $? ===\")",
+      "Bash(echo \"=== tsc exit $? ===\")",
+      "Bash(npx eslint *)",
+      "Bash(echo \"=== eslint exit $? ===\")"
     ]
   }
 }
