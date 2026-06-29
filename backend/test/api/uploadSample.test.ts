@@ -31,6 +31,7 @@ vi.mock("../../shared/db", () => ({
   db: { insert: mockInsert },
   AudioTranscriptionJobs: {},
   TextSummarizationJobs: {},
+  jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
 }));
 
 vi.mock("../../shared/bucket", () => ({
