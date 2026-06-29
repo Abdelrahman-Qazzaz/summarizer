@@ -1,14 +1,19 @@
 import type { Context } from "hono";
-import { and, eq, ilike, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, lt, or, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   AudioTranscriptionJobs,
   db,
   TextSummarizationJobs,
 } from "../../../../shared/db";
-import { readTextFile } from "../../../../shared/bucket";
-import type { UploadId } from "../../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../../shared/keys";
-import type { JobSummaries } from "../schema/jobs.schema";
+import {
+  jobCursorSchema,
+  type JobCursor,
+  type JobStatus,
+  type JobKind,
+} from "../schema/jobs.schema";
+import { encodeCursor, decodeCursor } from "../utils/cursor";
 
 export async function handleGetSummarizeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -59,9 +64,10 @@ export async function handleGetTranscribeJob(c: Context) {
     .where(
       and(
         eq(TextSummarizationJobs.userId, userId),
-        (TextSummarizationJobs.audioUploadId, uploadId),
+        eq(TextSummarizationJobs.audioUploadId, uploadId),
       ),
-    );
+    )
+    .limit(1);
   if (audioJob)
     return c.json({
       kind: "audio" as const,
@@ -75,23 +81,133 @@ export async function handleGetTranscribeJob(c: Context) {
   return c.json({ message: "Job not found" }, 404);
 }
 
+const DEFAULT_PAGE_SIZE = 20;
+
+type AudioRow = typeof AudioTranscriptionJobs.$inferSelect;
+type TextRow = typeof TextSummarizationJobs.$inferSelect;
+type SharedCols = Extract<
+  keyof AudioRow & keyof TextRow,
+  | "uploadId"
+  | "fileName"
+  | "status"
+  | "chosenModelId"
+  | "error"
+  | "kind"
+  | "createdAt"
+>;
+
+type JobSummary = Pick<AudioRow, SharedCols> & {
+  kind: JobKind;
+};
+
+/**
+ * Newest-first ordering shared by the SQL `ORDER BY` and the in-memory merge:
+ * createdAt DESC, then uploadId DESC as a stable tiebreak so the keyset cursor
+ * is deterministic across the two tables.
+ */
+function compareDesc(a: JobSummary, b: JobSummary): number {
+  if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+  if (a.uploadId !== b.uploadId) return a.uploadId < b.uploadId ? 1 : -1;
+  return 0;
+}
+
+/**
+ * Keyset predicate: rows strictly "after" the cursor in (createdAt, uploadId)
+ * DESC order. Casts the cursor timestamp in SQL so it works regardless of the
+ * column's driver read mode.
+ */
+function afterCursor(
+  createdAtCol: AnyPgColumn,
+  uploadIdCol: AnyPgColumn,
+  cursor: JobCursor | null,
+) {
+  if (!cursor) return undefined;
+  const ts = sql`${cursor.createdAt}::timestamptz`;
+  return or(
+    lt(createdAtCol, ts),
+    and(eq(createdAtCol, ts), lt(uploadIdCol, cursor.uploadId)),
+  );
+}
+
 export async function getUserJobs(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
+  const limit: number = c.get("limit") ?? DEFAULT_PAGE_SIZE;
+  const rawCursor: string | undefined = c.get(CTX_KEYS.cursor);
+  const status: JobStatus | undefined = c.get(CTX_KEYS.status);
+  const kind: JobKind | undefined = c.get(CTX_KEYS.kind);
+  const q: string | undefined = c.get(CTX_KEYS.q);
 
-  const audio = await db
+  // A malformed/forged cursor decodes to null → fall back to the first page.
+  const cursor = rawCursor ? decodeCursor(rawCursor, jobCursorSchema) : null;
+  // Over-fetch one extra per table so we can tell whether another page exists.
+  const fetchCount = limit + 1;
+  const merged: JobSummary[] = [];
+
+  const A = AudioTranscriptionJobs;
+  const audioJobs = await db
     .select()
-    .from(AudioTranscriptionJobs)
-    .where(eq(AudioTranscriptionJobs.userId, userId));
+    .from(A)
+    .where(
+      and(
+        eq(A.userId, userId),
+        status ? eq(A.status, status) : undefined,
+        q ? ilike(A.fileName, `%${q}%`) : undefined,
+        afterCursor(A.createdAt, A.uploadId, cursor),
+      ),
+    )
+    .orderBy(desc(A.createdAt), desc(A.uploadId))
+    .limit(fetchCount);
 
-  const text = await db
+  for (const r of audioJobs) {
+    merged.push({
+      kind: "audio",
+      uploadId: r.uploadId,
+      fileName: r.fileName,
+      status: r.status,
+      createdAt: r.createdAt,
+      chosenModelId: r.chosenModelId,
+      error: r.error,
+    });
+  }
+
+  const T = TextSummarizationJobs;
+  const rows = await db
     .select()
-    .from(TextSummarizationJobs)
-    .where(eq(TextSummarizationJobs.userId, userId));
+    .from(T)
+    .where(
+      and(
+        eq(T.userId, userId),
+        // Hide audio-derived summaries; they surface via their parent audio job.
+        isNull(T.audioUploadId),
+        status ? eq(T.status, status) : undefined,
+        q ? ilike(T.fileName, `%${q}%`) : undefined,
+        afterCursor(T.createdAt, T.uploadId, cursor),
+      ),
+    )
+    .orderBy(desc(T.createdAt), desc(T.uploadId))
+    .limit(fetchCount);
 
-  const jobs: JobSummaries = { audio, text };
+  for (const r of rows) {
+    merged.push({
+      kind: "text",
+      uploadId: r.uploadId,
+      fileName: r.fileName,
+      status: r.status,
+      createdAt: r.createdAt,
+      chosenModelId: r.chosenModelId,
+      error: r.error,
+    });
+  }
 
-  return c.json({
-    jobs,
-    nextCursor,
-  });
+  // Merge the two ordered streams and keep the global newest `limit`.
+  merged.sort(compareDesc);
+  const page = merged.slice(0, limit);
+  const hasMore = merged.length > limit;
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeCursor({ createdAt: last.createdAt, uploadId: last.uploadId })
+      : null;
+
+  return c.json({ jobs: page, nextCursor });
 }
