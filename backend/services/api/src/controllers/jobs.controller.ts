@@ -14,6 +14,7 @@ import {
   type JobKind,
 } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
+import { deleteFileFromBucket } from "../../../../shared/bucket";
 
 export async function handleGetSummarizeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -210,4 +211,38 @@ export async function getUserJobs(c: Context) {
       : null;
 
   return c.json({ jobs: page, nextCursor });
+}
+
+export async function handleDeleteTranscribeJob(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const uploadId = c.get(CTX_KEYS.uploadId);
+
+  await db
+    .delete(AudioTranscriptionJobs)
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.uploadId, uploadId),
+        eq(AudioTranscriptionJobs.userId, userId),
+      ),
+    );
+
+  await deleteFileFromBucket(uploadId);
+  return c.json({ message: "Job Deleted" }, 200);
+}
+
+export async function handleDeleteSummarizeJob(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const uploadId = c.get(CTX_KEYS.uploadId);
+
+  await db
+    .delete(TextSummarizationJobs)
+    .where(
+      and(
+        eq(TextSummarizationJobs.uploadId, uploadId),
+        eq(TextSummarizationJobs.userId, userId),
+      ),
+    );
+
+  await deleteFileFromBucket(uploadId);
+  return c.json({ message: "Job Deleted" }, 200);
 }
