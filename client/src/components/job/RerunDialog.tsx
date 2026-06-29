@@ -7,38 +7,60 @@ import {
   modelLabelForMode,
   resolveDefaultModel,
 } from "../../lib/modelFilters";
-import type { JobKind } from "../../lib/jobs";
-import type { SourceMode } from "../../sourceMode";
+import type { JobKind, RerunModels } from "../../lib/jobs";
 
 type RerunDialogProps = {
   kind: JobKind;
-  currentModelId?: string | null;
   isPending: boolean;
-  onConfirm: (modelId: string) => void;
+  onConfirm: (models: RerunModels) => void;
   onClose: () => void;
 };
 
 export function RerunDialog({
   kind,
-  currentModelId,
   isPending,
   onConfirm,
   onClose,
 }: RerunDialogProps) {
   const { user } = useAuth();
   const { entries, loading, error } = useModelsQuery(!!user);
-  // Re-running re-processes the original upload, so model choices follow its kind.
-  const mode: SourceMode = kind === "audio" ? "audio" : "text";
-  // `null` means "not yet chosen" — fall back to the default for this mode.
-  const [picked, setPicked] = useState<string | null>(currentModelId ?? null);
-  const model =
-    picked ?? (entries.length > 0 ? resolveDefaultModel(entries, mode) : null);
+  const isAudio = kind === "audio";
 
-  const modelOptions = filterModelsForMode(entries, mode).map(([id, info]) => ({
-    id,
-    label: id,
-    info,
-  }));
+  // Summarization model — both kinds re-summarize. (`null` = not yet chosen.)
+  const [summaryPick, setSummaryPick] = useState<string | null>(null);
+  const summaryModel =
+    summaryPick ??
+    (entries.length > 0 ? resolveDefaultModel(entries, "text") : null);
+  const summaryOptions = filterModelsForMode(entries, "text").map(
+    ([id, info]) => ({ id, label: id, info }),
+  );
+
+  // Transcription model — audio jobs re-transcribe before re-summarizing.
+  const [transcriptionPick, setTranscriptionPick] = useState<string | null>(
+    null,
+  );
+  const transcriptionModel =
+    transcriptionPick ??
+    (entries.length > 0 ? resolveDefaultModel(entries, "audio") : null);
+  const transcriptionOptions = filterModelsForMode(entries, "audio").map(
+    ([id, info]) => ({ id, label: id, info }),
+  );
+
+  const canSubmit =
+    !!summaryModel && (!isAudio || !!transcriptionModel) && !isPending;
+
+  const handleConfirm = () => {
+    if (!summaryModel) return;
+    if (isAudio) {
+      if (!transcriptionModel) return;
+      onConfirm({
+        chosenModelId: summaryModel,
+        transcriptionModelId: transcriptionModel,
+      });
+    } else {
+      onConfirm({ chosenModelId: summaryModel });
+    }
+  };
 
   return (
     <div
@@ -52,15 +74,29 @@ export function RerunDialog({
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Re-run job</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Re-process the original upload with a different model.
+            {isAudio
+              ? "Re-transcribe the audio and re-summarize the result."
+              : "Re-summarize the original upload with a different model."}
           </p>
         </div>
 
+        {isAudio && (
+          <ModelSelector
+            label={modelLabelForMode("audio")}
+            models={transcriptionOptions}
+            value={transcriptionModel}
+            onChange={setTranscriptionPick}
+            disabled={loading || isPending}
+            loading={loading}
+            error={error}
+          />
+        )}
+
         <ModelSelector
-          label={modelLabelForMode(mode)}
-          models={modelOptions}
-          value={model}
-          onChange={setPicked}
+          label={modelLabelForMode("text")}
+          models={summaryOptions}
+          value={summaryModel}
+          onChange={setSummaryPick}
           disabled={loading || isPending}
           loading={loading}
           error={error}
@@ -75,8 +111,8 @@ export function RerunDialog({
             Cancel
           </button>
           <button
-            onClick={() => model && onConfirm(model)}
-            disabled={!model || isPending}
+            onClick={handleConfirm}
+            disabled={!canSubmit}
             className="px-4 py-2 text-sm font-semibold rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors disabled:opacity-50"
           >
             {isPending ? "Starting…" : "Re-run"}
