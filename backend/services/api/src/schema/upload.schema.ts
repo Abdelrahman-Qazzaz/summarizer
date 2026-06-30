@@ -22,10 +22,10 @@ export const textUploadSchema = z
         path: [FORM_KEYS.uploadFile],
       });
     }
-    if (!(await validateModel(data[FORM_KEYS.chosenModelId]))) {
+    if (!(await validateModel(data[FORM_KEYS.chosenModelId], "text"))) {
       ctx.addIssue({
         code: "custom",
-        message: "Invalid model",
+        message: "Invalid summary model: must be a text model",
         path: [FORM_KEYS.chosenModelId],
       });
     }
@@ -64,14 +64,19 @@ export const audioUploadSchema = z
         path: [FORM_KEYS.uploadFile],
       });
     }
-    if (!(await validateModel(data[FORM_KEYS.chosenModelId]))) {
+    if (!(await validateModel(data[FORM_KEYS.chosenModelId], "text"))) {
       ctx.addIssue({
         code: "custom",
-        message: "Invalid model",
+        message: "Invalid summary model: must be a text model",
         path: [FORM_KEYS.chosenModelId],
       });
     }
-    if (!(await validateModel(data[FORM_KEYS.transcriptionModelId]))) {
+    if (
+      !(await validateModel(
+        data[FORM_KEYS.transcriptionModelId],
+        "transcription",
+      ))
+    ) {
       ctx.addIssue({
         code: "custom",
         message: "Invalid transcription model",

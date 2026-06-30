@@ -9,6 +9,7 @@ import type {
   PublicPricing,
   TopProviderInfo,
 } from "@openrouter/sdk/models";
+import { logger } from "../logger";
 
 export const ai_client = new OpenRouter({
   apiKey: getBaseEnv().OPENROUTER_API_KEY,
@@ -95,15 +96,27 @@ export async function getModelData() {
   return modelData;
 }
 
-export async function validateModel(modelId: string): Promise<boolean> {
+/**
+ * Validates that a model exists and, when `requiredModality` is given, that the
+ * model can actually produce that output (e.g. a summary model must output
+ * "text"; a transcription model must output "transcription"). Without this, a
+ * transcription-only model passes as a summary model and only fails deep in the
+ * worker when the provider rejects the chat-completion request.
+ */
+export async function validateModel(
+  modelId: string,
+  requiredModality?: OutputModality,
+): Promise<boolean> {
   const hit = (await checkCache(
     CACHE_KEYS.openRouterModels,
   )) as ModelData | null;
 
   const modelData: ModelData = hit ?? (await getModelData());
   const byId = modelData[modelId];
-  if (byId) return true;
-  return false;
+  if (!byId) return false;
+  if (requiredModality && !byId.outputModalities.includes(requiredModality))
+    return false;
+  return true;
 }
 
 export const DEFAULT_MODELS = {
