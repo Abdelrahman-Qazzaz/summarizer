@@ -73,7 +73,8 @@ export async function getModelData() {
 
   if (hit != null) return hit;
 
-  const models = (await ai_client.models.list()).data;
+  const models = (await ai_client.models.list({ outputModalities: "all" }))
+    .data;
   const modelData: ModelData = Object.fromEntries(
     models.map((model) => [
       model.id,
