@@ -30,5 +30,5 @@ export const COOKIE_KEYS = {
 } as const;
 
 export const CACHE_KEYS = {
-  openRouterModels: "models:v2",
+  openRouterModels: "models:v5",
 };
