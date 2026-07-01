@@ -8,7 +8,10 @@ export type QueueItem = {
   id: string;
   fileName: string;
   mode: SourceMode;
+  /** Summary model (chosenModelId). */
   model: string;
+  /** Transcription model (audio/video only). */
+  transcriptionModel?: string;
   phase: UploadPhase | null;
   status: QueueItemStatus;
   /** Server uploadId once the upload completes; drives result polling. */

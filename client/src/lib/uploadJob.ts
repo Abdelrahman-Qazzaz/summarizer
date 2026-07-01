@@ -29,6 +29,13 @@ function uploadIdFromBody(data: unknown): string | null {
   return null;
 }
 
+export type UploadModels = {
+  /** Summary model — used to summarize the text/transcript. */
+  chosenModelId: string;
+  /** Transcription model — required for audio/video, omitted for text. */
+  transcriptionModelId?: string;
+};
+
 /**
  * Runs the full client-side upload pipeline for a single file: extract audio
  * from video (video mode), compress audio (audio/video modes), then POST to the
@@ -37,7 +44,7 @@ function uploadIdFromBody(data: unknown): string | null {
 export async function runUpload(
   file: File,
   mode: SourceMode,
-  chosenModelId: string,
+  models: UploadModels,
   onPhase: (phase: UploadPhase) => void,
 ): Promise<string> {
   const body = new FormData();
@@ -58,10 +65,13 @@ export async function runUpload(
     onPhase("upload");
     body.append("uploadFile", uploadFile);
     body.append("audioSource", mode === "video" ? "video" : "audio");
+    if (models.transcriptionModelId) {
+      body.append("transcriptionModelId", models.transcriptionModelId);
+    }
     url = uploadAudioEndpoint();
   }
 
-  body.append("chosenModelId", chosenModelId);
+  body.append("chosenModelId", models.chosenModelId);
 
   const res = await fetch(url, {
     method: "POST",

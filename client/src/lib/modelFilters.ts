@@ -12,6 +12,12 @@ function isTranscriptionName(name: string): boolean {
 }
 
 export function isTranscriptionModel(name: string, info: ModelInfo): boolean {
+  // Prefer the real capability metadata the API now exposes; fall back to
+  // heuristics only when a model lacks outputModalities.
+  const modalities = info.outputModalities;
+  if (modalities && modalities.length > 0) {
+    return modalities.includes("transcription");
+  }
   if (isTranscriptionName(name)) return true;
   const pricing = info.pricing;
   if (pricing?.audio && !pricing.completion) return true;
@@ -19,6 +25,10 @@ export function isTranscriptionModel(name: string, info: ModelInfo): boolean {
 }
 
 export function isTextModel(name: string, info: ModelInfo): boolean {
+  const modalities = info.outputModalities;
+  if (modalities && modalities.length > 0) {
+    return modalities.includes("text");
+  }
   if (isTranscriptionModel(name, info)) return false;
   const pricing = info.pricing;
   if (pricing?.prompt && pricing.completion) return true;

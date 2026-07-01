@@ -162,11 +162,6 @@ export function ModelSelector({
           {pricing && <p>Pricing: {pricing}</p>}
         </div>
       )}
-
-      <p className="text-xs text-gray-400 dark:text-gray-500">
-        Model list is filtered client-side; exact modality metadata will be
-        available once the API exposes it.
-      </p>
     </div>
   );
 }

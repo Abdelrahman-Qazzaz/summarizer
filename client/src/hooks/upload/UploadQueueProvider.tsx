@@ -2,7 +2,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useId,
   useMemo,
   useState,
@@ -11,10 +10,9 @@ import {
 } from "react";
 import { useAuth } from "../auth/useAuth";
 import { useModelsQuery } from "../queries/useModelsQuery";
-import { runUpload } from "../../lib/uploadJob";
+import { runUpload, type UploadModels } from "../../lib/uploadJob";
 import {
   filterModelsForMode,
-  modelLabelForMode,
   resolveDefaultModel,
 } from "../../lib/modelFilters";
 import {
@@ -36,7 +34,12 @@ function useUploadQueueState() {
 
   const [mode, setMode] = useState<SourceMode>("text");
   const [inputMethod, setInputMethod] = useState<InputMethod>("file");
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  // Summary model (all modes) and transcription model (audio/video only).
+  // `null` pick = fall back to the resolved default for that list.
+  const [summaryPick, setSummaryPick] = useState<string | null>(null);
+  const [transcriptionPick, setTranscriptionPick] = useState<string | null>(
+    null,
+  );
   const [file, setFile] = useState<File | null>(null);
   const [textInput, setTextInput] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -46,20 +49,31 @@ function useUploadQueueState() {
   const accept = acceptForMode(mode);
   const { title: dropTitle, hint: dropHint } = dropZoneCopy(mode);
 
-  const modelOptions = useMemo(
+  const summaryOptions = useMemo(
     () =>
-      filterModelsForMode(entries, mode).map(([id, info]) => ({
+      filterModelsForMode(entries, "text").map(([id, info]) => ({
         id,
         label: id,
         info,
       })),
-    [entries, mode],
+    [entries],
+  );
+  const transcriptionOptions = useMemo(
+    () =>
+      filterModelsForMode(entries, "audio").map(([id, info]) => ({
+        id,
+        label: id,
+        info,
+      })),
+    [entries],
   );
 
-  useEffect(() => {
-    if (entries.length === 0) return;
-    setSelectedModel(resolveDefaultModel(entries, mode));
-  }, [entries, mode]);
+  const summaryModel =
+    summaryPick ??
+    (entries.length > 0 ? resolveDefaultModel(entries, "text") : null);
+  const transcriptionModel =
+    transcriptionPick ??
+    (entries.length > 0 ? resolveDefaultModel(entries, "audio") : null);
 
   const changeMode = useCallback((nextMode: SourceMode) => {
     setMode(nextMode);
@@ -113,9 +127,14 @@ function useUploadQueueState() {
   );
 
   const processItem = useCallback(
-    async (id: string, uploadFile: File, itemMode: SourceMode, model: string) => {
+    async (
+      id: string,
+      uploadFile: File,
+      itemMode: SourceMode,
+      models: UploadModels,
+    ) => {
       try {
-        const uploadId = await runUpload(uploadFile, itemMode, model, (phase) =>
+        const uploadId = await runUpload(uploadFile, itemMode, models, (phase) =>
           updateItem(id, { phase }),
         );
         updateItem(id, { status: "uploaded", phase: null, uploadId });
@@ -131,8 +150,12 @@ function useUploadQueueState() {
   );
 
   const addToQueue = useCallback(() => {
-    if (!selectedModel) {
-      setFormError("Select a model first.");
+    if (!summaryModel) {
+      setFormError("Select a summarization model first.");
+      return;
+    }
+    if (mode !== "text" && !transcriptionModel) {
+      setFormError("Select a transcription model first.");
       return;
     }
 
@@ -154,12 +177,18 @@ function useUploadQueueState() {
       uploadFile = file;
     }
 
+    const models: UploadModels =
+      mode === "text"
+        ? { chosenModelId: summaryModel }
+        : { chosenModelId: summaryModel, transcriptionModelId: transcriptionModel ?? undefined };
+
     const id = `queue-${queueIdCounter++}`;
     const item: QueueItem = {
       id,
       fileName: uploadFile.name,
       mode,
-      model: selectedModel,
+      model: summaryModel,
+      transcriptionModel: mode === "text" ? undefined : transcriptionModel ?? undefined,
       phase: null,
       status: "processing",
       uploadId: null,
@@ -170,8 +199,16 @@ function useUploadQueueState() {
     // Reset the staged inputs for the next add.
     setFile(null);
     setTextInput("");
-    void processItem(id, uploadFile, mode, selectedModel);
-  }, [file, inputMethod, mode, selectedModel, textInput, processItem]);
+    void processItem(id, uploadFile, mode, models);
+  }, [
+    file,
+    inputMethod,
+    mode,
+    summaryModel,
+    transcriptionModel,
+    textInput,
+    processItem,
+  ]);
 
   const removeItem = useCallback((id: string) => {
     setItems((current) => current.filter((item) => item.id !== id));
@@ -181,9 +218,12 @@ function useUploadQueueState() {
     setItems((current) => current.filter((item) => item.status === "processing"));
   }, []);
 
-  const canAdd =
-    !!selectedModel &&
-    (mode === "text" && inputMethod === "text" ? textInput.trim().length > 0 : !!file);
+  const hasModels = !!summaryModel && (mode === "text" || !!transcriptionModel);
+  const hasInput =
+    mode === "text" && inputMethod === "text"
+      ? textInput.trim().length > 0
+      : !!file;
+  const canAdd = hasModels && hasInput;
 
   return {
     inputId,
@@ -202,12 +242,14 @@ function useUploadQueueState() {
     setDragOver,
     pickFiles,
     onDrop,
-    selectedModel,
-    setSelectedModel,
-    modelOptions,
+    summaryModel,
+    setSummaryPick,
+    summaryOptions,
+    transcriptionModel,
+    setTranscriptionPick,
+    transcriptionOptions,
     modelsLoading,
     modelsError,
-    modelLabel: modelLabelForMode(mode),
     formError,
     canAdd,
     addToQueue,

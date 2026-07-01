@@ -5,6 +5,7 @@ import { FilePreview } from "../upload/FilePreview";
 import { ModelSelector } from "../models/ModelSelector";
 import { UploadQueue } from "../upload/UploadQueue";
 import { useUploadQueue } from "../../hooks/upload/UploadQueueProvider";
+import { modelLabelForMode } from "../../lib/modelFilters";
 
 function InputMethodToggle({
   value,
@@ -54,12 +55,14 @@ export function NewUploadPage() {
     setDragOver,
     pickFiles,
     onDrop,
-    selectedModel,
-    setSelectedModel,
-    modelOptions,
+    summaryModel,
+    setSummaryPick,
+    summaryOptions,
+    transcriptionModel,
+    setTranscriptionPick,
+    transcriptionOptions,
     modelsLoading,
     modelsError,
-    modelLabel,
     formError,
     canAdd,
     addToQueue,
@@ -96,11 +99,23 @@ export function NewUploadPage() {
             )}
           </div>
 
+          {mode !== "text" && (
+            <ModelSelector
+              label={modelLabelForMode("audio")}
+              models={transcriptionOptions}
+              value={transcriptionModel}
+              onChange={setTranscriptionPick}
+              disabled={modelsLoading}
+              loading={modelsLoading}
+              error={modelsError}
+            />
+          )}
+
           <ModelSelector
-            label={modelLabel}
-            models={modelOptions}
-            value={selectedModel}
-            onChange={setSelectedModel}
+            label={modelLabelForMode("text")}
+            models={summaryOptions}
+            value={summaryModel}
+            onChange={setSummaryPick}
             disabled={modelsLoading}
             loading={modelsLoading}
             error={modelsError}
