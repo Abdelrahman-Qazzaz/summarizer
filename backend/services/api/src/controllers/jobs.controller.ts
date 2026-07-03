@@ -14,9 +14,10 @@ import {
   type JobKind,
 } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
-import { deleteFileFromBucket } from "../../../../shared/bucket";
+import { deleteFileFromBucket, readTextFile } from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import { validateModel } from "../../../../shared/ai/ai_client";
+import type { UploadId } from "../../../../shared/types/mq.types";
 
 export async function handleGetSummarizeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -71,15 +72,29 @@ export async function handleGetTranscribeJob(c: Context) {
       ),
     )
     .limit(1);
-  if (audioJob)
+  if (audioJob) {
+    // The transcript text isn't stored on the audio row — it lives in the
+    // bucket as the child text job's source file (keyed by that job's id).
+    // Read it back so the client can display the transcript, not just the
+    // downstream summary.
+    let transcript: string | null = null;
+    if (textJob) {
+      try {
+        transcript = await readTextFile(textJob.uploadId as UploadId);
+      } catch {
+        transcript = null;
+      }
+    }
     return c.json({
       kind: "audio" as const,
       uploadId: audioJob.uploadId,
       fileName: audioJob.fileName,
       status: audioJob.status,
+      transcript,
       summary: textJob ? textJob.summary : null,
       error: audioJob.error,
     });
+  }
 
   return c.json({ message: "Job not found" }, 404);
 }
