@@ -18,6 +18,9 @@ import { deleteFileFromBucket, readTextFile } from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import { validateModel } from "../../../../shared/ai/ai_client";
 import type { UploadId } from "../../../../shared/types/mq.types";
+import { logger } from "../../../../shared/logger";
+
+const log = logger.child({ controller: "jobs" });
 
 export async function handleGetSummarizeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -81,7 +84,13 @@ export async function handleGetTranscribeJob(c: Context) {
     if (textJob) {
       try {
         transcript = await readTextFile(textJob.uploadId as UploadId);
-      } catch {
+      } catch (err) {
+        // Fall back to no transcript, but log it — otherwise a real bucket
+        // failure is indistinguishable from "transcript not ready yet".
+        log.error("Failed to read transcript from bucket", err, {
+          uploadId,
+          textUploadId: textJob.uploadId,
+        });
         transcript = null;
       }
     }
