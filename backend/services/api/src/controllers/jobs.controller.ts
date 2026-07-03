@@ -80,8 +80,11 @@ export async function handleGetTranscribeJob(c: Context) {
     // bucket as the child text job's source file (keyed by that job's id).
     // Read it back so the client can display the transcript, not just the
     // downstream summary.
+    // Only read once transcription has completed. During a re-run the audio row
+    // is reset to "queued" while the previous text row/file still exist, so an
+    // ungated read would return a stale transcript (and download it needlessly).
     let transcript: string | null = null;
-    if (textJob) {
+    if (textJob && audioJob.status === "completed") {
       try {
         transcript = await readTextFile(textJob.uploadId as UploadId);
       } catch (err) {

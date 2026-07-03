@@ -174,6 +174,35 @@ describe("GET /jobs/transcribe/:uploadId", () => {
       error: null,
     });
   });
+  it("does not read a stale transcript while the audio job is not completed", async () => {
+    // A re-run resets the audio row to "queued" while the previous child text
+    // row/file still exist; the transcript must not be read in that window.
+    mockLimit
+      .mockResolvedValueOnce([
+        { uploadId, fileName: "clip.mp3", status: "queued", error: null },
+      ])
+      .mockResolvedValueOnce([
+        { uploadId: "child-text-id", status: "queued", summary: null },
+      ]);
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      kind: "audio",
+      uploadId,
+      fileName: "clip.mp3",
+      status: "queued",
+      transcript: null,
+      summary: null,
+      summaryStatus: "queued",
+      error: null,
+    });
+    expect(mockReadTextFile).not.toHaveBeenCalled();
+  });
   it("returns 404 when no audio job exists for the user", async () => {
     mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     const res = await (await createApp()).request(
