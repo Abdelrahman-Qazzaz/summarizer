@@ -63,22 +63,40 @@ function DownloadButton({ filename, content }: { filename: string; content: stri
   );
 }
 
+function StreamingBadge() {
+  return (
+    <span className="flex items-center gap-1.5 text-xs font-medium text-primary-600 dark:text-primary-400">
+      <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse" />
+      Streaming…
+    </span>
+  );
+}
+
 function ResultSection({
   title,
   content,
   downloadName,
+  streaming = false,
 }: {
   title: string;
   content: string;
   downloadName: string;
+  streaming?: boolean;
 }) {
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm">
       <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
         <div className="flex items-center gap-2">
-          <CopyButton text={content} />
-          <DownloadButton filename={downloadName} content={content} />
+          {/* While streaming the content is partial — offer copy/download only once complete. */}
+          {streaming ? (
+            <StreamingBadge />
+          ) : (
+            <>
+              <CopyButton text={content} />
+              <DownloadButton filename={downloadName} content={content} />
+            </>
+          )}
         </div>
       </div>
       <div className="p-4">
@@ -122,23 +140,36 @@ export function JobResult({ job }: JobResultProps) {
     );
   }
 
-  if (job.status !== "completed") {
-    return null;
-  }
+  const streaming = job.status !== "completed";
 
   if (job.kind === "text") {
-    return job.summary ? (
-      <ResultSection
-        title="Summary"
-        content={job.summary}
-        downloadName={resultFileName(job.fileName, "summary")}
-      />
-    ) : (
-      <EmptySection label="summary" />
-    );
+    // The summary streams in while the job is still processing; show it live and
+    // only fall back to the empty state once the job is done with no summary.
+    if (job.summary) {
+      return (
+        <ResultSection
+          title="Summary"
+          content={job.summary}
+          downloadName={resultFileName(job.fileName, "summary")}
+          streaming={streaming}
+        />
+      );
+    }
+    return streaming ? null : <EmptySection label="summary" />;
   }
 
-  // Audio: show summary (if the downstream summarize step produced one) + transcript.
+  // Audio: wait until transcription completes; the summary then streams in.
+  if (streaming) return null;
+
+  // The audio row is "completed" once transcription finishes, but the summary
+  // runs as a separate downstream step — use its own status to know when it's
+  // still streaming in.
+  const summaryStreaming =
+    job.summaryStatus != null &&
+    job.summaryStatus !== "completed" &&
+    job.summaryStatus !== "failed";
+
+  // Show summary (if the downstream summarize step produced one) + transcript.
   return (
     <div className="space-y-4">
       {job.summary ? (
@@ -146,6 +177,7 @@ export function JobResult({ job }: JobResultProps) {
           title="Summary"
           content={job.summary}
           downloadName={resultFileName(job.fileName, "summary")}
+          streaming={summaryStreaming}
         />
       ) : (
         <EmptySection label="summary" />
