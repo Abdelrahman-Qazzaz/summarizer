@@ -250,6 +250,20 @@ export async function handleDeleteTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const uploadId = c.get(CTX_KEYS.uploadId);
 
+  // Look up the child transcript row before deleting the audio job: the FK
+  // cascade removes the row, but its bucket file (keyed by the text job's id,
+  // not the audio id) would otherwise be orphaned in storage.
+  const [child] = await db
+    .select({ uploadId: TextSummarizationJobs.uploadId })
+    .from(TextSummarizationJobs)
+    .where(
+      and(
+        eq(TextSummarizationJobs.userId, userId),
+        eq(TextSummarizationJobs.audioUploadId, uploadId),
+      ),
+    )
+    .limit(1);
+
   await db
     .delete(AudioTranscriptionJobs)
     .where(
@@ -260,6 +274,7 @@ export async function handleDeleteTranscribeJob(c: Context) {
     );
 
   await deleteFileFromBucket(uploadId);
+  if (child) await deleteFileFromBucket(child.uploadId as UploadId);
   return c.json({ message: "Job Deleted" }, 200);
 }
 

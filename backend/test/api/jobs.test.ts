@@ -1,16 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-const { mockLimit, mockWhere, mockFrom, mockSelect, mockOrderBy, mockReadTextFile } =
-  vi.hoisted(() => ({
-    mockLimit: vi.fn(),
-    mockWhere: vi.fn(),
-    mockFrom: vi.fn(),
-    mockSelect: vi.fn(),
-    mockOrderBy: vi.fn(),
-    mockReadTextFile: vi.fn(),
-  }));
+const {
+  mockLimit,
+  mockWhere,
+  mockFrom,
+  mockSelect,
+  mockOrderBy,
+  mockReadTextFile,
+  mockDelete,
+  mockDeleteFileFromBucket,
+} = vi.hoisted(() => ({
+  mockLimit: vi.fn(),
+  mockWhere: vi.fn(),
+  mockFrom: vi.fn(),
+  mockSelect: vi.fn(),
+  mockOrderBy: vi.fn(),
+  mockReadTextFile: vi.fn(),
+  mockDelete: vi.fn(),
+  mockDeleteFileFromBucket: vi.fn(),
+}));
 
 vi.mock("../../shared/db", () => ({
-  db: { select: mockSelect },
+  db: { select: mockSelect, delete: mockDelete },
   TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
   AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
   jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
@@ -18,7 +28,7 @@ vi.mock("../../shared/db", () => ({
 
 vi.mock("../../shared/bucket", () => ({
   readTextFile: mockReadTextFile,
-  deleteFileFromBucket: vi.fn(),
+  deleteFileFromBucket: mockDeleteFileFromBucket,
 }));
 
 import { createApp } from "../../services/api/app";
@@ -214,5 +224,43 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Job not found" });
     expect(mockSelect).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("DELETE /jobs/transcribe/:uploadId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockWhere.mockImplementation(() => ({ limit: mockLimit }));
+    mockFrom.mockImplementation(() => ({ where: mockWhere }));
+    mockSelect.mockImplementation(() => ({ from: mockFrom }));
+    mockDelete.mockImplementation(() => ({ where: () => Promise.resolve() }));
+    mockDeleteFileFromBucket.mockResolvedValue(undefined);
+  });
+  it("also deletes the orphaned child transcript file", async () => {
+    mockLimit.mockResolvedValueOnce([{ uploadId: "child-text-id" }]);
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(uploadId);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("child-text-id");
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(2);
+  });
+  it("deletes only the audio file when there is no child transcript", async () => {
+    mockLimit.mockResolvedValueOnce([]);
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(uploadId);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(1);
   });
 });
