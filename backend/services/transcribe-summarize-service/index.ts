@@ -2,15 +2,19 @@ import { getWorkerEnv } from "../../shared/env";
 
 const env = getWorkerEnv();
 
-
 import { attachListeners } from "./workers";
-import { serve } from "@hono/node-server";
-import { createApp } from "./app";
+import { verifyWorkerServices } from "./startup";
+import { logger } from "../../shared/logger";
 
-const app = await createApp()
-const port = env.TRANSCRIBE_SUMMARIZE_SERVICE_PORT;
+// Fail-fast preflight: connects RabbitMQ and pings every dependency, aborting
+// startup if any is down. (This used to run inside createApp(); the worker no
+// longer serves HTTP, so it's called directly here.)
+await verifyWorkerServices();
 
+attachListeners(env.WORKER_ROLE);
 
-attachListeners();
-
-serve({ fetch: app.fetch, port });
+// No HTTP server. The worker is a pure queue consumer — nothing dials it, it
+// pulls from RabbitMQ. The open consumer socket keeps the Node event loop
+// alive, and liveness is a process / queue-connection concern rather than an
+// HTTP endpoint, so there is no port to bind or configure.
+logger.info("transcribe-summarize-service started", { role: env.WORKER_ROLE });
