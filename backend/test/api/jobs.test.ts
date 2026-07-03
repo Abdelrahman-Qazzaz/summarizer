@@ -1,19 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-const { mockLimit, mockWhere, mockFrom, mockSelect, mockOrderBy } = vi.hoisted(
-  () => ({
+const { mockLimit, mockWhere, mockFrom, mockSelect, mockOrderBy, mockReadTextFile } =
+  vi.hoisted(() => ({
     mockLimit: vi.fn(),
     mockWhere: vi.fn(),
     mockFrom: vi.fn(),
     mockSelect: vi.fn(),
     mockOrderBy: vi.fn(),
-  }),
-);
+    mockReadTextFile: vi.fn(),
+  }));
 
 vi.mock("../../shared/db", () => ({
   db: { select: mockSelect },
   TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
   AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
   jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
+}));
+
+vi.mock("../../shared/bucket", () => ({
+  readTextFile: mockReadTextFile,
+  deleteFileFromBucket: vi.fn(),
 }));
 
 import { createApp } from "../../services/api/app";
@@ -107,10 +112,38 @@ describe("GET /jobs/transcribe/:uploadId", () => {
       uploadId,
       fileName: "clip.mp3",
       status: "processing",
+      transcript: null,
       summary: null,
       error: null,
     });
     expect(mockSelect).toHaveBeenCalledTimes(2);
+  });
+  it("returns the transcript and summary once the child text job exists", async () => {
+    mockLimit
+      .mockResolvedValueOnce([
+        { uploadId, fileName: "clip.mp3", status: "completed", error: null },
+      ])
+      .mockResolvedValueOnce([
+        { uploadId: "child-text-id", summary: "A short summary." },
+      ]);
+    mockReadTextFile.mockResolvedValueOnce("the full transcript text");
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      kind: "audio",
+      uploadId,
+      fileName: "clip.mp3",
+      status: "completed",
+      transcript: "the full transcript text",
+      summary: "A short summary.",
+      error: null,
+    });
+    expect(mockReadTextFile).toHaveBeenCalledWith("child-text-id");
   });
   it("returns 404 when no audio job exists for the user", async () => {
     mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
