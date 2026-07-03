@@ -114,6 +114,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
       status: "processing",
       transcript: null,
       summary: null,
+      summaryStatus: null,
       error: null,
     });
     expect(mockSelect).toHaveBeenCalledTimes(2);
@@ -124,7 +125,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
         { uploadId, fileName: "clip.mp3", status: "completed", error: null },
       ])
       .mockResolvedValueOnce([
-        { uploadId: "child-text-id", summary: "A short summary." },
+        { uploadId: "child-text-id", status: "completed", summary: "A short summary." },
       ]);
     mockReadTextFile.mockResolvedValueOnce("the full transcript text");
     const res = await (await createApp()).request(
@@ -141,9 +142,37 @@ describe("GET /jobs/transcribe/:uploadId", () => {
       status: "completed",
       transcript: "the full transcript text",
       summary: "A short summary.",
+      summaryStatus: "completed",
       error: null,
     });
     expect(mockReadTextFile).toHaveBeenCalledWith("child-text-id");
+  });
+  it("surfaces summaryStatus when the downstream summary failed", async () => {
+    mockLimit
+      .mockResolvedValueOnce([
+        { uploadId, fileName: "clip.mp3", status: "completed", error: null },
+      ])
+      .mockResolvedValueOnce([
+        { uploadId: "child-text-id", status: "failed", summary: null },
+      ]);
+    mockReadTextFile.mockResolvedValueOnce("the full transcript text");
+    const res = await (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}`,
+      {
+        headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      kind: "audio",
+      uploadId,
+      fileName: "clip.mp3",
+      status: "completed",
+      transcript: "the full transcript text",
+      summary: null,
+      summaryStatus: "failed",
+      error: null,
+    });
   });
   it("returns 404 when no audio job exists for the user", async () => {
     mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);

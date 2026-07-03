@@ -92,6 +92,10 @@ export async function handleGetTranscribeJob(c: Context) {
       status: audioJob.status,
       transcript,
       summary: textJob ? textJob.summary : null,
+      // Status of the downstream summarization step, which runs as a separate
+      // job after transcription completes. Without this a failed summary is
+      // invisible: the audio row stays "completed" and its `error` is null.
+      summaryStatus: textJob ? textJob.status : null,
       error: audioJob.error,
     });
   }
