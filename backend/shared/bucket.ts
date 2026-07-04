@@ -5,7 +5,10 @@ import { getBaseEnv } from "./env";
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = getBaseEnv();
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const BUCKET = "Audio & Text files";
+// Exported so the API can publish it on /contract — the youtube-fetcher reads
+// the bucket name from there instead of hardcoding it. Non-sensitive config,
+// same as the queue names.
+export const BUCKET = "Audio & Text files";
 
 /** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
 export async function pingBucket(): Promise<void> {

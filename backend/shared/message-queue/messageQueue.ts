@@ -5,12 +5,21 @@ import { logger } from "../logger";
 import type { MQQueues } from "../types/mq.types";
 
 class MQ {
+  /**
+   * Queue names — the single source of truth for the cross-service contract.
+   * The API serves these at `GET /contract` so the Python youtube-fetcher can
+   * read them at boot instead of hand-mirroring constants. See
+   * `youtube-fetcher/app/queues.py`.
+   */
   queues = {
     TRANSCRIBE: "transcribe",
     SUMMARIZE: "summarize",
     SUMMARIZE_CHUNK: "summarize_chunk",
     TRANSCRIBE_DONE: "transcribe_done",
     SUMMARIZE_DONE: "summarize_done",
+    // Cross-language boundary with youtube-fetcher (Python).
+    YT_FETCH: "yt_fetch",
+    YT_FETCH_FAILED: "yt_fetch_failed",
   } as const;
   private conn!: ChannelModel;
   private channel!: Channel;
