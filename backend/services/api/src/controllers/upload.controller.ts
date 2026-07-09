@@ -58,6 +58,39 @@ export async function handleAudioUpload(c: Context) {
   });
 }
 
+/** POST /upload/youtube — a YouTube URL fetched out of band by youtube-fetcher. */
+export async function handleYoutubeUpload(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const url = c.get(CTX_KEYS.youtubeUrl);
+  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
+  const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
+
+  const uploadId: UploadId = randomUUID();
+
+  // Created queued with placeholder file metadata — the youtube-fetcher hasn't
+  // downloaded anything yet. It uploads the audio to the bucket at `uploadId`
+  // then publishes `transcribe`, so the row is claimed by the transcribe worker
+  // exactly like a normal audio upload.
+  await db.insert(AudioTranscriptionJobs).values({
+    uploadId,
+    userId,
+    source: "youtube",
+    fileName: "YouTube audio",
+    mimeType: null,
+    sizeBytes: 0,
+    chosenModelId,
+    transcriptionModelId,
+  });
+
+  await mq.sendEvent(mq.queues.YT_FETCH, { uploadId, url, userId });
+  return c.json({
+    message: "Queued",
+    uploadId,
+    source: "youtube" as const,
+    url,
+  });
+}
+
 /** POST /upload/text — plain text files for summarization. */
 export async function handleTextUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);

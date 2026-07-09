@@ -24,7 +24,9 @@ export function validateReqBody<T extends Record<string, unknown>>(
 ) {
   return createMiddleware(async (c, next) => {
     const body = await c.req.json().catch(() => null);
-    const result = schema.safeParse(body);
+    // safeParseAsync (not safeParse) so schemas with async refinements — e.g.
+    // youtubeUploadSchema validating models via validateModel — work here too.
+    const result = await schema.safeParseAsync(body);
     if (!result.success)
       return c.json({ message: "Invalid request body" }, 400);
 
