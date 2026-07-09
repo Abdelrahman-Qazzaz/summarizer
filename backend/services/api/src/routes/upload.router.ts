@@ -3,8 +3,15 @@ import * as uploadController from "../controllers/upload.controller";
 import { uploadRateLimiter } from "../middleware/rateLimit.middleware";
 import { requireAuth } from "../middleware/auth.middleware";
 import { FORM_KEYS } from "../../../../shared/keys";
-import { validateMultipart } from "../middleware/validate.middleware";
-import { textUploadSchema, audioUploadSchema } from "../schema/upload.schema";
+import {
+  validateMultipart,
+  validateReqBody,
+} from "../middleware/validate.middleware";
+import {
+  textUploadSchema,
+  audioUploadSchema,
+  youtubeUploadSchema,
+} from "../schema/upload.schema";
 
 export const uploadRouter = new Hono();
 
@@ -27,4 +34,9 @@ uploadRouter.post(
     FORM_KEYS.transcriptionModelId,
   ]),
   uploadController.handleAudioUpload,
+);
+uploadRouter.post(
+  "/youtube",
+  validateReqBody(youtubeUploadSchema),
+  uploadController.handleYoutubeUpload,
 );
