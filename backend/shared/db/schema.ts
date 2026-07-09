@@ -12,7 +12,10 @@ export const jobStatusEnum = pgEnum("job_status", [
 /** Speech jobs after audio upload (transcription pipeline). */
 export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   uploadId: text("upload_id").notNull().primaryKey(),
-  source: text("source").notNull(), // 'video' | 'audio'
+  source: text("source").notNull(), // 'video' | 'audio' | 'youtube'
+  // Origin URL for 'youtube' jobs; null for direct uploads. Stored for history
+  // display and to enable transcript caching by video id later.
+  YT_sourceUrl: text("YT_source_url"),
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type"),
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
