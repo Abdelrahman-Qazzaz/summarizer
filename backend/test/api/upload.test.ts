@@ -39,7 +39,9 @@ vi.mock("../../shared/db", () => ({
   db: { insert: mockInsert },
   AudioTranscriptionJobs: {},
   TextSummarizationJobs: {},
-  jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
+  jobStatusEnum: {
+    enumValues: ["queued", "processing", "completed", "failed"],
+  },
 }));
 
 vi.mock("../../shared/bucket", () => ({
@@ -52,6 +54,7 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
     queues: {
       TRANSCRIBE: "transcribe",
       SUMMARIZE: "summarize",
+      YT_FETCH: "yt_fetch",
     },
     sendEvent: mockSendEvent,
   },
@@ -100,7 +103,9 @@ describe("POST /upload/text", () => {
   });
 
   it("returns 401 without a session cookie", async () => {
-    const res = await (await createApp()).request("http://localhost/upload/text", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
       method: "POST",
       body: textUploadBody(),
     });
@@ -111,7 +116,9 @@ describe("POST /upload/text", () => {
   it("returns 400 when file field is missing", async () => {
     const formData = new FormData();
     formData.append("chosenModelId", VALID_MODEL);
-    const res = await (await createApp()).request("http://localhost/upload/text", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: formData,
@@ -123,7 +130,9 @@ describe("POST /upload/text", () => {
   });
 
   it("returns 413 when text file is too large", async () => {
-    const res = await (await createApp()).request("http://localhost/upload/text", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: textUploadBody("x".repeat(MAX_TEXT_BYTES + 1)),
@@ -136,7 +145,9 @@ describe("POST /upload/text", () => {
   });
 
   it("uploads text and enqueues summarize", async () => {
-    const res = await (await createApp()).request("http://localhost/upload/text", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: textUploadBody("sample text"),
@@ -175,7 +186,9 @@ describe("POST /upload/audio", () => {
   });
 
   it("returns 400 when file field is missing", async () => {
-    const res = await (await createApp()).request("http://localhost/upload/audio", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: new FormData(),
@@ -186,7 +199,9 @@ describe("POST /upload/audio", () => {
   // Streams a real 100MB+ body through multipart parsing, so it needs a
   // generous timeout beyond the 5s default.
   it("returns 413 when audio file is too large", async () => {
-    const res = await (await createApp()).request("http://localhost/upload/audio", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: audioUploadBody(MAX_AUDIO_BYTES + 1),
@@ -199,7 +214,9 @@ describe("POST /upload/audio", () => {
   }, 20000);
 
   it("returns 400 for invalid source", async () => {
-    const res = await (await createApp()).request("http://localhost/upload/audio", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: audioUploadBody(100, { source: "invalid" }),
@@ -211,7 +228,9 @@ describe("POST /upload/audio", () => {
   });
 
   it("uploads audio and enqueues transcribe", async () => {
-    const res = await (await createApp()).request("http://localhost/upload/audio", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/audio", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
       body: audioUploadBody(100, { source: "video", fileName: "clip.mp3" }),
@@ -230,5 +249,85 @@ describe("POST /upload/audio", () => {
     expect(mockUploadAudioToBucket).toHaveBeenCalledTimes(1);
     expect(mockInsert).toHaveBeenCalledTimes(1);
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe", body.uploadId);
+  });
+});
+
+describe("POST /upload/youtube", () => {
+  const YT_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+  // Captured so we can assert the inserted row (e.g. YT_sourceUrl) directly.
+  let mockValues: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockValues = vi.fn().mockResolvedValue(undefined);
+    mockInsert.mockReturnValue({ values: mockValues });
+    mockSendEvent.mockResolvedValue(undefined);
+    mockValidateModel.mockResolvedValue(true);
+  });
+
+  it("returns 401 without a session cookie", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/youtube", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ youtubeUrl: YT_URL, chosenModelId: VALID_MODEL }),
+    });
+    expect(res.status).toBe(401);
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a non-YouTube URL", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/youtube", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: await sessionCookieHeader("user_01"),
+      },
+      body: JSON.stringify({
+        youtubeUrl: "https://example.com/watch?v=x",
+        chosenModelId: VALID_MODEL,
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("creates a job and enqueues fetch with the url + userId", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/youtube", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: await sessionCookieHeader("user_01"),
+      },
+      body: JSON.stringify({ youtubeUrl: YT_URL, chosenModelId: VALID_MODEL }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      message: string;
+      source: string;
+      url: string;
+      uploadId: string;
+    };
+    expect(body.source).toBe("youtube");
+    expect(body.url).toBe(YT_URL);
+    expect(typeof body.uploadId).toBe("string");
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+    // The row persists the origin URL (for history + future transcript caching).
+    expect(mockValues).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "youtube", YT_sourceUrl: YT_URL }),
+    );
+    // The fetch event carries the url + userId the fetcher needs (bucket write
+    // happens in Python; the API only enqueues).
+    expect(mockSendEvent).toHaveBeenCalledWith("yt_fetch", {
+      uploadId: body.uploadId,
+      url: YT_URL,
+      userId: "user_01",
+    });
   });
 });
