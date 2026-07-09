@@ -75,6 +75,7 @@ export async function handleYoutubeUpload(c: Context) {
     uploadId,
     userId,
     source: "youtube",
+    YT_sourceUrl: url,
     fileName: "YouTube audio",
     mimeType: null,
     sizeBytes: 0,
