@@ -58,7 +58,7 @@ export function socketIoUrl(): string {
   return `http://${DEV_HOST}:4000`;
 }
 
-function uploadPath(suffix: "audio" | "text") {
+function uploadPath(suffix: "audio" | "text" | "youtube") {
   const path = `/upload/${suffix}`;
   return apiBase ? `${apiBase}${path}` : path;
 }
@@ -69,4 +69,8 @@ export function uploadAudioEndpoint() {
 
 export function uploadTextEndpoint() {
   return uploadPath("text");
+}
+
+export function uploadYoutubeEndpoint() {
+  return uploadPath("youtube");
 }

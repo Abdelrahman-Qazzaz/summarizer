@@ -1,12 +1,12 @@
-import type { SourceMode } from "../../sourceMode";
+import type { UploadMode } from "../../sourceMode";
 
 type ModeSelectorProps = {
-  mode: SourceMode;
-  onModeChange: (mode: SourceMode) => void;
+  mode: UploadMode;
+  onModeChange: (mode: UploadMode) => void;
   disabled?: boolean;
 };
 
-const modes: { value: SourceMode; label: string; icon: React.ReactNode }[] = [
+const modes: { value: UploadMode; label: string; icon: React.ReactNode }[] = [
   {
     value: "text",
     label: "Text",
@@ -34,6 +34,18 @@ const modes: { value: SourceMode; label: string; icon: React.ReactNode }[] = [
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
+    value: "youtube",
+    label: "YouTube",
+    icon: (
+      // Rounded-rect play button, echoing the YouTube mark without brand assets.
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <rect x={3} y={6} width={18} height={12} rx={3} strokeWidth={2} />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M10.5 9.75l4.5 2.25-4.5 2.25v-4.5z" />
       </svg>
     ),
   },

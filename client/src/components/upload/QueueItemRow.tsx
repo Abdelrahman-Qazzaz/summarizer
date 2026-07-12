@@ -17,7 +17,7 @@ const phaseLabel: Record<NonNullable<QueueItem["phase"]>, string> = {
 function ModeBadge({ mode }: { mode: QueueItem["mode"] }) {
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 capitalize">
-      {mode}
+      {mode === "youtube" ? "YouTube" : mode}
     </span>
   );
 }

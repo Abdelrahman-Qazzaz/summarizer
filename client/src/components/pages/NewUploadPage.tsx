@@ -51,6 +51,8 @@ export function NewUploadPage() {
     setFile,
     textInput,
     setTextInput,
+    youtubeUrl,
+    setYoutubeUrl,
     dragOver,
     setDragOver,
     pickFiles,
@@ -86,7 +88,7 @@ export function NewUploadPage() {
           New summary
         </h1>
         <p className="text-gray-600 dark:text-gray-300">
-          Add text, audio, or video — queue as many as you like.
+          Add text, audio, video, or a YouTube link — queue as many as you like.
         </p>
       </div>
 
@@ -121,7 +123,24 @@ export function NewUploadPage() {
             error={modelsError}
           />
 
-          {usePasteText ? (
+          {mode === "youtube" ? (
+            <div className="space-y-2">
+              <input
+                type="url"
+                value={youtubeUrl}
+                onChange={(e) => setYoutubeUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=…"
+                className="w-full px-4 py-3 text-sm rounded-xl border border-gray-200 dark:border-gray-700
+                  bg-white dark:bg-gray-800 text-gray-900 dark:text-white
+                  placeholder:text-gray-400 dark:placeholder:text-gray-500
+                  focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                The audio is downloaded and transcribed server-side — nothing to
+                upload from this device.
+              </p>
+            </div>
+          ) : usePasteText ? (
             <textarea
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
