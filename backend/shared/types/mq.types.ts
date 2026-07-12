@@ -1,4 +1,3 @@
-import { mq } from "../message-queue/messageQueue";
 export type UploadId = `${string}-${string}-${string}-${string}-${string}`;
 
 /**
@@ -9,23 +8,12 @@ export type UploadId = `${string}-${string}-${string}-${string}-${string}`;
  */
 export type TranscribeEvent = UploadId;
 
-/** `fetch` — api → youtube-fetcher: download this URL's audio into the bucket. */
-export type YT_FetchEvent = {
-  uploadId: UploadId;
-  url: string;
-  userId: string;
-};
+/** `summarize` — like `transcribe`, the bare `UploadId` string, not an object. */
+export type SummarizeEvent = UploadId;
 
-/** `YT_FETCH_FAILED` — youtube-fetcher → api: the download/upload failed. */
-export type YT_FetchFailedEvent = {
+export type TranscribeDoneEvent = {
   uploadId: UploadId;
   userId: string;
-  error?: string;
-};
-
-// TODO: make this the same as transcribe
-export type SummarizeEvent = {
-  uploadId: UploadId;
 };
 
 export type SummarizeDoneEvent = {
@@ -39,4 +27,37 @@ export type SummarizeChunkEvent = {
   delta: string;
 };
 
-export type MQQueues = (typeof mq.queues)[keyof typeof mq.queues];
+/** `yt_fetch` — api → youtube-fetcher: download this URL's audio into the bucket. */
+export type YtFetchEvent = {
+  uploadId: UploadId;
+  url: string;
+  userId: string;
+};
+
+/** `yt_fetch_failed` — youtube-fetcher → api: the download/upload failed. */
+export type YtFetchFailedEvent = {
+  uploadId: UploadId;
+  userId: string;
+  error?: string;
+};
+
+/**
+ * The wire contract: every queue name mapped to the payload it carries.
+ * `mq.sendEvent` / `mq.listen` are generic over this, so publishing or
+ * consuming the wrong shape is a compile error rather than a runtime surprise
+ * (e.g. sending `{ uploadId }` to `transcribe`, which takes a bare string).
+ *
+ * `mq.queues` is checked against this via `satisfies`, so adding a queue there
+ * without adding its payload here fails to compile.
+ */
+export type QueuePayloads = {
+  transcribe: TranscribeEvent;
+  summarize: SummarizeEvent;
+  summarize_chunk: SummarizeChunkEvent;
+  transcribe_done: TranscribeDoneEvent;
+  summarize_done: SummarizeDoneEvent;
+  yt_fetch: YtFetchEvent;
+  yt_fetch_failed: YtFetchFailedEvent;
+};
+
+export type MQQueues = keyof QueuePayloads;
