@@ -4,11 +4,11 @@
   "type": "module",
   "packageManager": "npm@11.14.1",
   "scripts": {
-    "dev": "concurrently -k -n api,worker \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
+    "dev": "doppler run -- concurrently -k -n api,worker \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
     "typecheck": "tsc --noEmit",
-    "db": "drizzle-kit push",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "db": "doppler run -- drizzle-kit push",
+    "test": "doppler run -- vitest run",
+    "test:watch": "doppler run -- vitest"
   },
   "dependencies": {
     "@hono/node-server": "1.19.2",
