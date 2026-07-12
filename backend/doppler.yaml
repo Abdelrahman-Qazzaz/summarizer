@@ -1,0 +1,3 @@
+setup:
+  project: summarizer
+  config: dev_backend
