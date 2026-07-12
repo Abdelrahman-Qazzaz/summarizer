@@ -27,8 +27,13 @@ export function validateReqBody<T extends Record<string, unknown>>(
     // safeParseAsync (not safeParse) so schemas with async refinements — e.g.
     // youtubeUploadSchema validating models via validateModel — work here too.
     const result = await schema.safeParseAsync(body);
-    if (!result.success)
-      return c.json({ message: "Invalid request body" }, 400);
+    if (!result.success) {
+      // Surface the schema's own message (e.g. "Not a valid YouTube URL") the
+      // way validateMultipart does; a generic string would make every custom
+      // message in the schema dead code.
+      const issue = result.error.issues[0];
+      return c.json({ message: issue?.message ?? "Invalid request body" }, 400);
+    }
 
     applyValidated(c, result.data);
 
