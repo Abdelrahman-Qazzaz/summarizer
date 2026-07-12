@@ -2,7 +2,7 @@ import amqplib from "amqplib";
 import type { Channel, ChannelModel, ConsumeMessage } from "amqplib";
 import { getBaseEnv } from "../env";
 import { logger } from "../logger";
-import type { MQQueues } from "../types/mq.types";
+import type { MQQueues, QueuePayloads } from "../types/mq.types";
 
 class MQ {
   /**
@@ -20,7 +20,9 @@ class MQ {
     // Cross-language boundary with youtube-fetcher (Python).
     YT_FETCH: "yt_fetch",
     YT_FETCH_FAILED: "yt_fetch_failed",
-  } as const;
+    // `satisfies` ties every queue to a payload in QueuePayloads: add a queue
+    // here without a payload there and this fails to compile.
+  } as const satisfies Record<string, MQQueues>;
   private conn!: ChannelModel;
   private channel!: Channel;
   private connecting?: Promise<void>;
@@ -42,19 +44,26 @@ class MQ {
     await this.connecting;
     this.connecting = undefined;
   }
-  async sendEvent(queue: MQQueues, data: unknown) {
+  /** Publish to `queue`; `data` must match that queue's payload type. */
+  async sendEvent<Q extends MQQueues>(queue: Q, data: QueuePayloads[Q]) {
     await this.channel.assertQueue(queue);
     this.channel.sendToQueue(queue, Buffer.from(JSON.stringify(data)));
   }
 
-  async listen(queue: MQQueues, handler: (data: any) => Promise<void>) {
+  /** Consume `queue`; `handler` receives that queue's payload type. */
+  async listen<Q extends MQQueues>(
+    queue: Q,
+    handler: (data: QueuePayloads[Q]) => Promise<void>,
+  ) {
     await this.channel.assertQueue(queue);
 
     this.channel.consume(queue, async (msg: ConsumeMessage | null) => {
       if (!msg) return;
 
       try {
-        const data = JSON.parse(msg.content.toString());
+        // Trusted producers only; the broker carries no schema, so this cast is
+        // the boundary where QueuePayloads is asserted rather than verified.
+        const data = JSON.parse(msg.content.toString()) as QueuePayloads[Q];
         await handler(data);
         this.channel.ack(msg);
       } catch (err) {

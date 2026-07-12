@@ -293,6 +293,8 @@ describe("POST /upload/youtube", () => {
       }),
     });
     expect(res.status).toBe(400);
+    // The schema's own message must reach the client, not a generic string.
+    expect(await res.json()).toEqual({ message: "Not a valid YouTube URL" });
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 

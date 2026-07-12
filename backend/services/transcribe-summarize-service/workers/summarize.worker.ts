@@ -29,7 +29,9 @@ export async function handleSummarizeJob(uploadId: UploadId) {
     const userId = job.userId;
     // For audio-derived summaries the client tracks the parent audio job, so
     // notify that id; for direct text uploads this is the job's own id.
-    const notifyId = job.audioUploadId ?? uploadId;
+    // audioUploadId is a nullable text column, so it widens to `string`; it
+    // always holds an uploadId by construction.
+    const notifyId = (job.audioUploadId ?? uploadId) as UploadId;
 
     // Buffer raw per-token deltas and flush them to the client on a timer (or
     // once the buffer grows past CHUNK_FLUSH_CHARS), so we publish ~tens of
@@ -90,7 +92,7 @@ async function completeSummarizeJob(
   TABLE: typeof TextSummarizationJobs,
   uploadId: UploadId,
   summary: string,
-  notifyId: string,
+  notifyId: UploadId,
   userId: string,
 ) {
   await db
