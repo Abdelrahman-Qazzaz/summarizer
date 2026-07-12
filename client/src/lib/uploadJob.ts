@@ -1,4 +1,8 @@
-import { uploadAudioEndpoint, uploadTextEndpoint } from "../config";
+import {
+  uploadAudioEndpoint,
+  uploadTextEndpoint,
+  uploadYoutubeEndpoint,
+} from "../config";
 import { extractAudioFromVideo } from "./extractAudio";
 import { compressAudioForSpeech } from "./compressAudio";
 import type { SourceMode } from "../sourceMode";
@@ -77,6 +81,39 @@ export async function runUpload(
     method: "POST",
     body,
     credentials: "include",
+  });
+  const data: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(messageFromBody(data, res) || `Upload failed (${res.status})`);
+  }
+  const uploadId = uploadIdFromBody(data);
+  if (!uploadId) {
+    throw new Error("Upload succeeded but no job id was returned.");
+  }
+  return uploadId;
+}
+
+/**
+ * POST a YouTube URL for summarization. Unlike the file uploads this is a JSON
+ * body — the youtube-fetcher service downloads the audio server-side, so there
+ * is no client-side extract/compress pipeline. Returns the uploadId to track;
+ * the job then behaves like a normal audio (transcribe) job.
+ */
+export async function runYoutubeUpload(
+  url: string,
+  models: UploadModels,
+): Promise<string> {
+  const res = await fetch(uploadYoutubeEndpoint(), {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      youtubeUrl: url,
+      chosenModelId: models.chosenModelId,
+      ...(models.transcriptionModelId
+        ? { transcriptionModelId: models.transcriptionModelId }
+        : {}),
+    }),
   });
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {

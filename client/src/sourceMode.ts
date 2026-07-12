@@ -1,3 +1,4 @@
+/** File-backed modes — drive the accept/extension helpers below. */
 export type SourceMode = "text" | "video" | "audio";
 
 /** Everything the upload form can stage; youtube takes a URL, not a file. */
@@ -12,8 +13,6 @@ const YOUTUBE_HOSTS = new Set([
   "music.youtube.com",
   "youtu.be",
 ]);
-
-/** Everything the upload form can stage; youtube takes a URL, not a file. */
 
 export function isYoutubeUrl(raw: string): boolean {
   try {
