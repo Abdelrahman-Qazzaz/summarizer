@@ -1,0 +1,12 @@
+{
+  "name": "summarizer",
+  "private": true,
+  "packageManager": "npm@11.14.1",
+  "scripts": {
+    "dev": "concurrently -k -n backend,client,fetcher -c blue,green,yellow \"npm run dev --prefix backend\" \"npm run dev --prefix client\" \"npm run dev:fetcher\"",
+    "dev:fetcher": "until curl -sf http://localhost:3001/contract > /dev/null; do sleep 1; done && cd youtube-fetcher && doppler run -- .venv/bin/python -m app.main"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.1"
+  }
+}
