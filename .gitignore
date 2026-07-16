@@ -16,3 +16,5 @@ backend/shared/logger/logs/
 
 
 **/.claude
+.aliases.sh
+.vscode
