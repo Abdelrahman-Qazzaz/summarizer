@@ -24,6 +24,7 @@
     "node-cron": "4.2.1",
     "postgres": "^3.4.9",
     "socket.io": "4.8.3",
+    "unpdf": "^1.6.2",
     "zod": "3.25.76"
   },
   "devDependencies": {
