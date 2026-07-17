@@ -2,6 +2,10 @@
 node_modules
 uploads
 
+# Python (youtube-fetcher)
+.venv/
+__pycache__/
+
 # Package manager lockfiles
 # (We use npm; commit `package-lock.json` in each package directory)
 npm-shrinkwrap.json
