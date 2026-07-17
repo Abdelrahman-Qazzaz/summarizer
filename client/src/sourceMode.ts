@@ -1,6 +1,29 @@
 export type SourceMode = "text" | "video" | "audio";
 
-const TEXT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".text"]);
+/** Everything the upload form can stage; youtube takes a URL, not a file. */
+export type UploadMode = SourceMode | "youtube";
+
+// Mirrors the backend's YOUTUBE_HOSTS (upload.schema.ts) for instant client
+// feedback — the server remains the authority.
+const YOUTUBE_HOSTS = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtu.be",
+]);
+
+/** Everything the upload form can stage; youtube takes a URL, not a file. */
+
+export function isYoutubeUrl(raw: string): boolean {
+  try {
+    return YOUTUBE_HOSTS.has(new URL(raw).hostname);
+  } catch {
+    return false;
+  }
+}
+
+const TEXT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".text", ".pdf"]);
 const VIDEO_EXTENSIONS = new Set([
   ".mp4",
   ".webm",
@@ -23,11 +46,10 @@ const AUDIO_EXTENSIONS = new Set([
   ".weba",
 ]);
 
-const TEXT_ACCEPT = ".txt,.md,.markdown,.text,text/plain,text/markdown";
-const VIDEO_ACCEPT =
-  "video/*,.mp4,.webm,.mov,.mkv,.avi,.m4v,.mpeg,.mpg";
-const AUDIO_ACCEPT =
-  "audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.opus,.weba";
+const TEXT_ACCEPT =
+  ".txt,.md,.markdown,.text,.pdf,text/plain,text/markdown,application/pdf";
+const VIDEO_ACCEPT = "video/*,.mp4,.webm,.mov,.mkv,.avi,.m4v,.mpeg,.mpg";
+const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.opus,.weba";
 
 function fileExtension(name: string): string {
   const match = name.match(/\.[^.]+$/);
@@ -46,6 +68,7 @@ export function isFileAcceptedForMode(file: File, mode: SourceMode): boolean {
 
   if (mode === "text") {
     if (TEXT_EXTENSIONS.has(ext)) return true;
+    if (type === "application/pdf") return true;
     return type.startsWith("text/");
   }
 
@@ -62,7 +85,7 @@ export function isFileAcceptedForMode(file: File, mode: SourceMode): boolean {
 
 export function rejectedFileMessage(mode: SourceMode): string {
   if (mode === "text") {
-    return "Please choose a text file (.txt, .md, …).";
+    return "Please choose a text or PDF file (.txt, .md, .pdf, …).";
   }
   if (mode === "video") {
     return "Please choose a video file (MP4, WebM, MOV, …).";
@@ -75,7 +98,7 @@ export function dropZoneCopy(mode: SourceMode): {
   hint: string;
 } {
   if (mode === "text") {
-    return { title: "Drop a text file", hint: ".txt, .md, .markdown" };
+    return { title: "Drop a text or PDF file", hint: ".txt, .md, .pdf" };
   }
   if (mode === "video") {
     return { title: "Drop a video file", hint: "MP4, WebM, MOV, MKV" };
