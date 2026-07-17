@@ -11,3 +11,5 @@ export async function loadSampleFile(name: string, type: string): Promise<File> 
 
 export const SAMPLE_TEXT_NAME = "test.txt";
 export const SAMPLE_AUDIO_NAME = "audio_speech.flac";
+export const SAMPLE_PDF_NAME = "sample.pdf";
+export const SAMPLE_EMPTY_PDF_NAME = "empty.pdf";

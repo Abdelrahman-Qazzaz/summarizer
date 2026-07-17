@@ -62,6 +62,11 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
 
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
+import {
+  loadSampleFile,
+  SAMPLE_PDF_NAME,
+  SAMPLE_EMPTY_PDF_NAME,
+} from "../helpers/sampleFiles";
 
 function textUploadBody(content = "hello", fileName = "notes.txt"): FormData {
   const formData = new FormData();
@@ -171,6 +176,89 @@ describe("POST /upload/text", () => {
     );
     expect(mockInsert).toHaveBeenCalledTimes(1);
     expect(mockSendEvent).toHaveBeenCalledWith("summarize", body.uploadId);
+  });
+});
+
+// PDFs ride the same route; extraction runs for real (unpdf is not mocked).
+describe("POST /upload/text with PDFs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    });
+    mockUploadTextToBucket.mockResolvedValue(undefined);
+    mockSendEvent.mockResolvedValue(undefined);
+    mockValidateModel.mockResolvedValue(true);
+  });
+
+  async function pdfUploadBody(file: File): Promise<FormData> {
+    const formData = new FormData();
+    formData.append("uploadFile", file);
+    formData.append("chosenModelId", VALID_MODEL);
+    return formData;
+  }
+
+  it("extracts text from a PDF and enqueues summarize", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
+      method: "POST",
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+      body: await pdfUploadBody(
+        await loadSampleFile(SAMPLE_PDF_NAME, "application/pdf"),
+      ),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      fileName: string;
+      preview: string;
+      uploadId: string;
+    };
+    expect(body.fileName).toBe(SAMPLE_PDF_NAME);
+    expect(body.preview).toContain("hi there pdf");
+    // The bucket receives the extracted text, never PDF bytes.
+    expect(mockUploadTextToBucket).toHaveBeenCalledWith(
+      body.uploadId,
+      expect.stringContaining("hi there pdf"),
+    );
+    expect(mockSendEvent).toHaveBeenCalledWith("summarize", body.uploadId);
+  });
+
+  it("returns 422 for a PDF with no text layer, without side effects", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
+      method: "POST",
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+      body: await pdfUploadBody(
+        await loadSampleFile(SAMPLE_EMPTY_PDF_NAME, "application/pdf"),
+      ),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { message: string };
+    expect(body.message).toContain("scanned");
+    expect(mockUploadTextToBucket).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 for unparseable PDF bytes, without side effects", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
+      method: "POST",
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+      body: await pdfUploadBody(
+        new File([new Uint8Array([1, 2, 3])], "x.pdf", {
+          type: "application/pdf",
+        }),
+      ),
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ message: "Could not parse PDF file." });
+    expect(mockUploadTextToBucket).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendEvent).not.toHaveBeenCalled();
   });
 });
 
