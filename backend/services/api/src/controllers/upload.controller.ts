@@ -12,6 +12,11 @@ import {
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../../shared/keys";
+import {
+  isPdfUpload,
+  extractPdfText,
+  PdfExtractionError,
+} from "../utils/pdfText";
 
 type AudioSource = "video" | "audio";
 
@@ -92,14 +97,23 @@ export async function handleYoutubeUpload(c: Context) {
   });
 }
 
-/** POST /upload/text — plain text files for summarization. */
+/** POST /upload/text — plain text or PDF files for summarization. */
 export async function handleTextUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
   const file = c.get(CTX_KEYS.uploadFile);
 
   const uploadId: UploadId = randomUUID();
-  const text = await file.text();
+  let text: string;
+  if (isPdfUpload(file)) {
+    try {
+      text = await extractPdfText(file);
+    } catch (err) {
+      if (err instanceof PdfExtractionError)
+        return c.json({ message: err.message }, 422);
+      throw err;
+    }
+  } else text = await file.text();
 
   await uploadTextToBucket(uploadId, text);
   await db.insert(TextSummarizationJobs).values({
