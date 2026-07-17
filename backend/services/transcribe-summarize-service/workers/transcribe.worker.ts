@@ -28,6 +28,9 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     const audio = await getAudioFile(uploadId);
     const model = job.transcriptionModelId ?? DEFAULT_MODELS.TRANSCRIBE;
     const transcript = await transcribe(model, audio);
+    if (!transcript.trim()) {
+      throw new Error("Transcription produced no text");
+    }
     log.debug("Transcription produced", { uploadId, length: transcript.length });
     await db
       .update(TABLE)
