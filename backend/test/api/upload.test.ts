@@ -47,6 +47,10 @@ vi.mock("../../shared/db", () => ({
 vi.mock("../../shared/bucket", () => ({
   uploadTextToBucket: mockUploadTextToBucket,
   uploadAudioToBucket: mockUploadAudioToBucket,
+  // Literals (not the top-level consts): vi.mock factories can run during
+  // import evaluation, before this module's own bindings initialize.
+  BUCKET: "Audio & Text files",
+  MAX_AUDIO_BYTES: 100 * 1024 * 1024,
 }));
 
 vi.mock("../../shared/message-queue/messageQueue", () => ({

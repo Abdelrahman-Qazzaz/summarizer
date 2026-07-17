@@ -2,8 +2,8 @@ import { createMiddleware } from "hono/factory";
 import type { Context } from "hono";
 import type { ZodSchema } from "zod";
 import type { ZodError } from "zod";
+import { MAX_AUDIO_BYTES } from "../../../../shared/bucket";
 const MAX_TEXT_BYTES = 15 * 1024 * 1024;
-const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 
 export function validateReqParams<T extends Record<string, unknown>>(
   schema: ZodSchema<T>,

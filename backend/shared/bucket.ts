@@ -10,6 +10,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 // same as the queue names.
 export const BUCKET = "Audio & Text files";
 
+// Cap on audio files entering the bucket. Served on /contract so the
+// youtube-fetcher enforces the same limit the API applies to direct uploads.
+export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
+
 /** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
 export async function pingBucket(): Promise<void> {
   const { error } = await supabase.storage.getBucket(BUCKET);

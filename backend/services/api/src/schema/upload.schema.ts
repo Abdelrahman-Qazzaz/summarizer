@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../../shared/keys";
 import { validateModel, DEFAULT_MODELS } from "../../../../shared/ai/ai_client";
+import { MAX_AUDIO_BYTES } from "../../../../shared/bucket";
 
-const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
 
 const YOUTUBE_HOSTS = new Set([
