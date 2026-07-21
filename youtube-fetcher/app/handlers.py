@@ -84,7 +84,13 @@ def _fetch_and_upload(upload_id: str, url: str) -> None:
 
             ydl.download([url])
 
-        files = [p for p in Path(tmp).iterdir() if p.is_file()]
+        # An aborted download (e.g. max_filesize hit mid-transfer) leaves a
+        # truncated *.part file behind — never upload those.
+        files = [
+            p
+            for p in Path(tmp).iterdir()
+            if p.is_file() and not p.name.endswith((".part", ".ytdl"))
+        ]
 
         if not files:
             raise RuntimeError(
