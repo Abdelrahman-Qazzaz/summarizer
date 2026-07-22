@@ -34,10 +34,9 @@ export function isPdfUpload(file: File): boolean {
 export async function extractPdfText(file: File): Promise<string> {
   let text: string;
   try {
-    ({ text } = await extractText(
-      new Uint8Array(await file.arrayBuffer()),
-      { mergePages: true },
-    ));
+    ({ text } = await extractText(new Uint8Array(await file.arrayBuffer()), {
+      mergePages: true,
+    }));
   } catch (err) {
     if (err instanceof Error && err.name === "PasswordException") {
       throw new PdfExtractionError(

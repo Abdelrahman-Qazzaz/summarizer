@@ -2,23 +2,29 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const uploadId = "550e8400-e29b-41d4-a716-446655440000";
 
-const { mockSendEvent, mockPromptAI, mockReturning, mockWhere, mockSet, mockUpdate } =
-  vi.hoisted(() => {
-    const mockReturning = vi.fn();
-    const mockWhere = vi.fn();
-    const mockSet = vi.fn();
-    const mockUpdate = vi.fn();
-    const mockSendEvent = vi.fn();
-    const mockPromptAI = vi.fn();
-    return {
-      mockSendEvent,
-      mockPromptAI,
-      mockReturning,
-      mockWhere,
-      mockSet,
-      mockUpdate,
-    };
-  });
+const {
+  mockSendEvent,
+  mockPromptAI,
+  mockReturning,
+  mockWhere,
+  mockSet,
+  mockUpdate,
+} = vi.hoisted(() => {
+  const mockReturning = vi.fn();
+  const mockWhere = vi.fn();
+  const mockSet = vi.fn();
+  const mockUpdate = vi.fn();
+  const mockSendEvent = vi.fn();
+  const mockPromptAI = vi.fn();
+  return {
+    mockSendEvent,
+    mockPromptAI,
+    mockReturning,
+    mockWhere,
+    mockSet,
+    mockUpdate,
+  };
+});
 
 vi.mock("../../shared/bucket", () => ({
   readTextFile: vi.fn().mockResolvedValue("sample transcript text"),
@@ -54,7 +60,11 @@ describe("handleSummarizeJob", () => {
     vi.clearAllMocks();
     // Stream a single delta, then resolve the full summary string.
     mockPromptAI.mockImplementation(
-      async (_model: string, _prompt: string, opts?: { onDelta?: (d: string) => void }) => {
+      async (
+        _model: string,
+        _prompt: string,
+        opts?: { onDelta?: (d: string) => void },
+      ) => {
         opts?.onDelta?.("sample summary");
         return "sample summary";
       },

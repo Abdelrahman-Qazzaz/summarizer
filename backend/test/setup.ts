@@ -17,9 +17,8 @@ process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
 process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
 
 vi.mock("../services/api/src/rateLimit/storage", async () => {
-  const { createMockRateLimitStore } = await import(
-    "./helpers/rateLimitStoreMock"
-  );
+  const { createMockRateLimitStore } =
+    await import("./helpers/rateLimitStoreMock");
   return { createRateLimitStore: createMockRateLimitStore };
 });
 

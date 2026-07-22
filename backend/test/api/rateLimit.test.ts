@@ -24,7 +24,9 @@ vi.mock("../../shared/db", () => ({
   db: { select: mockSelect },
   TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
   AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
-  jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
+  jobStatusEnum: {
+    enumValues: ["queued", "processing", "completed", "failed"],
+  },
 }));
 
 vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {
@@ -71,12 +73,11 @@ describe("rate limiting", () => {
         error: null,
       },
     ]);
-    const res = await (await createApp()).request(
-      `http://localhost/jobs/summarize/${uploadId}`,
-      {
-        headers: { Cookie: await sessionCookieHeader("user_01") },
-      },
-    );
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/summarize/${uploadId}`, {
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+    });
     expect(res.status).toBe(200);
   });
 
@@ -90,7 +91,9 @@ describe("rate limiting", () => {
         error: null,
       },
     ]);
-    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.headers.get("RateLimit-Limit")).toBe("100");
@@ -100,9 +103,7 @@ describe("rate limiting", () => {
   it("returns 429 when auth callback limit is exceeded", async () => {
     const app = await createApp();
     for (let i = 0; i < 20; i++) {
-      const res = await app.request(
-        "http://localhost/auth/callback?code=test",
-      );
+      const res = await app.request("http://localhost/auth/callback?code=test");
       expect(res.status).not.toBe(429);
     }
     const res = await app.request("http://localhost/auth/callback?code=test");
@@ -124,7 +125,9 @@ describe("rate limiting", () => {
         error: null,
       },
     ]);
-    const res = await (await createApp()).request(`http://localhost/jobs/${uploadId}`, {
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(503);
@@ -162,7 +165,9 @@ describe("GET /models rate limiting", () => {
 
   it("returns 503 when the rate limit store is unavailable", async () => {
     setRateLimitStoreUnavailable(true);
-    const res = await (await createApp()).request("http://localhost/models", {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/models", {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(503);
