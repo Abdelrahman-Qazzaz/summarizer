@@ -3,8 +3,9 @@ import { streamSSE } from "hono/streaming";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { ChatMessages, Conversations, db } from "../../../../shared/db";
 import { CTX_KEYS } from "../../../../shared/keys";
-import { chatAI, validateModel } from "../../../../shared/ai/ai_client";
+import { chatAI } from "../../../../shared/ai/ai_client";
 import type { ChatTurn } from "../../../../shared/ai/ai_client";
+import { sendEvent } from "../utils/sse";
 import { logger } from "../../../../shared/logger";
 
 const log = logger.child({ controller: "messages" });
@@ -24,6 +25,31 @@ function toMessageJson(row: typeof ChatMessages.$inferSelect) {
     conversationId: row.conversationId,
     createdAt: row.createdAt,
   };
+}
+
+/**
+ * The model context for a new user turn: the conversation's most recent
+ * history (fetched newest-first so LIMIT keeps the latest turns, then reversed
+ * into the oldest-first order the model expects) plus the new turn itself.
+ * Must run before the new turn is inserted, so it can't appear twice.
+ */
+async function buildContextTurns(
+  conversationId: string,
+  content: string,
+): Promise<ChatTurn[]> {
+  const history = await db
+    .select()
+    .from(ChatMessages)
+    .where(eq(ChatMessages.conversationId, conversationId))
+    .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
+    .limit(MAX_CONTEXT_MESSAGES - 1);
+
+  return [
+    ...history
+      .reverse()
+      .map((m) => ({ role: m.role, content: m.content }) as ChatTurn),
+    { role: "user", content },
+  ];
 }
 
 /** Ownership gate shared by every message route: 404 unless the user owns it. */
@@ -75,32 +101,16 @@ export async function handleCreateMessage(c: Context) {
   if (!(await findOwnedConversation(userId, conversationId)))
     return c.json({ message: "Conversation not found" }, 404);
 
-  if (!(await validateModel(chosenModelId, "text")))
-    return c.json({ message: "Invalid model: must be a text model" }, 400);
+  const turns = await buildContextTurns(conversationId, content);
 
-  // Build the model context from history *before* inserting the new user row,
-  // so the new turn can't appear twice in the prompt.
-  const history = await db
-    .select()
-    .from(ChatMessages)
-    .where(eq(ChatMessages.conversationId, conversationId))
-    .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
-    .limit(MAX_CONTEXT_MESSAGES - 1);
-
-  const turns: ChatTurn[] = [
-    ...history
-      .reverse()
-      .map((m) => ({ role: m.role, content: m.content }) as ChatTurn),
-    { role: "user", content },
-  ];
-
-  const [userMessage] = await db
+  // Query builders only; drizzle runs them lazily when awaited, which happens
+  // inside the stream — so the SSE response opens without waiting on writes.
+  const persistUserTurn = db
     .insert(ChatMessages)
     .values({ role: "user", content, conversationId, userId })
     .returning();
-
   // Surface the new activity in the conversation list's ordering metadata.
-  await db
+  const touchConversation = db
     .update(Conversations)
     .set({ updatedAt: new Date() })
     .where(eq(Conversations.id, conversationId));
@@ -109,14 +119,17 @@ export async function handleCreateMessage(c: Context) {
     // Errors are reported in-band: headers (200) are already sent once the
     // first byte streams, so an SSE "error" event is the only channel left.
     try {
-      await stream.writeSSE({
-        event: "user_message",
-        data: JSON.stringify(toMessageJson(userMessage)),
-      });
+      // The user turn must be durable (and its id known for the event) before
+      // the model call; the assistant row is only written after the model
+      // finishes, right before `done` hands the persisted row to the client.
+      const [[userMessage]] = await Promise.all([
+        persistUserTurn,
+        touchConversation,
+      ]);
+      await sendEvent(stream, "user_message", toMessageJson(userMessage));
 
       const full = await chatAI(chosenModelId, turns, {
-        onDelta: (delta) =>
-          stream.writeSSE({ event: "delta", data: JSON.stringify({ delta }) }),
+        onDelta: (delta) => sendEvent(stream, "delta", { delta }),
       });
 
       const [assistantMessage] = await db
@@ -130,19 +143,13 @@ export async function handleCreateMessage(c: Context) {
         })
         .returning();
 
-      await stream.writeSSE({
-        event: "done",
-        data: JSON.stringify(toMessageJson(assistantMessage)),
-      });
+      await sendEvent(stream, "done", toMessageJson(assistantMessage));
     } catch (err) {
       log.error("Chat completion stream failed", err, {
         conversationId,
         chosenModelId,
       });
-      await stream.writeSSE({
-        event: "error",
-        data: JSON.stringify({ message: "Model response failed" }),
-      });
+      await sendEvent(stream, "error", { message: "Model response failed" });
     }
   });
 }
