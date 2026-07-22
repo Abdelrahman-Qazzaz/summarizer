@@ -1,7 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import type { Context } from "hono";
-import type { ZodSchema } from "zod";
-import type { ZodError } from "zod";
+import type { ZodError, ZodSchema, ZodType, ZodTypeDef } from "zod";
 import { MAX_AUDIO_BYTES } from "../../../../shared/bucket";
 const MAX_TEXT_BYTES = 15 * 1024 * 1024;
 
@@ -20,7 +19,9 @@ export function validateReqParams<T extends Record<string, unknown>>(
 }
 
 export function validateReqBody<T extends Record<string, unknown>>(
-  schema: ZodSchema<T>,
+  // Input type is free so preprocess/transform schemas (e.g. coercing an empty
+  // body to {}) satisfy the constraint; the output stays a CTX-keyed record.
+  schema: ZodType<T, ZodTypeDef, unknown>,
 ) {
   return createMiddleware(async (c, next) => {
     const body = await c.req.json().catch(() => null);

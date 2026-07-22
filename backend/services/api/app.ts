@@ -5,6 +5,7 @@ import { jobsRouter } from "./src/routes/jobs.router";
 import { uploadRouter } from "./src/routes/upload.router";
 import { authRouter } from "./src/routes/auth.router";
 import { modelsRouter } from "./src/routes/models.router";
+import { conversationsRouter } from "./src/routes/conversations.router";
 import { mq } from "../../shared/message-queue/messageQueue";
 import { BUCKET, MAX_AUDIO_BYTES } from "../../shared/bucket";
 import { verifyApiServices } from "./startup";
@@ -33,5 +34,6 @@ export async function createApp() {
   app.route("/auth", authRouter);
   app.route("/jobs", jobsRouter);
   app.route("/models", modelsRouter);
+  app.route("/conversations", conversationsRouter);
   return app;
 }
