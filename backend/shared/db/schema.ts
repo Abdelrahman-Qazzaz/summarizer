@@ -108,6 +108,8 @@ export const ChatMessages = pgTable("chat_messages", {
   conversationId: uuid("conversation_id")
     .notNull()
     .references(() => Conversations.id, { onDelete: "cascade" }),
+
+  // could be useful for future "shared chat" feature.
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
