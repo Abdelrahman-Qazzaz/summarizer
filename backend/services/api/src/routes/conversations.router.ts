@@ -12,6 +12,7 @@ import {
   conversationCreateBodySchema,
   conversationPatchBodySchema,
 } from "../schema/conversations.schema";
+import { messagesRouter } from "./messages.router";
 
 export const conversationsRouter = new Hono();
 
@@ -42,4 +43,9 @@ conversationsRouter.delete(
   `/:${CTX_KEYS.conversationId}`,
   validateReqParams(conversationReqParamSchema),
   conversationsController.handleDeleteConversation,
+);
+
+conversationsRouter.route(
+  `/:${CTX_KEYS.conversationId}/messages`,
+  messagesRouter,
 );

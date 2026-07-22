@@ -8,6 +8,8 @@ export const CTX_KEYS = {
   userId: "userId",
   uploadId: "uploadId",
   conversationId: "conversationId",
+  messageId: "messageId",
+
   limit: "limit",
   cursor: "cursor",
   status: "status",
@@ -15,6 +17,8 @@ export const CTX_KEYS = {
   q: "q",
 
   conversationTitle: "conversationTitle",
+
+  messageContent: "messageContent",
 
   uploadFile,
   chosenModelId,
