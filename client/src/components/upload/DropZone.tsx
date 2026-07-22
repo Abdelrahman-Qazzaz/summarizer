@@ -42,13 +42,14 @@ export function DropZone({
         w-full min-h-[200px] p-8
         border-2 border-dashed rounded-2xl
         transition-all duration-200 ease-out
-        ${disabled
-          ? "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 cursor-not-allowed"
-          : dragOver
-            ? "border-primary-500 bg-primary-50 dark:bg-primary-950/40 scale-[1.02]"
-            : hasFile
-              ? "border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-950/20"
-              : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800/30 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-primary-50/30 dark:hover:bg-primary-950/20 cursor-pointer"
+        ${
+          disabled
+            ? "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 cursor-not-allowed"
+            : dragOver
+              ? "border-primary-500 bg-primary-50 dark:bg-primary-950/40 scale-[1.02]"
+              : hasFile
+                ? "border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-950/20"
+                : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800/30 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-primary-50/30 dark:hover:bg-primary-950/20 cursor-pointer"
         }
       `}
     >
@@ -61,7 +62,8 @@ export function DropZone({
         className="sr-only"
       />
 
-      <div className={`w-14 h-14 mb-4 rounded-2xl flex items-center justify-center
+      <div
+        className={`w-14 h-14 mb-4 rounded-2xl flex items-center justify-center
         transition-colors duration-200
         ${dragOver ? "bg-primary-200 dark:bg-primary-800" : "bg-primary-100 dark:bg-primary-900/50"}`}
       >
@@ -81,15 +83,14 @@ export function DropZone({
         </svg>
       </div>
 
-      <p className={`text-base font-medium mb-1 transition-colors duration-200
+      <p
+        className={`text-base font-medium mb-1 transition-colors duration-200
         ${dragOver ? "text-primary-700 dark:text-primary-300" : "text-gray-700 dark:text-gray-200"}`}
       >
         {dragOver ? "Drop to upload" : title}
       </p>
 
-      <p className="text-sm text-gray-500 dark:text-gray-400">
-        {hint}
-      </p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">{hint}</p>
 
       {!hasFile && (
         <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">

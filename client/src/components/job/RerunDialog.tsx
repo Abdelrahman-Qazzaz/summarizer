@@ -72,7 +72,9 @@ export function RerunDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Re-run job</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Re-run job
+          </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             {isAudio
               ? "Re-transcribe the audio and re-summarize the result."

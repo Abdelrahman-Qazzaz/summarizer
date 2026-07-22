@@ -31,12 +31,18 @@ export function HistoryPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [kind, setKind] = useState<KindFilter>("all");
 
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useJobsQuery(!!user, {
-      status: status === "all" ? null : status,
-      kind: kind === "all" ? null : kind,
-      q: q.trim() || null,
-    });
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useJobsQuery(!!user, {
+    status: status === "all" ? null : status,
+    kind: kind === "all" ? null : kind,
+    q: q.trim() || null,
+  });
 
   // Flatten pages and apply the same filters client-side as a fallback in case
   // the backend doesn't support server-side filtering yet.
@@ -73,14 +79,26 @@ export function HistoryPage() {
           placeholder="Search by file name…"
           className={`${selectClass} flex-1 min-w-[12rem]`}
         />
-        <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} className={selectClass}>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as StatusFilter)}
+          className={selectClass}
+        >
           {statusOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
           ))}
         </select>
-        <select value={kind} onChange={(e) => setKind(e.target.value as KindFilter)} className={selectClass}>
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as KindFilter)}
+          className={selectClass}
+        >
           {kindOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
           ))}
         </select>
       </div>
@@ -88,7 +106,10 @@ export function HistoryPage() {
       {isLoading ? (
         <div className="space-y-2">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-[68px] rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
+            <div
+              key={i}
+              className="h-[68px] rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse"
+            />
           ))}
         </div>
       ) : error ? (
@@ -99,7 +120,9 @@ export function HistoryPage() {
         </div>
       ) : jobs.length === 0 ? (
         <div className="p-12 text-center bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl">
-          <p className="text-gray-600 dark:text-gray-300 font-medium">No jobs yet</p>
+          <p className="text-gray-600 dark:text-gray-300 font-medium">
+            No jobs yet
+          </p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Your processed files will appear here.
           </p>

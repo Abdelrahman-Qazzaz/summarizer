@@ -35,8 +35,12 @@ const statusConfig: Record<
 function PulsingDot({ color }: { color: string }) {
   return (
     <span className="relative flex h-2.5 w-2.5">
-      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${color}`} />
-      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${color}`} />
+      <span
+        className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${color}`}
+      />
+      <span
+        className={`relative inline-flex rounded-full h-2.5 w-2.5 ${color}`}
+      />
     </span>
   );
 }
@@ -46,19 +50,23 @@ export function JobStatus({ status, message, loading }: JobStatusProps) {
   const isActive = status === "queued" || status === "processing";
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl ${config.bgColor}`}>
+    <div
+      className={`flex items-center gap-3 px-4 py-3 rounded-xl ${config.bgColor}`}
+    >
       {isActive || loading ? (
-        <PulsingDot color={status === "processing" ? "bg-blue-500" : "bg-amber-500"} />
+        <PulsingDot
+          color={status === "processing" ? "bg-blue-500" : "bg-amber-500"}
+        />
       ) : (
-        <span className={`w-2.5 h-2.5 rounded-full ${
-          status === "completed" ? "bg-green-500" : "bg-red-500"
-        }`} />
+        <span
+          className={`w-2.5 h-2.5 rounded-full ${
+            status === "completed" ? "bg-green-500" : "bg-red-500"
+          }`}
+        />
       )}
 
       <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium ${config.color}`}>
-          {config.label}
-        </p>
+        <p className={`text-sm font-medium ${config.color}`}>{config.label}</p>
         {message && (
           <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 truncate">
             {message}
@@ -67,7 +75,11 @@ export function JobStatus({ status, message, loading }: JobStatusProps) {
       </div>
 
       {isActive && (
-        <svg className="animate-spin h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24">
+        <svg
+          className="animate-spin h-4 w-4 text-gray-400 dark:text-gray-500"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
           <circle
             className="opacity-25"
             cx="12"

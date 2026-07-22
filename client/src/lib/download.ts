@@ -13,6 +13,7 @@ export function downloadTextFile(filename: string, content: string): void {
 
 /** Builds a safe, descriptive download filename from a source name + suffix. */
 export function resultFileName(sourceName: string, suffix: string): string {
-  const base = sourceName.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_") || "result";
+  const base =
+    sourceName.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_") || "result";
   return `${base}-${suffix}.txt`;
 }

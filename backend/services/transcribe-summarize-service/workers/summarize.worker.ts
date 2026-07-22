@@ -73,7 +73,13 @@ export async function handleSummarizeJob(uploadId: UploadId) {
 
       flush(); // emit whatever is left
       await sendChain; // ensure all chunks are sent before the terminal event
-      return await completeSummarizeJob(TABLE, uploadId, summary, notifyId, userId);
+      return await completeSummarizeJob(
+        TABLE,
+        uploadId,
+        summary,
+        notifyId,
+        userId,
+      );
     } finally {
       if (timer) clearTimeout(timer);
     }

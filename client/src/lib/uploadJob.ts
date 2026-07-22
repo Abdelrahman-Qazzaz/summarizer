@@ -84,7 +84,9 @@ export async function runUpload(
   });
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(messageFromBody(data, res) || `Upload failed (${res.status})`);
+    throw new Error(
+      messageFromBody(data, res) || `Upload failed (${res.status})`,
+    );
   }
   const uploadId = uploadIdFromBody(data);
   if (!uploadId) {
@@ -117,7 +119,9 @@ export async function runYoutubeUpload(
   });
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(messageFromBody(data, res) || `Upload failed (${res.status})`);
+    throw new Error(
+      messageFromBody(data, res) || `Upload failed (${res.status})`,
+    );
   }
   const uploadId = uploadIdFromBody(data);
   if (!uploadId) {

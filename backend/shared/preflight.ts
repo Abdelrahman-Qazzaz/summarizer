@@ -22,12 +22,13 @@ export async function verifyServices(checks: ServiceCheck[]): Promise<void> {
   );
 
   if (failures.length > 0) {
-    for (const { name, reason } of failures) 
+    for (const { name, reason } of failures)
       logger.error(`Service unavailable at startup: ${name}`, reason);
-    
+
     const detail = failures
       .map(({ name, reason }) => {
-        const message = reason instanceof Error ? reason.message : String(reason);
+        const message =
+          reason instanceof Error ? reason.message : String(reason);
         return `  - ${name}: ${message}`;
       })
       .join("\n");

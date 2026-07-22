@@ -305,7 +305,10 @@ export async function handleRerunSummarizeJob(c: Context) {
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
 
   if (!(await validateModel(chosenModelId, "text")))
-    return c.json({ message: "Invalid summary model: must be a text model" }, 400);
+    return c.json(
+      { message: "Invalid summary model: must be a text model" },
+      400,
+    );
 
   const [job] = await db
     .update(TextSummarizationJobs)
