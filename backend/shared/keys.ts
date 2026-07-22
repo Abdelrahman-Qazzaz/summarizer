@@ -7,11 +7,14 @@ const youtubeUrl = "youtubeUrl";
 export const CTX_KEYS = {
   userId: "userId",
   uploadId: "uploadId",
+  conversationId: "conversationId",
   limit: "limit",
   cursor: "cursor",
   status: "status",
   kind: "kind",
   q: "q",
+
+  conversationTitle: "conversationTitle",
 
   uploadFile,
   chosenModelId,
