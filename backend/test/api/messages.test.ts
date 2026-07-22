@@ -286,14 +286,16 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it("rejects an invalid model with 400", async () => {
-    mockLimit.mockResolvedValueOnce([{ id: conversationId }]);
+  it("rejects an invalid model with 400 before touching the db", async () => {
+    // Model validation now runs in the body-schema middleware, ahead of the
+    // handler's ownership check.
     mockValidateModel.mockResolvedValueOnce(false);
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: "nope",
     });
     expect(res.status).toBe(400);
+    expect(mockSelect).not.toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
