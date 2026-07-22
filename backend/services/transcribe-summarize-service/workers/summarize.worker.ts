@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { readTextFile } from "../../../shared/bucket";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { logger } from "../../../shared/logger";
-import { promptAI } from "../../../shared/ai/ai_client";
+import { chatAI } from "../../../shared/ai/ai_client";
 
 const log = logger.child({ worker: "summarize" });
 
@@ -59,9 +59,14 @@ export async function handleSummarizeJob(uploadId: UploadId) {
     };
 
     try {
-      const summary = await promptAI(
+      const summary = await chatAI(
         job.chosenModelId,
-        `Summarize the following text:\n\n${text}`,
+        [
+          {
+            role: "user",
+            content: `Summarize the following text:\n\n${text}`,
+          },
+        ],
         {
           onDelta: (delta) => {
             buffer += delta;

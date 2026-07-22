@@ -4,7 +4,7 @@ const uploadId = "550e8400-e29b-41d4-a716-446655440000";
 
 const {
   mockSendEvent,
-  mockPromptAI,
+  mockChatAI,
   mockReturning,
   mockWhere,
   mockSet,
@@ -15,10 +15,10 @@ const {
   const mockSet = vi.fn();
   const mockUpdate = vi.fn();
   const mockSendEvent = vi.fn();
-  const mockPromptAI = vi.fn();
+  const mockChatAI = vi.fn();
   return {
     mockSendEvent,
-    mockPromptAI,
+    mockChatAI,
     mockReturning,
     mockWhere,
     mockSet,
@@ -30,7 +30,7 @@ vi.mock("../../shared/bucket", () => ({
   readTextFile: vi.fn().mockResolvedValue("sample transcript text"),
 }));
 vi.mock("../../shared/ai/ai_client", () => ({
-  promptAI: mockPromptAI,
+  chatAI: mockChatAI,
   DEFAULT_MODELS: { TRANSCRIBE: "transcribe-model", PROMPT: "prompt-model" },
 }));
 vi.mock("../../shared/message-queue/messageQueue", () => ({
@@ -59,7 +59,7 @@ describe("handleSummarizeJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Stream a single delta, then resolve the full summary string.
-    mockPromptAI.mockImplementation(
+    mockChatAI.mockImplementation(
       async (
         _model: string,
         _prompt: string,
@@ -99,9 +99,14 @@ describe("handleSummarizeJob", () => {
     ]);
     await handleSummarizeJob(uploadId);
     expect(readTextFile).toHaveBeenCalledWith(uploadId);
-    expect(mockPromptAI).toHaveBeenCalledWith(
+    expect(mockChatAI).toHaveBeenCalledWith(
       DEFAULT_MODELS.PROMPT,
-      expect.stringContaining("sample transcript text"),
+      [
+        {
+          role: "user",
+          content: expect.stringContaining("sample transcript text"),
+        },
+      ],
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
     expect(mockUpdate).toHaveBeenCalledTimes(2);
@@ -119,7 +124,7 @@ describe("handleSummarizeJob", () => {
     mockReturning.mockResolvedValueOnce([]);
     await handleSummarizeJob(uploadId);
     expect(readTextFile).not.toHaveBeenCalled();
-    expect(mockPromptAI).not.toHaveBeenCalled();
+    expect(mockChatAI).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 });
