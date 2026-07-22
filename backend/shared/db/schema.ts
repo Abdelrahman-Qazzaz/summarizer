@@ -87,6 +87,32 @@ export const Conversations = pgTable("conversations", {
     .references(() => users.id, { onDelete: "cascade" }),
 });
 
+export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant"] as const);
+
+export const ChatMessages = pgTable("chat_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Which side of the chat wrote this row — mirrors the chat-completion API's
+  // turn roles so history can be replayed to the model as-is.
+  role: chatRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+  // Model that produced an assistant message; null for user messages.
+  chosenModelId: text("chosen_model_id"),
+
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => Conversations.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+});
+
 export const users = pgTable("users", {
   // WorkOS user id (eg "user_01...")
   id: text("id").primaryKey(),
