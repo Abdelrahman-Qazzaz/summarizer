@@ -1,8 +1,4 @@
-import {
-  jobEndpoint,
-  jobRerunEndpoint,
-  jobsListEndpoint,
-} from "../config";
+import { jobEndpoint, jobRerunEndpoint, jobsListEndpoint } from "../config";
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
@@ -120,7 +116,9 @@ export async function fetchJobs(
   const res = await fetch(url.toString(), { credentials: "include" });
   const data = await parseJson(res);
   if (!res.ok) {
-    throw new Error(messageFromBody(data, res) || `Failed to load jobs (${res.status})`);
+    throw new Error(
+      messageFromBody(data, res) || `Failed to load jobs (${res.status})`,
+    );
   }
   if (
     !data ||
@@ -144,7 +142,9 @@ export async function deleteJob(
   });
   if (!res.ok) {
     const data = await parseJson(res);
-    throw new Error(messageFromBody(data, res) || `Failed to delete job (${res.status})`);
+    throw new Error(
+      messageFromBody(data, res) || `Failed to delete job (${res.status})`,
+    );
   }
 }
 
@@ -177,7 +177,9 @@ export async function rerunJob(
   });
   const data = await parseJson(res);
   if (!res.ok) {
-    throw new Error(messageFromBody(data, res) || `Failed to re-run job (${res.status})`);
+    throw new Error(
+      messageFromBody(data, res) || `Failed to re-run job (${res.status})`,
+    );
   }
   if (
     data &&

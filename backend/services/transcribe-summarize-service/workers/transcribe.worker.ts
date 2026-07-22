@@ -31,7 +31,10 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     if (!transcript.trim()) {
       throw new Error("Transcription produced no text");
     }
-    log.debug("Transcription produced", { uploadId, length: transcript.length });
+    log.debug("Transcription produced", {
+      uploadId,
+      length: transcript.length,
+    });
     await db
       .update(TABLE)
       .set({ status: "completed" })
@@ -61,7 +64,13 @@ export async function handleTranscribeJob(uploadId: UploadId) {
       // (possibly updated) model carried on the audio job.
       await db
         .update(TextSummarizationJobs)
-        .set({ status: "queued", summary: null, error: null, sizeBytes, chosenModelId })
+        .set({
+          status: "queued",
+          summary: null,
+          error: null,
+          sizeBytes,
+          chosenModelId,
+        })
         .where(eq(TextSummarizationJobs.uploadId, textUploadId));
     } else {
       await db.insert(TextSummarizationJobs).values({

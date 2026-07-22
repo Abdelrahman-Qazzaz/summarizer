@@ -31,7 +31,9 @@ vi.mock("../../shared/db", () => ({
   db: { insert: mockInsert },
   AudioTranscriptionJobs: {},
   TextSummarizationJobs: {},
-  jobStatusEnum: { enumValues: ["queued", "processing", "completed", "failed"] },
+  jobStatusEnum: {
+    enumValues: ["queued", "processing", "completed", "failed"],
+  },
 }));
 
 vi.mock("../../shared/bucket", () => ({
@@ -78,14 +80,13 @@ describe("POST /upload/text with sample file", () => {
     formData.append("uploadFile", file);
     formData.append("chosenModelId", VALID_MODEL);
 
-    const res = await (await createApp()).request(
-      "http://localhost/upload/text",
-      {
-        method: "POST",
-        headers: { Cookie: await sessionCookieHeader("user_01") },
-        body: formData,
-      },
-    );
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/text", {
+      method: "POST",
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+      body: formData,
+    });
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -120,14 +121,13 @@ describe("POST /upload/audio with sample file", () => {
     formData.append("audioSource", "audio");
     formData.append("chosenModelId", VALID_MODEL);
 
-    const res = await (await createApp()).request(
-      "http://localhost/upload/audio",
-      {
-        method: "POST",
-        headers: { Cookie: await sessionCookieHeader("user_01") },
-        body: formData,
-      },
-    );
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/audio", {
+      method: "POST",
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+      body: formData,
+    });
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as {

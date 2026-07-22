@@ -17,4 +17,3 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   }
   return loadPromise;
 }
-

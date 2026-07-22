@@ -39,7 +39,9 @@ export function UserMenu() {
             border border-gray-100 dark:border-gray-800 z-50"
         >
           <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Signed in as</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Signed in as
+            </p>
             <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
               {user.userId}
             </p>

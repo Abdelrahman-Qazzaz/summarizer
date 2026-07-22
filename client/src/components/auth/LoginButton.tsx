@@ -6,9 +6,7 @@ type LoginButtonProps = {
 
 export function LoginButton({ size = "default" }: LoginButtonProps) {
   const sizeClasses =
-    size === "large"
-      ? "px-8 py-4 text-lg"
-      : "px-6 py-2.5 text-sm";
+    size === "large" ? "px-8 py-4 text-lg" : "px-6 py-2.5 text-sm";
 
   return (
     <a

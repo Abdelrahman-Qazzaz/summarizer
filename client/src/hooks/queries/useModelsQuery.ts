@@ -14,7 +14,9 @@ export function useModelsQuery(enabled: boolean) {
   });
 
   const entries: ModelEntry[] = query.data
-    ? Object.entries(query.data.modelData).sort(([a], [b]) => a.localeCompare(b))
+    ? Object.entries(query.data.modelData).sort(([a], [b]) =>
+        a.localeCompare(b),
+      )
     : [];
 
   return {

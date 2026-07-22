@@ -23,7 +23,11 @@ export async function createApp() {
   // service callers have no session. Secrets (Supabase key, MQ_URL) are NOT
   // served here — those belong in a secrets manager / platform env.
   app.get("/contract", (c) =>
-    c.json({ queues: mq.queues, bucket: BUCKET, maxAudioBytes: MAX_AUDIO_BYTES }),
+    c.json({
+      queues: mq.queues,
+      bucket: BUCKET,
+      maxAudioBytes: MAX_AUDIO_BYTES,
+    }),
   );
   app.route("/upload", uploadRouter);
   app.route("/auth", authRouter);

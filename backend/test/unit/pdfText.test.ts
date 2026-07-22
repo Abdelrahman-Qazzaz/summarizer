@@ -51,9 +51,11 @@ describe("extractPdfText", () => {
   it("maps PasswordException to a password message", async () => {
     vi.resetModules();
     vi.doMock("unpdf", () => ({
-      extractText: vi.fn().mockRejectedValue(
-        Object.assign(new Error("locked"), { name: "PasswordException" }),
-      ),
+      extractText: vi
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error("locked"), { name: "PasswordException" }),
+        ),
     }));
     const fresh = await import("../../services/api/src/utils/pdfText");
     const file = new File(["x"], "locked.pdf", { type: PDF_MIME });

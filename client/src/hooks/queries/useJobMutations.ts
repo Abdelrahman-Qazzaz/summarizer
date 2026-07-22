@@ -18,7 +18,8 @@ export function useDeleteJobMutation() {
     onError: (error) => {
       toast.show({
         kind: "error",
-        message: error instanceof Error ? error.message : "Failed to delete job.",
+        message:
+          error instanceof Error ? error.message : "Failed to delete job.",
       });
     },
   });
@@ -48,7 +49,8 @@ export function useRerunJobMutation() {
     onError: (error) => {
       toast.show({
         kind: "error",
-        message: error instanceof Error ? error.message : "Failed to re-run job.",
+        message:
+          error instanceof Error ? error.message : "Failed to re-run job.",
       });
     },
   });

@@ -35,8 +35,11 @@ let queueIdCounter = 0;
 function useUploadQueueState() {
   const { user } = useAuth();
   const inputId = useId();
-  const { entries, loading: modelsLoading, error: modelsError } =
-    useModelsQuery(!!user);
+  const {
+    entries,
+    loading: modelsLoading,
+    error: modelsError,
+  } = useModelsQuery(!!user);
 
   const [mode, setMode] = useState<UploadMode>("text");
   const [inputMethod, setInputMethod] = useState<InputMethod>("file");
@@ -90,7 +93,9 @@ function useUploadQueueState() {
     setFormError(null);
     // Keep a staged file only if the new mode is a file mode that accepts it.
     setFile((current) =>
-      current && nextMode !== "youtube" && isFileAcceptedForMode(current, nextMode)
+      current &&
+      nextMode !== "youtube" &&
+      isFileAcceptedForMode(current, nextMode)
         ? current
         : null,
     );
@@ -131,14 +136,11 @@ function useUploadQueueState() {
     [pickFiles],
   );
 
-  const updateItem = useCallback(
-    (id: string, patch: Partial<QueueItem>) => {
-      setItems((current) =>
-        current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
-      );
-    },
-    [],
-  );
+  const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
+    setItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    );
+  }, []);
 
   const processItem = useCallback(
     async (
@@ -148,8 +150,11 @@ function useUploadQueueState() {
       models: UploadModels,
     ) => {
       try {
-        const uploadId = await runUpload(uploadFile, itemMode, models, (phase) =>
-          updateItem(id, { phase }),
+        const uploadId = await runUpload(
+          uploadFile,
+          itemMode,
+          models,
+          (phase) => updateItem(id, { phase }),
         );
         updateItem(id, { status: "uploaded", phase: null, uploadId });
       } catch (e) {
@@ -239,7 +244,10 @@ function useUploadQueueState() {
     const models: UploadModels =
       mode === "text"
         ? { chosenModelId: summaryModel }
-        : { chosenModelId: summaryModel, transcriptionModelId: transcriptionModel ?? undefined };
+        : {
+            chosenModelId: summaryModel,
+            transcriptionModelId: transcriptionModel ?? undefined,
+          };
 
     const id = `queue-${queueIdCounter++}`;
     const item: QueueItem = {
@@ -247,7 +255,8 @@ function useUploadQueueState() {
       fileName: uploadFile.name,
       mode,
       model: summaryModel,
-      transcriptionModel: mode === "text" ? undefined : transcriptionModel ?? undefined,
+      transcriptionModel:
+        mode === "text" ? undefined : (transcriptionModel ?? undefined),
       phase: null,
       status: "processing",
       uploadId: null,
@@ -276,7 +285,9 @@ function useUploadQueueState() {
   }, []);
 
   const clearFinished = useCallback(() => {
-    setItems((current) => current.filter((item) => item.status === "processing"));
+    setItems((current) =>
+      current.filter((item) => item.status === "processing"),
+    );
   }, []);
 
   const hasModels = !!summaryModel && (mode === "text" || !!transcriptionModel);
