@@ -71,6 +71,22 @@ export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
   ),
 });
 
+/** Chat conversations owned by a user. */
+export const Conversations = pgTable("conversations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull().default("New conversation"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+});
+
 export const users = pgTable("users", {
   // WorkOS user id (eg "user_01...")
   id: text("id").primaryKey(),
