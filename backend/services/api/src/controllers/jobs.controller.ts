@@ -86,7 +86,7 @@ export async function handleGetTranscribeJob(c: Context) {
     let transcript: string | null = null;
     if (textJob && audioJob.status === "completed") {
       try {
-        transcript = await readTextFile(textJob.uploadId as UploadId);
+        transcript = await readTextFile(userId, textJob.uploadId as UploadId);
       } catch (err) {
         // Fall back to no transcript, but log it — otherwise a real bucket
         // failure is indistinguishable from "transcript not ready yet".
@@ -273,8 +273,8 @@ export async function handleDeleteTranscribeJob(c: Context) {
       ),
     );
 
-  await deleteFileFromBucket(uploadId);
-  if (child) await deleteFileFromBucket(child.uploadId as UploadId);
+  await deleteFileFromBucket(userId, uploadId);
+  if (child) await deleteFileFromBucket(userId, child.uploadId as UploadId);
   return c.json({ message: "Job Deleted" }, 200);
 }
 
@@ -291,7 +291,7 @@ export async function handleDeleteSummarizeJob(c: Context) {
       ),
     );
 
-  await deleteFileFromBucket(uploadId);
+  await deleteFileFromBucket(userId, uploadId);
   return c.json({ message: "Job Deleted" }, 200);
 }
 

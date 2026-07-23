@@ -175,6 +175,7 @@ describe("POST /upload/text", () => {
     expect(body.preview).toBe("sample text");
     expect(typeof body.uploadId).toBe("string");
     expect(mockUploadTextToBucket).toHaveBeenCalledWith(
+      "user_01",
       body.uploadId,
       "sample text",
     );
@@ -222,6 +223,7 @@ describe("POST /upload/text with PDFs", () => {
     expect(body.preview).toContain("hi there pdf");
     // The bucket receives the extracted text, never PDF bytes.
     expect(mockUploadTextToBucket).toHaveBeenCalledWith(
+      "user_01",
       body.uploadId,
       expect.stringContaining("hi there pdf"),
     );

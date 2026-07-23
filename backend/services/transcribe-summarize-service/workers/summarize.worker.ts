@@ -24,7 +24,7 @@ export async function handleSummarizeJob(uploadId: UploadId) {
       .returning();
 
     if (!job) return;
-    const text = await readTextFile(uploadId);
+    const text = await readTextFile(job.userId, uploadId);
 
     const userId = job.userId;
     // For audio-derived summaries the client tracks the parent audio job, so

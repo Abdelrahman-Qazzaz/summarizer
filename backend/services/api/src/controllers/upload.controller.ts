@@ -39,7 +39,7 @@ export async function handleAudioUpload(c: Context) {
   const source = c.get(CTX_KEYS.audioSource);
 
   const uploadId: UploadId = randomUUID();
-  await uploadAudioToBucket(uploadId, file);
+  await uploadAudioToBucket(userId, uploadId, file);
 
   await db.insert(AudioTranscriptionJobs).values({
     uploadId,
@@ -115,7 +115,7 @@ export async function handleTextUpload(c: Context) {
     }
   } else text = await file.text();
 
-  await uploadTextToBucket(uploadId, text);
+  await uploadTextToBucket(userId, uploadId, text);
   await db.insert(TextSummarizationJobs).values({
     uploadId,
     userId,

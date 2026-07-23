@@ -21,14 +21,31 @@ export async function pingBucket(): Promise<void> {
 }
 
 /**
+ * Storage key scoped under the owning user: `<userId>/<uploadId>`. Ownership
+ * is enforced structurally — every bucket operation needs the caller to name
+ * the owner, and a wrong user yields a path that doesn't exist. This is what
+ * makes the uploadId-keyed delete/read functions safe to call with untrusted
+ * ids. (The youtube-fetcher builds the same key; keep them in sync.)
+ */
+function objectPath(userId: string, uploadId: UploadId) {
+  return `${userId}/${uploadId}`;
+}
+
+/**
  * Directly upload a text string to Supabase Storage (no local write).
  * Returns the storage path.
  */
-export async function uploadTextToBucket(uploadId: UploadId, text: string) {
+export async function uploadTextToBucket(
+  userId: string,
+  uploadId: UploadId,
+  text: string,
+) {
   const body = new Blob([text], { type: "text/plain; charset=utf-8" });
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .upload(uploadId, body, { contentType: "text/plain; charset=utf-8" });
+    .upload(objectPath(userId, uploadId), body, {
+      contentType: "text/plain; charset=utf-8",
+    });
 
   if (error) throw error;
   return data.path;
@@ -39,14 +56,18 @@ export async function uploadTextToBucket(uploadId: UploadId, text: string) {
  * Pass audio as ArrayBuffer/Uint8Array/Buffer/Blob.
  * Returns the storage path.
  */
-export async function uploadAudioToBucket(uploadId: UploadId, file: File) {
+export async function uploadAudioToBucket(
+  userId: string,
+  uploadId: UploadId,
+  file: File,
+) {
   // Optional: ensure you're uploading an audio file
   if (!file.type.startsWith("audio/")) {
     throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
   }
 
   const { data, error } = await supabase.storage.from(BUCKET).upload(
-    uploadId,
+    objectPath(userId, uploadId),
     file, // File is a Blob, so you can pass it directly
     {
       contentType: file.type || "audio/mpeg",
@@ -59,26 +80,26 @@ export async function uploadAudioToBucket(uploadId: UploadId, file: File) {
   return data.path;
 }
 
-export async function readTextFile(uploadId: UploadId) {
+export async function readTextFile(userId: string, uploadId: UploadId) {
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .download(uploadId);
+    .download(objectPath(userId, uploadId));
 
   if (error) throw error;
 
   return await data.text();
 }
-export async function getAudioFile(uploadId: UploadId) {
+export async function getAudioFile(userId: string, uploadId: UploadId) {
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .download(uploadId);
+    .download(objectPath(userId, uploadId));
   if (error) throw error;
   return data; // Blob
 }
-export async function deleteFileFromBucket(uploadId: UploadId) {
+export async function deleteFileFromBucket(userId: string, uploadId: UploadId) {
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .remove([uploadId]);
+    .remove([objectPath(userId, uploadId)]);
 
   if (error) throw error;
   return data;
