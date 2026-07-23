@@ -54,27 +54,29 @@ export async function handleGetTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const uploadId = c.get(CTX_KEYS.uploadId);
 
-  const [audioJob] = await db
-    .select()
-    .from(AudioTranscriptionJobs)
-    .where(
-      and(
-        eq(AudioTranscriptionJobs.uploadId, uploadId),
-        eq(AudioTranscriptionJobs.userId, userId),
-      ),
-    )
-    .limit(1);
-
-  const [textJob] = await db
-    .select()
-    .from(TextSummarizationJobs)
-    .where(
-      and(
-        eq(TextSummarizationJobs.userId, userId),
-        eq(TextSummarizationJobs.audioUploadId, uploadId),
-      ),
-    )
-    .limit(1);
+  // The audio row and its child text row are independent lookups.
+  const [[audioJob], [textJob]] = await Promise.all([
+    db
+      .select()
+      .from(AudioTranscriptionJobs)
+      .where(
+        and(
+          eq(AudioTranscriptionJobs.uploadId, uploadId),
+          eq(AudioTranscriptionJobs.userId, userId),
+        ),
+      )
+      .limit(1),
+    db
+      .select()
+      .from(TextSummarizationJobs)
+      .where(
+        and(
+          eq(TextSummarizationJobs.userId, userId),
+          eq(TextSummarizationJobs.audioUploadId, uploadId),
+        ),
+      )
+      .limit(1),
+  ]);
   if (audioJob) {
     // The transcript text isn't stored on the audio row — it lives in the
     // bucket as the child text job's source file (keyed by that job's id).
@@ -178,19 +180,38 @@ export async function getUserJobs(c: Context) {
   const merged: JobSummary[] = [];
 
   const A = AudioTranscriptionJobs;
-  const audioJobs = await db
-    .select()
-    .from(A)
-    .where(
-      and(
-        eq(A.userId, userId),
-        status ? eq(A.status, status) : undefined,
-        q ? ilike(A.fileName, `%${q}%`) : undefined,
-        afterCursor(A.createdAt, A.uploadId, cursor),
-      ),
-    )
-    .orderBy(desc(A.createdAt), desc(A.uploadId))
-    .limit(fetchCount);
+  const T = TextSummarizationJobs;
+  // The two per-table pages are independent reads.
+  const [audioJobs, textJobs] = await Promise.all([
+    db
+      .select()
+      .from(A)
+      .where(
+        and(
+          eq(A.userId, userId),
+          status ? eq(A.status, status) : undefined,
+          q ? ilike(A.fileName, `%${q}%`) : undefined,
+          afterCursor(A.createdAt, A.uploadId, cursor),
+        ),
+      )
+      .orderBy(desc(A.createdAt), desc(A.uploadId))
+      .limit(fetchCount),
+    db
+      .select()
+      .from(T)
+      .where(
+        and(
+          eq(T.userId, userId),
+          // Hide audio-derived summaries; they surface via their parent audio job.
+          isNull(T.audioUploadId),
+          status ? eq(T.status, status) : undefined,
+          q ? ilike(T.fileName, `%${q}%`) : undefined,
+          afterCursor(T.createdAt, T.uploadId, cursor),
+        ),
+      )
+      .orderBy(desc(T.createdAt), desc(T.uploadId))
+      .limit(fetchCount),
+  ]);
 
   for (const r of audioJobs) {
     merged.push({
@@ -204,24 +225,7 @@ export async function getUserJobs(c: Context) {
     });
   }
 
-  const T = TextSummarizationJobs;
-  const rows = await db
-    .select()
-    .from(T)
-    .where(
-      and(
-        eq(T.userId, userId),
-        // Hide audio-derived summaries; they surface via their parent audio job.
-        isNull(T.audioUploadId),
-        status ? eq(T.status, status) : undefined,
-        q ? ilike(T.fileName, `%${q}%`) : undefined,
-        afterCursor(T.createdAt, T.uploadId, cursor),
-      ),
-    )
-    .orderBy(desc(T.createdAt), desc(T.uploadId))
-    .limit(fetchCount);
-
-  for (const r of rows) {
+  for (const r of textJobs) {
     merged.push({
       kind: "text",
       uploadId: r.uploadId,
@@ -264,17 +268,21 @@ export async function handleDeleteTranscribeJob(c: Context) {
     )
     .limit(1);
 
-  await db
-    .delete(AudioTranscriptionJobs)
-    .where(
-      and(
-        eq(AudioTranscriptionJobs.uploadId, uploadId),
-        eq(AudioTranscriptionJobs.userId, userId),
+  // Row delete and bucket deletes are independent: the bucket keys are
+  // user-scoped (<userId>/<uploadId>), so a non-owner's request no-ops on
+  // storage structurally — no ownership gate needed between them.
+  await Promise.all([
+    db
+      .delete(AudioTranscriptionJobs)
+      .where(
+        and(
+          eq(AudioTranscriptionJobs.uploadId, uploadId),
+          eq(AudioTranscriptionJobs.userId, userId),
+        ),
       ),
-    );
-
-  await deleteFileFromBucket(userId, uploadId);
-  if (child) await deleteFileFromBucket(userId, child.uploadId as UploadId);
+    deleteFileFromBucket(userId, uploadId),
+    ...(child ? [deleteFileFromBucket(userId, child.uploadId as UploadId)] : []),
+  ]);
   return c.json({ message: "Job Deleted" }, 200);
 }
 
@@ -282,16 +290,18 @@ export async function handleDeleteSummarizeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const uploadId = c.get(CTX_KEYS.uploadId);
 
-  await db
-    .delete(TextSummarizationJobs)
-    .where(
-      and(
-        eq(TextSummarizationJobs.uploadId, uploadId),
-        eq(TextSummarizationJobs.userId, userId),
+  // Independent user-scoped operations (see handleDeleteTranscribeJob).
+  await Promise.all([
+    db
+      .delete(TextSummarizationJobs)
+      .where(
+        and(
+          eq(TextSummarizationJobs.uploadId, uploadId),
+          eq(TextSummarizationJobs.userId, userId),
+        ),
       ),
-    );
-
-  await deleteFileFromBucket(userId, uploadId);
+    deleteFileFromBucket(userId, uploadId),
+  ]);
   return c.json({ message: "Job Deleted" }, 200);
 }
 
