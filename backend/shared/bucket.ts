@@ -14,6 +14,15 @@ export const BUCKET = "Audio & Text files";
 // youtube-fetcher enforces the same limit the API applies to direct uploads.
 export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 
+/**
+ * The single handle every object operation (upload/download/remove/sign) goes
+ * through, so `supabase.storage` and the bucket name are named in one place.
+ * (pingBucket uses the bucket-management API `getBucket`, not this handle.)
+ */
+function bucket() {
+  return supabase.storage.from(BUCKET);
+}
+
 /** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
 export async function pingBucket(): Promise<void> {
   const { error } = await supabase.storage.getBucket(BUCKET);
@@ -41,11 +50,11 @@ export async function uploadTextToBucket(
   text: string,
 ) {
   const body = new Blob([text], { type: "text/plain; charset=utf-8" });
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .upload(objectPath(userId, uploadId), body, {
-      contentType: "text/plain; charset=utf-8",
-    });
+  const { data, error } = await bucket().upload(
+    objectPath(userId, uploadId),
+    body,
+    { contentType: "text/plain; charset=utf-8" },
+  );
 
   if (error) throw error;
   return data.path;
@@ -66,7 +75,7 @@ export async function uploadAudioToBucket(
     throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
   }
 
-  const { data, error } = await supabase.storage.from(BUCKET).upload(
+  const { data, error } = await bucket().upload(
     objectPath(userId, uploadId),
     file, // File is a Blob, so you can pass it directly
     {
@@ -81,25 +90,19 @@ export async function uploadAudioToBucket(
 }
 
 export async function readTextFile(userId: string, uploadId: UploadId) {
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .download(objectPath(userId, uploadId));
+  const { data, error } = await bucket().download(objectPath(userId, uploadId));
 
   if (error) throw error;
 
   return await data.text();
 }
 export async function getAudioFile(userId: string, uploadId: UploadId) {
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .download(objectPath(userId, uploadId));
+  const { data, error } = await bucket().download(objectPath(userId, uploadId));
   if (error) throw error;
   return data; // Blob
 }
 export async function deleteFileFromBucket(userId: string, uploadId: UploadId) {
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .remove([objectPath(userId, uploadId)]);
+  const { data, error } = await bucket().remove([objectPath(userId, uploadId)]);
 
   if (error) throw error;
   return data;
@@ -108,9 +111,7 @@ export async function deleteFileFromBucket(userId: string, uploadId: UploadId) {
  * If you need to read it back from a private bucket, generate a signed URL.
  */
 async function signedUrl(path: string, seconds = 600) {
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(path, seconds);
+  const { data, error } = await bucket().createSignedUrl(path, seconds);
 
   if (error) throw error;
   return data.signedUrl;
