@@ -21,11 +21,23 @@ def ping_bucket() -> None:
     log.info("Bucket OK: %s (public=%s)", bucket.name, bucket.public)
 
 
-def upload_file(local_path: str, remote_path: str, content_type: str):
-    """Upload a local file to the bucket."""
+def _object_path(user_id: str, upload_id: str) -> str:
+    """Storage key scoped under the owning user: "<userId>/<uploadId>".
+    Mirrors objectPath in backend/shared/bucket.ts so both services agree on
+    the layout and bucket ownership stays structural. Keep them in sync."""
+    return f"{user_id}/{upload_id}"
+
+
+def upload_file(
+    user_id: str, upload_id: str, local_path: str, content_type: str
+):
+    """Upload a local file to the bucket at the user-scoped key.
+    Signature mirrors uploadAudioToBucket/uploadTextToBucket in
+    backend/shared/bucket.ts: the caller passes the owner and id, and the
+    path is built here rather than by the caller."""
     with open(local_path, "rb") as f:
         res = supabase.storage.from_(contract.bucket).upload(
-            path=remote_path,                     # e.g. the bare uploadId
+            path=_object_path(user_id, upload_id),
             file=f,
             file_options={
                 "content-type": content_type,

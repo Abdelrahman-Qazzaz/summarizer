@@ -75,9 +75,10 @@ class TestFetchAndUpload:
     def test_uploads_audio_with_derived_content_type(self, ydl, upload):
         handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
 
-        (local_path, remote_path, content_type), _ = upload.call_args
+        (user_id, upload_id, local_path, content_type), _ = upload.call_args
+        assert user_id == "usr"
+        assert upload_id == "u1"
         assert local_path.endswith("audio.webm")
-        assert remote_path == "usr/u1"
         assert content_type == "audio/webm"
 
     def test_enforces_contract_size_cap_in_ydl_options(self, ydl, upload):
@@ -128,7 +129,7 @@ class TestFetchAndUpload:
 
         handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
 
-        (local_path, _, content_type), _ = upload.call_args
+        (_, _, local_path, content_type), _ = upload.call_args
         assert local_path.endswith("audio.webm")
         assert content_type == "audio/webm"
 
@@ -145,7 +146,7 @@ class TestFetchAndUpload:
 
         handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
 
-        (_, _, content_type), _ = upload.call_args
+        (_, _, _, content_type), _ = upload.call_args
         assert content_type == "audio/mpeg"
 
 
