@@ -157,7 +157,10 @@ describe("GET /jobs/transcribe/:uploadId", () => {
       summaryStatus: "completed",
       error: null,
     });
-    expect(mockReadTextFile).toHaveBeenCalledWith("child-text-id");
+    expect(mockReadTextFile).toHaveBeenCalledWith(
+      "user_01OWNER",
+      "child-text-id",
+    );
   });
   it("surfaces summaryStatus when the downstream summary failed", async () => {
     mockLimit
@@ -244,8 +247,14 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(uploadId);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("child-text-id");
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(
+      "user_01OWNER",
+      uploadId,
+    );
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(
+      "user_01OWNER",
+      "child-text-id",
+    );
     expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(2);
   });
   it("deletes only the audio file when there is no child transcript", async () => {
@@ -257,7 +266,10 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(uploadId);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(
+      "user_01OWNER",
+      uploadId,
+    );
     expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(1);
   });
 });

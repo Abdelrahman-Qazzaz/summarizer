@@ -73,15 +73,15 @@ def ydl(monkeypatch):
 
 class TestFetchAndUpload:
     def test_uploads_audio_with_derived_content_type(self, ydl, upload):
-        handlers._fetch_and_upload("u1", "https://youtu.be/x")
+        handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
 
         (local_path, remote_path, content_type), _ = upload.call_args
         assert local_path.endswith("audio.webm")
-        assert remote_path == "u1"
+        assert remote_path == "usr/u1"
         assert content_type == "audio/webm"
 
     def test_enforces_contract_size_cap_in_ydl_options(self, ydl, upload):
-        handlers._fetch_and_upload("u1", "https://youtu.be/x")
+        handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
 
         assert ydl.last.options["max_filesize"] == MAX_BYTES
         assert ydl.last.options["noplaylist"] is True
@@ -91,7 +91,7 @@ class TestFetchAndUpload:
         ydl.files = {}
 
         with pytest.raises(RuntimeError, match="over the"):
-            handlers._fetch_and_upload("u1", "https://youtu.be/x")
+            handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
         upload.assert_not_called()
 
     def test_sums_sizes_across_requested_formats(self, ydl, upload):
@@ -104,7 +104,7 @@ class TestFetchAndUpload:
         ydl.files = {}
 
         with pytest.raises(RuntimeError, match="over the"):
-            handlers._fetch_and_upload("u1", "https://youtu.be/x")
+            handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
         upload.assert_not_called()
 
     def test_never_uploads_partial_download_leftovers(self, ydl, upload):
@@ -117,7 +117,7 @@ class TestFetchAndUpload:
         }
 
         with pytest.raises(RuntimeError, match="no output file"):
-            handlers._fetch_and_upload("u1", "https://youtu.be/x")
+            handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
         upload.assert_not_called()
 
     def test_picks_finished_file_over_stale_partials(self, ydl, upload):
@@ -126,7 +126,7 @@ class TestFetchAndUpload:
             "audio.webm.part": b"x" * 5,
         }
 
-        handlers._fetch_and_upload("u1", "https://youtu.be/x")
+        handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
 
         (local_path, _, content_type), _ = upload.call_args
         assert local_path.endswith("audio.webm")
@@ -137,13 +137,13 @@ class TestFetchAndUpload:
         ydl.files = {"audio.webm": b"x" * (MAX_BYTES + 1)}
 
         with pytest.raises(RuntimeError, match="over the"):
-            handlers._fetch_and_upload("u1", "https://youtu.be/x")
+            handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
         upload.assert_not_called()
 
     def test_unknown_extension_falls_back_to_mpeg(self, ydl, upload):
         ydl.files = {"audio.weird": b"x" * 10}
 
-        handlers._fetch_and_upload("u1", "https://youtu.be/x")
+        handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
 
         (_, _, content_type), _ = upload.call_args
         assert content_type == "audio/mpeg"

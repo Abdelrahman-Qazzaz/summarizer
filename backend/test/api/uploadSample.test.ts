@@ -39,6 +39,10 @@ vi.mock("../../shared/db", () => ({
 vi.mock("../../shared/bucket", () => ({
   uploadTextToBucket: mockUploadTextToBucket,
   uploadAudioToBucket: mockUploadAudioToBucket,
+  // Literals (not the top-level consts): vi.mock factories can run during
+  // import evaluation, before this module's own bindings initialize.
+  BUCKET: "Audio & Text files",
+  MAX_AUDIO_BYTES: 100 * 1024 * 1024,
 }));
 
 vi.mock("../../shared/message-queue/messageQueue", () => ({
@@ -105,6 +109,7 @@ describe("POST /upload/text with sample file", () => {
     expect(typeof body.uploadId).toBe("string");
 
     expect(mockUploadTextToBucket).toHaveBeenCalledWith(
+      "user_01",
       body.uploadId,
       SAMPLE_TEXT_CONTENT,
     );
@@ -146,7 +151,9 @@ describe("POST /upload/audio with sample file", () => {
     expect(typeof body.uploadId).toBe("string");
 
     expect(mockUploadAudioToBucket).toHaveBeenCalledTimes(1);
-    const [uploadIdArg, fileArg] = mockUploadAudioToBucket.mock.calls[0];
+    const [userIdArg, uploadIdArg, fileArg] =
+      mockUploadAudioToBucket.mock.calls[0];
+    expect(userIdArg).toBe("user_01");
     expect(uploadIdArg).toBe(body.uploadId);
     expect(fileArg).toBeInstanceOf(File);
     expect(fileArg.size).toBe(file.size);
