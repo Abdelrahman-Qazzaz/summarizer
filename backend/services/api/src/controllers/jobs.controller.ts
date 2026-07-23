@@ -19,6 +19,7 @@ import { mq } from "../../../../shared/message-queue/messageQueue";
 import { validateModel } from "../../../../shared/ai/ai_client";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { logger } from "../../../../shared/logger";
+import { tryCatch } from "../../../../shared/try-catch";
 
 const log = logger.child({ controller: "jobs" });
 
@@ -87,17 +88,18 @@ export async function handleGetTranscribeJob(c: Context) {
     // ungated read would return a stale transcript (and download it needlessly).
     let transcript: string | null = null;
     if (textJob && audioJob.status === "completed") {
-      try {
-        transcript = await readTextFile(userId, textJob.uploadId as UploadId);
-      } catch (err) {
-        // Fall back to no transcript, but log it — otherwise a real bucket
-        // failure is indistinguishable from "transcript not ready yet".
-        log.error("Failed to read transcript from bucket", err, {
+      const { data, error } = await tryCatch(
+        readTextFile(userId, textJob.uploadId as UploadId),
+      );
+      // Fall back to no transcript (data is null on failure), but log it —
+      // otherwise a real bucket failure is indistinguishable from "transcript
+      // not ready yet".
+      if (error)
+        log.error("Failed to read transcript from bucket", error, {
           uploadId,
           textUploadId: textJob.uploadId,
         });
-        transcript = null;
-      }
+      transcript = data;
     }
     return c.json({
       kind: "audio" as const,

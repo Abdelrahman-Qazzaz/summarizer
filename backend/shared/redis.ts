@@ -1,6 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { getApiEnv } from "./env";
 import { logger } from "./logger";
+import { tryCatch } from "./try-catch";
 import type { RedisCacheOptions } from "./types/redis.types";
 
 let client: Redis | undefined;
@@ -19,21 +20,15 @@ export async function pingRedis(): Promise<void> {
 }
 
 export async function checkCache(cacheKey: RedisCacheOptions["key"]) {
-  try {
-    const hit = await getRedisClient().get<unknown>(cacheKey);
-    return hit;
-  } catch (error) {
-    logger.error("Cache read failed", error, { cacheKey });
-    return null;
-  }
+  const { data, error } = await tryCatch(getRedisClient().get<unknown>(cacheKey));
+  if (error) logger.error("Cache read failed", error, { cacheKey });
+  // data is null on failure — exactly the miss the callers expect.
+  return data;
 }
 export async function setCache(
   cacheKey: RedisCacheOptions["key"],
   data: unknown,
 ) {
-  try {
-    await getRedisClient().set(cacheKey, data);
-  } catch (error) {
-    logger.error("Cache write failed", error, { cacheKey });
-  }
+  const { error } = await tryCatch(getRedisClient().set(cacheKey, data));
+  if (error) logger.error("Cache write failed", error, { cacheKey });
 }
