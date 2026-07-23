@@ -72,14 +72,18 @@ export async function handleListMessages(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const conversationId = c.get(CTX_KEYS.conversationId);
 
-  if (!(await findOwnedConversation(userId, conversationId)))
-    return c.json({ message: "Conversation not found" }, 404);
+  // Ownership check and the rows themselves are independent reads; the rows
+  // are simply discarded on the 404 path.
+  const [owned, rows] = await Promise.all([
+    findOwnedConversation(userId, conversationId),
+    db
+      .select()
+      .from(ChatMessages)
+      .where(eq(ChatMessages.conversationId, conversationId))
+      .orderBy(asc(ChatMessages.createdAt), asc(ChatMessages.id)),
+  ]);
 
-  const rows = await db
-    .select()
-    .from(ChatMessages)
-    .where(eq(ChatMessages.conversationId, conversationId))
-    .orderBy(asc(ChatMessages.createdAt), asc(ChatMessages.id));
+  if (!owned) return c.json({ message: "Conversation not found" }, 404);
 
   return c.json({ messages: rows.map(toMessageJson) });
 }
@@ -98,10 +102,13 @@ export async function handleCreateMessage(c: Context) {
   const content: string = c.get(CTX_KEYS.messageContent);
   const chosenModelId: string = c.get(CTX_KEYS.chosenModelId);
 
-  if (!(await findOwnedConversation(userId, conversationId)))
-    return c.json({ message: "Conversation not found" }, 404);
-
-  const turns = await buildContextTurns(conversationId, content);
+  // Ownership check and context building are independent reads; the turns are
+  // simply discarded on the 404 path.
+  const [owned, turns] = await Promise.all([
+    findOwnedConversation(userId, conversationId),
+    buildContextTurns(conversationId, content),
+  ]);
+  if (!owned) return c.json({ message: "Conversation not found" }, 404);
 
   // Query builders only; drizzle runs them lazily when awaited, which happens
   // inside the stream — so the SSE response opens without waiting on writes.

@@ -157,10 +157,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
       summaryStatus: "completed",
       error: null,
     });
-    expect(mockReadTextFile).toHaveBeenCalledWith(
-      "user_01OWNER",
-      "child-text-id",
-    );
+    expect(mockReadTextFile).toHaveBeenCalledWith("user_01OWNER", "child-text-id");
   });
   it("surfaces summaryStatus when the downstream summary failed", async () => {
     mockLimit
@@ -235,7 +232,9 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
     mockWhere.mockImplementation(() => ({ limit: mockLimit }));
     mockFrom.mockImplementation(() => ({ where: mockWhere }));
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
-    mockDelete.mockImplementation(() => ({ where: () => Promise.resolve() }));
+    mockDelete.mockImplementation(() => ({
+      where: () => Promise.resolve(),
+    }));
     mockDeleteFileFromBucket.mockResolvedValue(undefined);
   });
   it("also deletes the orphaned child transcript file", async () => {
@@ -247,14 +246,8 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(
-      "user_01OWNER",
-      uploadId,
-    );
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(
-      "user_01OWNER",
-      "child-text-id",
-    );
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("user_01OWNER", uploadId);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("user_01OWNER", "child-text-id");
     expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(2);
   });
   it("deletes only the audio file when there is no child transcript", async () => {
@@ -266,10 +259,23 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("user_01OWNER", uploadId);
+    expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(1);
+  });
+  it("scopes bucket deletes to the requesting user", async () => {
+    // Ownership is structural: the bucket key is <userId>/<uploadId>, so a
+    // non-owner's delete resolves to a path that doesn't exist and no-ops.
+    mockLimit.mockResolvedValueOnce([]);
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
+      method: "DELETE",
+      headers: { Cookie: await sessionCookieHeader("user_01INTRUDER") },
+    });
+    expect(res.status).toBe(200);
     expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(
-      "user_01OWNER",
+      "user_01INTRUDER",
       uploadId,
     );
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(1);
   });
 });
