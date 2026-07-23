@@ -112,7 +112,7 @@ def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
             audio.suffix.removeprefix(".").lower(), "audio/mpeg"
         )
         log.info("Downloaded %s: %d bytes, %s", upload_id, size, content_type)
-        # Stored at "<userId>/<uploadId>" — same user-scoped path convention as
-        # direct uploads (backend/shared/bucket.ts objectPath), so the
-        # transcribe worker finds it and bucket ownership stays structural.
-        bucket.upload_file(str(audio), f"{user_id}/{upload_id}", content_type)
+        # upload_file builds the user-scoped "<userId>/<uploadId>" key (same
+        # convention as direct uploads, backend/shared/bucket.ts objectPath),
+        # so the transcribe worker finds it and ownership stays structural.
+        bucket.upload_file(user_id, upload_id, str(audio), content_type)
