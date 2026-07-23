@@ -108,7 +108,7 @@ describe("handleTranscribeJob", () => {
 
   it("transcribes audio and enqueues summarize", async () => {
     await handleTranscribeJob(uploadId);
-    expect(mockGetAudioFile).toHaveBeenCalledWith(uploadId);
+    expect(mockGetAudioFile).toHaveBeenCalledWith("user_01", uploadId);
     expect(mockTranscribe).toHaveBeenCalled();
     expect(mockUpdate).toHaveBeenCalledTimes(2);
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
@@ -116,6 +116,7 @@ describe("handleTranscribeJob", () => {
       userId: "user_01",
     });
     expect(mockUploadTextToBucket).toHaveBeenCalledWith(
+      "user_01",
       textUploadId,
       "sample transcript",
     );

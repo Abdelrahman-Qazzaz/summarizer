@@ -98,7 +98,7 @@ describe("handleSummarizeJob", () => {
       },
     ]);
     await handleSummarizeJob(uploadId);
-    expect(readTextFile).toHaveBeenCalledWith(uploadId);
+    expect(readTextFile).toHaveBeenCalledWith("user_01", uploadId);
     expect(mockChatAI).toHaveBeenCalledWith(
       DEFAULT_MODELS.PROMPT,
       [

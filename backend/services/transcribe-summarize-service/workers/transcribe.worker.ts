@@ -25,7 +25,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
 
     if (!job) return;
 
-    const audio = await getAudioFile(uploadId);
+    const audio = await getAudioFile(job.userId, uploadId);
     const model = job.transcriptionModelId ?? DEFAULT_MODELS.TRANSCRIBE;
     const transcript = await transcribe(model, audio);
     if (!transcript.trim()) {
@@ -57,7 +57,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
 
     const textUploadId: UploadId =
       (existing?.uploadId as UploadId) ?? randomUUID();
-    await uploadTextToBucket(textUploadId, transcript);
+    await uploadTextToBucket(userId, textUploadId, transcript);
 
     if (existing) {
       // Reset the summary so the new transcript is summarized afresh with the

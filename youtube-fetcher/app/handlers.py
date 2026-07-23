@@ -29,7 +29,8 @@ def handle_yt_fetch(event: dict) -> None:
     try:
         upload_id: str = event["uploadId"]
         url: str = event["url"]
-        _fetch_and_upload(upload_id, url)
+        user_id: str = event["userId"]
+        _fetch_and_upload(upload_id, url, user_id)
     except Exception as error:
         # Tell the API so it can mark the job row failed — a malformed
         # payload (missing url/userId) must still fail the job if we know
@@ -49,7 +50,7 @@ def handle_yt_fetch(event: dict) -> None:
     log.info("Fetched %s, queued transcribe", upload_id)
 
 
-def _fetch_and_upload(upload_id: str, url: str) -> None:
+def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
     max_bytes = contract.maxAudioBytes
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -111,6 +112,7 @@ def _fetch_and_upload(upload_id: str, url: str) -> None:
             audio.suffix.removeprefix(".").lower(), "audio/mpeg"
         )
         log.info("Downloaded %s: %d bytes, %s", upload_id, size, content_type)
-        # Stored at the bare uploadId — same path convention as direct uploads
-        # (backend/shared/bucket.ts), so the transcribe worker finds it.
-        bucket.upload_file(str(audio), upload_id, content_type)
+        # Stored at "<userId>/<uploadId>" — same user-scoped path convention as
+        # direct uploads (backend/shared/bucket.ts objectPath), so the
+        # transcribe worker finds it and bucket ownership stays structural.
+        bucket.upload_file(str(audio), f"{user_id}/{upload_id}", content_type)
