@@ -277,7 +277,8 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("returns 404 when the conversation is not owned by the user", async () => {
-    mockLimit.mockResolvedValueOnce([]);
+    // Ownership and the (discarded) history fetch both run; resolve both empty.
+    mockLimit.mockResolvedValue([]);
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: modelId,
