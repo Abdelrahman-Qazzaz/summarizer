@@ -5,7 +5,7 @@ import { ChatMessages, Conversations, db } from "../../../../shared/db";
 import { CTX_KEYS } from "../../../../shared/keys";
 import { chatAI } from "../../../../shared/ai/ai_client";
 import type { ChatTurn } from "../../../../shared/ai/ai_client";
-import { sendEvent } from "../utils/sse";
+import { SSEEventQueue } from "../utils/sse";
 import { logger } from "../../../../shared/logger";
 
 const log = logger.child({ controller: "messages" });
@@ -89,8 +89,75 @@ export async function handleListMessages(c: Context) {
 }
 
 /**
+ * Persists the user turn, runs the model, and persists the reply, reporting
+ * progress into `events`. Never rejects: failures become an `error` event.
+ *
+ * Deliberately takes a queue rather than the response stream — the run has to
+ * finish (and both rows have to land) whether or not a client is still reading.
+ */
+async function runChatTurn(
+  args: {
+    userId: string;
+    conversationId: string;
+    content: string;
+    chosenModelId: string;
+    turns: ChatTurn[];
+  },
+  events: SSEEventQueue,
+) {
+  const { userId, conversationId, content, chosenModelId, turns } = args;
+  try {
+    // The user turn must be durable (and its id known for the event) before the
+    // model call; touching the conversation surfaces it in the list's ordering.
+    const [[userMessage]] = await Promise.all([
+      db
+        .insert(ChatMessages)
+        .values({ role: "user", content, conversationId, userId })
+        .returning(),
+      db
+        .update(Conversations)
+        .set({ updatedAt: new Date() })
+        .where(eq(Conversations.id, conversationId)),
+    ]);
+    events.push("user_message", toMessageJson(userMessage));
+
+    const full = await chatAI(chosenModelId, turns, {
+      onDelta: (delta) => events.push("delta", { delta }),
+    });
+
+    const [assistantMessage] = await db
+      .insert(ChatMessages)
+      .values({
+        role: "assistant",
+        content: full,
+        chosenModelId,
+        conversationId,
+        userId,
+      })
+      .returning();
+
+    events.push("done", toMessageJson(assistantMessage));
+  } catch (err) {
+    log.error("Chat completion run failed", err, {
+      conversationId,
+      chosenModelId,
+    });
+    // Reported in-band: the response is a 200 stream by the time this can fail,
+    // so an SSE "error" event is the only channel left to the client.
+    events.push("error", { message: "Model response failed" });
+  } finally {
+    events.end();
+  }
+}
+
+/**
  * POST /conversations/:conversationId/messages — persist the user turn, then
  * stream the model's reply over SSE and persist it once complete.
+ *
+ * The run is detached from the response: a client that disconnects the moment
+ * it posts (or never reads the body at all) still comes back to a conversation
+ * holding both its message and the full reply. Streaming is only for watching
+ * the answer arrive; `GET .../messages` is the source of truth.
  *
  * Events: `user_message` (the saved user row), `delta` ({ delta }) per model
  * chunk, `done` (the saved assistant row), `error` ({ message }). The client
@@ -110,55 +177,13 @@ export async function handleCreateMessage(c: Context) {
   ]);
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
 
-  // Query builders only; drizzle runs them lazily when awaited, which happens
-  // inside the stream — so the SSE response opens without waiting on writes.
-  const persistUserTurn = db
-    .insert(ChatMessages)
-    .values({ role: "user", content, conversationId, userId })
-    .returning();
-  // Surface the new activity in the conversation list's ordering metadata.
-  const touchConversation = db
-    .update(Conversations)
-    .set({ updatedAt: new Date() })
-    .where(eq(Conversations.id, conversationId));
+  const events = new SSEEventQueue();
+  void runChatTurn(
+    { userId, conversationId, content, chosenModelId, turns },
+    events,
+  );
 
-  return streamSSE(c, async (stream) => {
-    // Errors are reported in-band: headers (200) are already sent once the
-    // first byte streams, so an SSE "error" event is the only channel left.
-    try {
-      // The user turn must be durable (and its id known for the event) before
-      // the model call; the assistant row is only written after the model
-      // finishes, right before `done` hands the persisted row to the client.
-      const [[userMessage]] = await Promise.all([
-        persistUserTurn,
-        touchConversation,
-      ]);
-      await sendEvent(stream, "user_message", toMessageJson(userMessage));
-
-      const full = await chatAI(chosenModelId, turns, {
-        onDelta: (delta) => sendEvent(stream, "delta", { delta }),
-      });
-
-      const [assistantMessage] = await db
-        .insert(ChatMessages)
-        .values({
-          role: "assistant",
-          content: full,
-          chosenModelId,
-          conversationId,
-          userId,
-        })
-        .returning();
-
-      await sendEvent(stream, "done", toMessageJson(assistantMessage));
-    } catch (err) {
-      log.error("Chat completion stream failed", err, {
-        conversationId,
-        chosenModelId,
-      });
-      await sendEvent(stream, "error", { message: "Model response failed" });
-    }
-  });
+  return streamSSE(c, (stream) => events.pipeTo(stream, c.req.raw.signal));
 }
 
 /** DELETE /conversations/:conversationId/messages/:messageId */
