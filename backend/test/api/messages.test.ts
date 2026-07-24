@@ -157,7 +157,7 @@ describe("GET /conversations/:conversationId/messages", () => {
 });
 
 describe("POST /conversations/:conversationId/messages", () => {
-  function postMessage(body: unknown) {
+  function postMessage(body: unknown, signal?: AbortSignal) {
     return sessionCookieHeader(userId).then(async (cookie) =>
       (await createApp()).request(
         `http://localhost/conversations/${conversationId}/messages`,
@@ -165,6 +165,7 @@ describe("POST /conversations/:conversationId/messages", () => {
           method: "POST",
           headers: { Cookie: cookie, "Content-Type": "application/json" },
           body: JSON.stringify(body),
+          signal,
         },
       ),
     );
@@ -223,6 +224,48 @@ describe("POST /conversations/:conversationId/messages", () => {
       conversationId,
       userId,
     });
+  });
+
+  it("persists both turns when the client disconnects mid-stream", async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ id: conversationId }])
+      .mockResolvedValueOnce([]);
+    mockInsertReturning
+      .mockResolvedValueOnce([userRow])
+      .mockResolvedValueOnce([assistantRow]);
+
+    const client = new AbortController();
+    // Awaiting each delta mirrors chatAI: if emitting one could block on the
+    // dead connection, the run would stall here and never reach the insert.
+    mockChatAI.mockImplementation(
+      async (
+        _model: string,
+        _turns: unknown,
+        opts: { onDelta: (d: string) => void | Promise<void> },
+      ) => {
+        await opts.onDelta("Hello ");
+        client.abort(); // the user closes the tab mid-answer
+        for (const chunk of ["w", "o", "r", "l", "d"]) await opts.onDelta(chunk);
+        return "Hello world";
+      },
+    );
+
+    const res = await postMessage(
+      { messageContent: "Hi there", chosenModelId: modelId },
+      client.signal,
+    );
+    expect(res.status).toBe(200);
+
+    // The run outlives the connection: the assistant turn still lands.
+    await vi.waitFor(() =>
+      expect(mockValues).toHaveBeenCalledWith({
+        role: "assistant",
+        content: "Hello world",
+        chosenModelId: modelId,
+        conversationId,
+        userId,
+      }),
+    );
   });
 
   it("replays prior history to the model, oldest first", async () => {
