@@ -79,6 +79,10 @@ vi.mock("../../shared/ai/ai_client", () => ({
 }));
 
 import { createApp } from "../../services/api/app";
+import {
+  MAX_CONTEXT_CHARS,
+  MAX_RESPONSE_TOKENS,
+} from "../../services/api/src/controllers/messages.controller";
 import { sessionCookieHeader } from "../helpers/session";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
@@ -297,6 +301,36 @@ describe("POST /conversations/:conversationId/messages", () => {
       ],
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
+  });
+
+  it("drops history beyond the character budget and caps the response", async () => {
+    // Two of these fit in the budget; the third pushes it over.
+    const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
+    mockLimit
+      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+      .mockResolvedValueOnce([
+        // History, newest-first as the query returns it.
+        { role: "user", content: `newest ${long}` },
+        { role: "assistant", content: `middle ${long}` },
+        { role: "user", content: `oldest ${long}` },
+      ]);
+    mockInsertReturning
+      .mockResolvedValueOnce([userRow])
+      .mockResolvedValueOnce([assistantRow]);
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+
+    const [, turns, opts] = mockChatAI.mock.calls[0];
+    const labels = turns.map((t: { content: string }) => t.content.slice(0, 6));
+    // The oldest turn fell off; the new one is always kept, last.
+    expect(labels).toEqual(["middle", "newest", "Hi the"]);
+    expect(opts.maxOutputTokens).toBe(MAX_RESPONSE_TOKENS);
   });
 
   it("emits an SSE error event and skips the assistant insert when the model fails", async () => {
