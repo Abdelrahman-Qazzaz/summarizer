@@ -11,10 +11,13 @@ import { logger } from "../../../../shared/logger";
 const log = logger.child({ controller: "messages" });
 
 /**
- * Cap on how many prior messages are replayed to the model as context. Keeps
- * the prompt bounded on long conversations; older turns simply fall off.
+ * Bounds on what one turn can cost. The message cap alone isn't one: 50 turns
+ * of the 50k chars the schema allows is a ~2.5M-char prompt, so the character
+ * budget is what actually holds the line. Older turns simply fall off.
  */
 const MAX_CONTEXT_MESSAGES = 50;
+export const MAX_CONTEXT_CHARS = 100_000;
+export const MAX_RESPONSE_TOKENS = 4_000;
 
 function toMessageJson(row: typeof ChatMessages.$inferSelect) {
   return {
@@ -32,6 +35,11 @@ function toMessageJson(row: typeof ChatMessages.$inferSelect) {
  * history (fetched newest-first so LIMIT keeps the latest turns, then reversed
  * into the oldest-first order the model expects) plus the new turn itself.
  * Must run before the new turn is inserted, so it can't appear twice.
+ *
+ * The new turn is always included, however long it is; history is admitted
+ * newest-first until MAX_CONTEXT_CHARS is spent and truncated at the first turn
+ * that doesn't fit — dropping that one but keeping older ones would splice the
+ * conversation into something the model reads as a non-sequitur.
  */
 async function buildContextTurns(
   conversationId: string,
@@ -44,12 +52,16 @@ async function buildContextTurns(
     .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
     .limit(MAX_CONTEXT_MESSAGES - 1);
 
-  return [
-    ...history
-      .reverse()
-      .map((m) => ({ role: m.role, content: m.content }) as ChatTurn),
-    { role: "user", content },
-  ];
+  const turns: ChatTurn[] = [{ role: "user", content }];
+  let budget = MAX_CONTEXT_CHARS;
+
+  for (const message of history) {
+    budget -= message.content.length;
+    if (budget < 0) break;
+    turns.unshift({ role: message.role, content: message.content });
+  }
+
+  return turns;
 }
 
 /** Ownership gate shared by every message route: 404 unless the user owns it. */
@@ -123,6 +135,7 @@ async function runChatTurn(
 
     const full = await chatAI(chosenModelId, turns, {
       onDelta: (delta) => events.push("delta", { delta }),
+      maxOutputTokens: MAX_RESPONSE_TOKENS,
     });
 
     const [assistantMessage] = await db

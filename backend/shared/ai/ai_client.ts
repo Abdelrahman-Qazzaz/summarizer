@@ -30,14 +30,19 @@ export async function chatAI(
   messages: ChatTurn[],
   opts: {
     onDelta?: (delta: string) => void | Promise<void>;
+    /** Ceiling on the completion, so one call can't run up an unbounded bill. */
+    maxOutputTokens?: number;
   } = {},
 ): Promise<string> {
+  const maxCompletionTokens = opts.maxOutputTokens;
+
   // Non-streaming
   if (!opts.onDelta) {
     const completion = await ai_client.chat.send({
       chatRequest: {
         model,
         messages,
+        maxCompletionTokens,
       },
     });
 
@@ -49,6 +54,7 @@ export async function chatAI(
     chatRequest: {
       model,
       messages,
+      maxCompletionTokens,
       stream: true,
     },
   });
