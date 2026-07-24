@@ -7,6 +7,7 @@ import { chatAI } from "../../../../shared/ai/ai_client";
 import type { ChatTurn } from "../../../../shared/ai/ai_client";
 import { SSEEventQueue } from "../utils/sse";
 import { logger } from "../../../../shared/logger";
+import { findOwnedConversation } from "./conversations.controller";
 
 const log = logger.child({ controller: "messages" });
 
@@ -62,21 +63,6 @@ async function buildContextTurns(
   }
 
   return turns;
-}
-
-/** Ownership gate shared by every message route: 404 unless the user owns it. */
-async function findOwnedConversation(userId: string, conversationId: string) {
-  const [row] = await db
-    .select({ id: Conversations.id })
-    .from(Conversations)
-    .where(
-      and(
-        eq(Conversations.id, conversationId),
-        eq(Conversations.userId, userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
 }
 
 /** GET /conversations/:conversationId/messages — full history, oldest first. */

@@ -29,11 +29,11 @@ export async function handleListConversations(c: Context) {
   return c.json({ conversations: rows.map(toConversationJson) });
 }
 
-/** GET /conversations/:conversationId */
-export async function handleGetConversation(c: Context) {
-  const userId = c.get(CTX_KEYS.userId);
-  const conversationId = c.get(CTX_KEYS.conversationId);
-
+/** Ownership gate shared by every message route: 404 unless the user owns it. */
+export async function findOwnedConversation(
+  userId: string,
+  conversationId: string,
+) {
   const [row] = await db
     .select()
     .from(Conversations)
@@ -44,6 +44,15 @@ export async function handleGetConversation(c: Context) {
       ),
     )
     .limit(1);
+  return row ?? null;
+}
+
+/** GET /conversations/:conversationId */
+export async function handleGetConversation(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const conversationId = c.get(CTX_KEYS.conversationId);
+
+  const row = await findOwnedConversation(userId, conversationId);
 
   if (!row) return c.json({ message: "Conversation not found" }, 404);
   return c.json(toConversationJson(row));
