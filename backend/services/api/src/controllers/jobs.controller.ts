@@ -16,7 +16,6 @@ import {
 import { encodeCursor, decodeCursor } from "../utils/cursor";
 import { deleteFileFromBucket, readTextFile } from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
-import { validateModel } from "../../../../shared/ai/ai_client";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { logger } from "../../../../shared/logger";
 import { tryCatch } from "../../../../shared/try-catch";
@@ -316,12 +315,6 @@ export async function handleRerunSummarizeJob(c: Context) {
   const uploadId = c.get(CTX_KEYS.uploadId);
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
 
-  if (!(await validateModel(chosenModelId, "text")))
-    return c.json(
-      { message: "Invalid summary model: must be a text model" },
-      400,
-    );
-
   const [job] = await db
     .update(TextSummarizationJobs)
     .set({ status: "queued", summary: null, error: null, chosenModelId })
@@ -351,12 +344,6 @@ export async function handleRerunTranscribeJob(c: Context) {
   const uploadId = c.get(CTX_KEYS.uploadId);
   const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
   const chosenModelId = c.get(CTX_KEYS.chosenModelId);
-
-  if (
-    !(await validateModel(transcriptionModelId, "transcription")) ||
-    !(await validateModel(chosenModelId, "text"))
-  )
-    return c.json({ message: "Invalid model" }, 400);
 
   const [job] = await db
     .update(AudioTranscriptionJobs)
