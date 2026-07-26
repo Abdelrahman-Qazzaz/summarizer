@@ -4,6 +4,7 @@ import { OpenRouter } from "@openrouter/sdk";
 import { CACHE_KEYS } from "../keys";
 import { checkCache, setCache } from "../redis";
 import type {
+  ChatContentItems,
   OutputModality,
   Parameter,
   PublicPricing,
@@ -22,7 +23,9 @@ export async function pingAi(): Promise<void> {
 
 export type ChatTurn = {
   role: "user" | "assistant";
-  content: string;
+  // Plain string for text-only turns; an array of content parts (text +
+  // image_url) when the turn carries vision attachments.
+  content: string | ChatContentItems[];
 };
 
 export async function chatAI(
