@@ -19,6 +19,7 @@ export const CTX_KEYS = {
   conversationTitle: "conversationTitle",
 
   messageContent: "messageContent",
+  messageAttachments: "messageAttachments",
 
   uploadFile,
   chosenModelId,
