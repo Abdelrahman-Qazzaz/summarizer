@@ -14,6 +14,9 @@ export const BUCKET = "Audio & Text files";
 // youtube-fetcher enforces the same limit the API applies to direct uploads.
 export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 
+// Cap on images entering the bucket (chat attachments / standalone uploads).
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
+
 /**
  * The single handle every object operation (upload/download/remove/sign) goes
  * through, so `supabase.storage` and the bucket name are named in one place.
@@ -89,6 +92,29 @@ export async function uploadAudioToBucket(
   return data.path;
 }
 
+/**
+ * Directly upload an image to Supabase Storage (no local write).
+ * Returns the storage path.
+ */
+export async function uploadImageToBucket(
+  userId: string,
+  uploadId: UploadId,
+  file: File,
+) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error(`Expected an image file, got: ${file.type || "unknown"}`);
+  }
+
+  const { data, error } = await bucket().upload(
+    objectPath(userId, uploadId),
+    file,
+    { contentType: file.type },
+  );
+
+  if (error) throw error;
+  return data.path;
+}
+
 export async function readTextFile(userId: string, uploadId: UploadId) {
   const { data, error } = await bucket().download(objectPath(userId, uploadId));
 
@@ -115,4 +141,15 @@ async function signedUrl(path: string, seconds = 600) {
 
   if (error) throw error;
   return data.signedUrl;
+}
+
+/*
+Only images use this today (client thumbnails + handing the model a fetchable URL for vision input).
+*/
+export async function getSignedUrl(
+  userId: string,
+  uploadId: UploadId,
+  seconds = 600,
+) {
+  return signedUrl(objectPath(userId, uploadId), seconds);
 }
