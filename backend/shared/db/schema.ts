@@ -1,4 +1,3 @@
-import { relations } from "drizzle-orm";
 import { bigint, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
 
@@ -69,6 +68,35 @@ export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
     () => AudioTranscriptionJobs.uploadId,
     { onDelete: "cascade" },
   ),
+});
+
+export const ImageUploads = pgTable("image_uploads", {
+  uploadId: text("upload_id").notNull().primaryKey(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+
+  // Signed once at upload — while the user is still typing — so sending a
+  // message never signs. Nullable: rows predating this, and any kind of upload
+  // that isn't fetched by a third party, simply have none.
+  signedUrl: text("signed_url"),
+  signedUrlExpiresAt: timestamp("signed_url_expires_at", {
+    withTimezone: true,
+  }),
+
+  // The chat message this image was sent with. Null while the image is only
+  // uploaded — it is stored the moment it's dropped in, which is before the
+  // message it belongs to exists (and it may never be sent at all).
+  messageId: uuid("message_id").references(() => ChatMessages.id, {
+    onDelete: "cascade",
+  }),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
 });
 
 /** Chat conversations owned by a user. */
