@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../../shared/keys";
 import { validateModel, DEFAULT_MODELS } from "../../../../shared/ai/ai_client";
-import { MAX_AUDIO_BYTES } from "../../../../shared/bucket";
+import { MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from "../../../../shared/bucket";
 
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
 
@@ -49,6 +49,37 @@ export const textUploadSchema = z
   .transform((data) => ({
     [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
     [CTX_KEYS.chosenModelId]: data[FORM_KEYS.chosenModelId],
+  }));
+
+/**
+ * POST /upload/image — a standalone image (dropped into the chat, or uploaded
+ * from the navbar mode). No model/job involved: it's stored for later
+ * reference and handed to the chat model as vision input once attached to a
+ * sent message.
+ */
+export const imageUploadSchema = z
+  .object({
+    [FORM_KEYS.uploadFile]: fileField,
+  })
+  .superRefine((data, ctx) => {
+    const file = data[FORM_KEYS.uploadFile];
+    if (!file.type.startsWith("image/")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "File must be an image",
+        path: [FORM_KEYS.uploadFile],
+      });
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Image is too large",
+        path: [FORM_KEYS.uploadFile],
+      });
+    }
+  })
+  .transform((data) => ({
+    [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
   }));
 
 export const audioUploadSchema = z
@@ -106,6 +137,11 @@ export const audioUploadSchema = z
     [CTX_KEYS.transcriptionModelId]: data[FORM_KEYS.transcriptionModelId],
     [CTX_KEYS.audioSource]: data[FORM_KEYS.audioSource],
   }));
+
+/** GET /upload/image/:uploadId — re-sign a previously uploaded image's URL. */
+export const imageFetchParamSchema = z.object({
+  [CTX_KEYS.uploadId]: z.string().uuid(),
+});
 
 /**
  * POST /upload/youtube — a YouTube URL. Unlike audio/text this is a JSON body
