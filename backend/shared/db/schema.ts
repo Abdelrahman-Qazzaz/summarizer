@@ -71,6 +71,22 @@ export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
   ),
 });
 
+/** Standalone image uploads — storage only, no processing job. Referenced by
+ * uploadId from ChatAttachments once a user sends a message with one attached. */
+export const ImageUploads = pgTable("image_uploads", {
+  uploadId: text("upload_id").notNull().primaryKey(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+});
+
 /** Chat conversations owned by a user. */
 export const Conversations = pgTable("conversations", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -113,6 +129,34 @@ export const ChatMessages = pgTable("chat_messages", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
+});
+
+//TODO: add 'transcripts' as attachmentKind.
+export const attachmentKindEnum = pgEnum("attachment_kind", ["image"] as const);
+
+/**
+ * Items referenced/attached to a chat message (e.g. an image dropped into the
+ * chat before sending). One message can have several rows. Deliberately has no
+ * conversationId — a message already scopes to a conversation, and an
+ * attachment only ever belongs to one message.
+ */
+export const ChatAttachments = pgTable("chat_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  kind: attachmentKindEnum("kind").notNull(),
+  // Id of the row in the kind-specific table (e.g. ImageUploads.uploadId).
+  uploadId: text("upload_id").notNull(),
+  // Denormalized from the source upload row so the chat UI can render a chip
+  // without joining across every kind-specific table.
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type"),
+
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+
+  messageId: uuid("message_id")
+    .notNull()
+    .references(() => ChatMessages.id, { onDelete: "cascade" }),
 });
 
 export const users = pgTable("users", {
