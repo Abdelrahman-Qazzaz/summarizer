@@ -1,14 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
+import { eq, and } from "drizzle-orm";
 import {
   db,
   AudioTranscriptionJobs,
   TextSummarizationJobs,
+  ImageUploads,
 } from "../../../../shared/db";
 import {
   uploadTextToBucket,
   uploadAudioToBucket,
+  uploadImageToBucket,
+  getSignedUrl,
+  IMAGE_URL_TTL_SECONDS,
 } from "../../../../shared/bucket";
+import { imageUrlsFor } from "../utils/chatAttachments";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../../shared/keys";
@@ -93,6 +99,74 @@ export async function handleYoutubeUpload(c: Context) {
     message: "Queued",
     uploadId,
     source: "youtube" as const,
+    url,
+  });
+}
+
+/**
+ * POST /upload/image — stores an image (dropped into the chat, or uploaded
+ * from the navbar) with no processing job. Returns a signed URL so the client
+ * can preview it immediately.
+ *
+ * The URL is persisted, not just returned: this runs while the user is still
+ * typing, so caching it here is what keeps signing off the send path entirely.
+ */
+export async function handleImageUpload(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const file = c.get(CTX_KEYS.uploadFile);
+
+  const uploadId: UploadId = randomUUID();
+
+  await uploadImageToBucket(userId, uploadId, file);
+  const url = await getSignedUrl(userId, uploadId);
+
+  await db.insert(ImageUploads).values({
+    uploadId,
+    userId,
+    fileName: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    signedUrl: url,
+    signedUrlExpiresAt: new Date(Date.now() + IMAGE_URL_TTL_SECONDS * 1000),
+  });
+
+  return c.json({
+    message: "File uploaded",
+    uploadId,
+    fileName: file.name,
+    size: file.size,
+    mimeType: file.type,
+    mode: "image" as const,
+    url,
+  });
+}
+
+/**
+ * GET /upload/image/:uploadId — the URL for a previously uploaded image.
+ * Served from the cached signature; only re-signs once that nears expiry.
+ */
+export async function handleGetImage(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const uploadId = c.get(CTX_KEYS.uploadId);
+
+  const [row] = await db
+    .select()
+    .from(ImageUploads)
+    .where(
+      and(eq(ImageUploads.uploadId, uploadId), eq(ImageUploads.userId, userId)),
+    )
+    .limit(1);
+
+  if (!row) return c.json({ message: "Image not found" }, 404);
+
+  const url = (await imageUrlsFor([row])).get(uploadId);
+  if (!url) return c.json({ message: "Image could not be signed" }, 502);
+
+  return c.json({
+    uploadId: row.uploadId,
+    fileName: row.fileName,
+    mimeType: row.mimeType,
+    size: row.sizeBytes,
     url,
   });
 }
