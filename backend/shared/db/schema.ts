@@ -82,6 +82,14 @@ export const ImageUploads = pgTable("image_uploads", {
     .defaultNow()
     .notNull(),
 
+  // Signed once at upload — while the user is still typing — so sending a
+  // message never signs. Nullable: rows predating this, and any kind of upload
+  // that isn't fetched by a third party, simply have none.
+  signedUrl: text("signed_url"),
+  signedUrlExpiresAt: timestamp("signed_url_expires_at", {
+    withTimezone: true,
+  }),
+
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
