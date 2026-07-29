@@ -143,13 +143,48 @@ async function signedUrl(path: string, seconds = 600) {
   return data.signedUrl;
 }
 
+/**
+ * How long an image URL is signed for. Long-lived because it's minted once at
+ * upload and cached on the row — the model provider only needs seconds, but a
+ * conversation reopened next week should not have to re-sign to render.
+ */
+export const IMAGE_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 /*
 Only images use this today (client thumbnails + handing the model a fetchable URL for vision input).
 */
 export async function getSignedUrl(
   userId: string,
   uploadId: UploadId,
-  seconds = 600,
+  seconds = IMAGE_URL_TTL_SECONDS,
 ) {
   return signedUrl(objectPath(userId, uploadId), seconds);
+}
+
+/**
+ * Signs many objects in one request. Returns uploadId → url, omitting any the
+ * storage API couldn't sign. Callers may span owners; the path carries the
+ * owner, so no grouping is needed.
+ */
+export async function getSignedUrls(
+  entries: readonly { userId: string; uploadId: string }[],
+  seconds = IMAGE_URL_TTL_SECONDS,
+): Promise<Map<string, string>> {
+  const urls = new Map<string, string>();
+  if (entries.length === 0) return urls;
+
+  const paths = entries.map((e) =>
+    objectPath(e.userId, e.uploadId as UploadId),
+  );
+  const { data, error } = await bucket().createSignedUrls(paths, seconds);
+  if (error) throw error;
+
+  const byPath = new Map(
+    data.filter((d) => d.path && d.signedUrl).map((d) => [d.path, d.signedUrl]),
+  );
+  entries.forEach((entry, i) => {
+    const url = byPath.get(paths[i]);
+    if (url) urls.set(entry.uploadId, url);
+  });
+  return urls;
 }
