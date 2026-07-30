@@ -21,7 +21,6 @@
     "drizzle-orm": "0.45.2",
     "hono": "4.12.12",
     "hono-rate-limiter": "0.5.3",
-    "node-cron": "4.2.1",
     "postgres": "^3.4.9",
     "socket.io": "4.8.3",
     "unpdf": "^1.6.2",
@@ -30,7 +29,6 @@
   "devDependencies": {
     "@types/amqplib": "0.10.8",
     "@types/node": "25.6.0",
-    "@types/node-cron": "3.0.11",
     "concurrently": "9.2.1",
     "drizzle-kit": "0.31.10",
     "tsx": "4.20.5",
