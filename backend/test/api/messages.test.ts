@@ -16,6 +16,9 @@ const {
   mockDeleteReturning,
   mockValidateModel,
   mockChatAI,
+  mockGetSignedUrl,
+  mockGetSignedUrls,
+  mockLeftJoin,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockFrom: vi.fn(),
@@ -33,6 +36,9 @@ const {
   mockDeleteReturning: vi.fn(),
   mockValidateModel: vi.fn(),
   mockChatAI: vi.fn(),
+  mockGetSignedUrl: vi.fn(),
+  mockGetSignedUrls: vi.fn(),
+  mockLeftJoin: vi.fn(),
 }));
 
 vi.mock("../../shared/db", () => ({
@@ -61,9 +67,34 @@ vi.mock("../../shared/db", () => ({
   },
   TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
   AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
+  ChatAttachments: {
+    id: "id",
+    kind: "kind",
+    uploadId: "upload_id",
+    fileName: "file_name",
+    mimeType: "mime_type",
+    createdAt: "created_at",
+    messageId: "message_id",
+  },
+  ImageUploads: {
+    uploadId: "upload_id",
+    fileName: "file_name",
+    mimeType: "mime_type",
+    sizeBytes: "size_bytes",
+    createdAt: "created_at",
+    userId: "user_id",
+  },
   jobStatusEnum: {
     enumValues: ["queued", "processing", "completed", "failed"],
   },
+}));
+
+// Only the signing is stubbed; everything else the app imports from the bucket
+// module stays real, so no export has to be re-declared here.
+vi.mock("../../shared/bucket", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../shared/bucket")>()),
+  getSignedUrl: mockGetSignedUrl,
+  getSignedUrls: mockGetSignedUrls,
 }));
 
 vi.mock("../../shared/ai/ai_client", () => ({
@@ -108,13 +139,32 @@ const assistantRow = {
   createdAt,
 };
 
+/**
+ * Rows for the queries awaited straight off `.where()`, in call order: the
+ * ImageUploads ownership lookup, then the ChatAttachments lookup. Anything not
+ * queued resolves empty — no attachments, no matching uploads.
+ */
+const whereResults: unknown[][] = [];
+
 beforeEach(() => {
   vi.clearAllMocks();
+  whereResults.length = 0;
   mockSelect.mockImplementation(() => ({ from: mockFrom }));
-  mockFrom.mockImplementation(() => ({ where: mockWhere }));
+  mockFrom.mockImplementation(() => ({
+    where: mockWhere,
+    leftJoin: mockLeftJoin,
+  }));
+  mockLeftJoin.mockImplementation(() => ({ where: mockWhere }));
+  // Nothing needs re-signing unless a test says so.
+  mockGetSignedUrls.mockResolvedValue(new Map());
+  // Some queries (e.g. the attachments lookup) are awaited directly off
+  // `.where()` with no further `.orderBy()`/`.limit()`, so this must be
+  // thenable too.
   mockWhere.mockImplementation(() => ({
     orderBy: mockOrderBy,
     limit: mockLimit,
+    then: (resolve: (value: unknown[]) => void) =>
+      resolve(whereResults.shift() ?? []),
   }));
   mockOrderBy.mockImplementation(() => ({ limit: mockLimit }));
   mockInsert.mockImplementation(() => ({ values: mockValues }));
@@ -147,7 +197,12 @@ describe("GET /conversations/:conversationId/messages", () => {
       headers: { Cookie: await sessionCookieHeader(userId) },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ messages: [userRow, assistantRow] });
+    expect(await res.json()).toEqual({
+      messages: [
+        { ...userRow, attachments: [] },
+        { ...assistantRow, attachments: [] },
+      ],
+    });
   });
   it("returns 404 when the conversation is not owned by the user", async () => {
     mockLimit.mockResolvedValueOnce([]);
@@ -331,6 +386,157 @@ describe("POST /conversations/:conversationId/messages", () => {
     // The oldest turn fell off; the new one is always kept, last.
     expect(labels).toEqual(["middle", "newest", "Hi the"]);
     expect(opts.maxOutputTokens).toBe(MAX_RESPONSE_TOKENS);
+  });
+
+  it("sends an attached image to the model and persists it against the turn", async () => {
+    const upload = {
+      uploadId: "img_1",
+      fileName: "cat.png",
+      mimeType: "image/png",
+      sizeBytes: 1234,
+      createdAt,
+      userId,
+      // Cached at upload time, still fresh — nothing should re-sign.
+      signedUrl: "https://signed.example/img_1",
+      signedUrlExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+    };
+    const attachmentRow = {
+      id: "850e8400-e29b-41d4-a716-446655440333",
+      kind: "image",
+      uploadId: "img_1",
+      fileName: "cat.png",
+      mimeType: "image/png",
+      messageId: userRow.id,
+    };
+    mockLimit
+      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+      .mockResolvedValueOnce([]); // no history
+    whereResults.push([upload]); // the ImageUploads ownership lookup
+    mockInsertReturning
+      .mockResolvedValueOnce([userRow])
+      .mockResolvedValueOnce([attachmentRow])
+      .mockResolvedValueOnce([assistantRow]);
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+      messageAttachments: [{ kind: "image", uploadId: "img_1" }],
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+
+    // The new turn reaches the model as multimodal content, not bare text.
+    const [, turns] = mockChatAI.mock.calls[0];
+    expect(turns).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Hi there" },
+          {
+            type: "image_url",
+            imageUrl: { url: "https://signed.example/img_1" },
+          },
+        ],
+      },
+    ]);
+    // The URL came off the cached row — sending signed nothing.
+    expect(mockGetSignedUrls).not.toHaveBeenCalled();
+
+    // …and is denormalized onto a ChatAttachments row hanging off the user turn.
+    expect(mockValues).toHaveBeenCalledWith([
+      {
+        kind: "image",
+        uploadId: "img_1",
+        fileName: "cat.png",
+        mimeType: "image/png",
+        messageId: userRow.id,
+      },
+    ]);
+    expect(body).toContain("event: user_message");
+    expect(body).toContain("cat.png");
+  });
+
+  it("replays a history turn's image attachments as multimodal content", async () => {
+    const historyRow = {
+      id: "950e8400-e29b-41d4-a716-446655440444",
+      role: "user",
+      content: "Old question",
+      userId,
+    };
+    mockLimit
+      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+      .mockResolvedValueOnce([historyRow]); // history, newest-first
+    // No attachments on the new turn, so ImageUploads is never queried — this
+    // is the joined attachment lookup for the history above.
+    whereResults.push([
+      {
+        attachment: {
+          id: "a50e8400-e29b-41d4-a716-446655440555",
+          kind: "image",
+          uploadId: "img_old",
+          fileName: "diagram.png",
+          mimeType: "image/png",
+          messageId: historyRow.id,
+        },
+        upload: {
+          uploadId: "img_old",
+          userId,
+          signedUrl: "https://signed.example/img_old",
+          signedUrlExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        },
+      },
+    ]);
+    mockInsertReturning
+      .mockResolvedValueOnce([userRow])
+      .mockResolvedValueOnce([assistantRow]);
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+
+    const [, turns] = mockChatAI.mock.calls[0];
+    expect(turns).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Old question" },
+          {
+            type: "image_url",
+            imageUrl: { url: "https://signed.example/img_old" },
+          },
+        ],
+      },
+      { role: "user", content: "Hi there" },
+    ]);
+    // Replaying history signed nothing either — the cache covers it.
+    expect(mockGetSignedUrls).not.toHaveBeenCalled();
+  });
+
+  it("rejects an attachment the user doesn't own with 400 before streaming", async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+      .mockResolvedValueOnce([]); // no history
+    // The ImageUploads lookup finds nothing for this id.
+    whereResults.push([]);
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+      messageAttachments: [{ kind: "image", uploadId: "img_someone_else" }],
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      message: "One or more attachments could not be found",
+    });
+    // Nothing was persisted and the model was never called.
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockChatAI).not.toHaveBeenCalled();
   });
 
   it("emits an SSE error event and skips the assistant insert when the model fails", async () => {

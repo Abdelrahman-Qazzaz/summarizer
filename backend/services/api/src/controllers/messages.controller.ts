@@ -6,21 +6,35 @@ import { CTX_KEYS } from "../../../../shared/keys";
 import { chatAI } from "../../../../shared/ai/ai_client";
 import type { ChatTurn } from "../../../../shared/ai/ai_client";
 import { SSEEventQueue } from "../utils/sse";
+import {
+  InvalidAttachmentsError,
+  attachmentsWithUrlsByMessageId,
+  imageContentPart,
+  imageUrlsFor,
+  insertAttachmentRows,
+  resolveImageAttachments,
+  toAttachmentJson,
+} from "../utils/chatAttachments";
+import type {
+  ImageUploadRow,
+  MessageAttachmentInput,
+  ResolvedAttachment,
+} from "../utils/chatAttachments";
 import { logger } from "../../../../shared/logger";
+import { tryCatch } from "../../../../shared/try-catch";
 import { findOwnedConversation } from "./conversations.controller";
 
 const log = logger.child({ controller: "messages" });
 
-/**
- * Bounds on what one turn can cost. The message cap alone isn't one: 50 turns
- * of the 50k chars the schema allows is a ~2.5M-char prompt, so the character
- * budget is what actually holds the line. Older turns simply fall off.
- */
+/** Bounds on one turn. The char budget is the real cap: 50 × 50k is ~2.5M chars. */
 const MAX_CONTEXT_MESSAGES = 50;
 export const MAX_CONTEXT_CHARS = 100_000;
 export const MAX_RESPONSE_TOKENS = 4_000;
 
-function toMessageJson(row: typeof ChatMessages.$inferSelect) {
+function toMessageJson(
+  row: typeof ChatMessages.$inferSelect,
+  attachments: ResolvedAttachment[] = [],
+) {
   return {
     id: row.id,
     role: row.role,
@@ -28,24 +42,21 @@ function toMessageJson(row: typeof ChatMessages.$inferSelect) {
     chosenModelId: row.chosenModelId,
     conversationId: row.conversationId,
     createdAt: row.createdAt,
+    attachments: attachments.map((a) => toAttachmentJson(a.row, a.url)),
   };
 }
 
 /**
- * The model context for a new user turn: the conversation's most recent
- * history (fetched newest-first so LIMIT keeps the latest turns, then reversed
- * into the oldest-first order the model expects) plus the new turn itself.
- * Must run before the new turn is inserted, so it can't appear twice.
+ *   history  = SELECT newest MAX_CONTEXT_MESSAGES-1 turns
+ *   admitted = take from newest while MAX_CONTEXT_CHARS lasts, stop at 1st overflow
+ *   attach     images of admitted turns as content parts
+ *   → admitted reversed to oldest-first, the order the model expects
  *
- * The new turn is always included, however long it is; history is admitted
- * newest-first until MAX_CONTEXT_CHARS is spent and truncated at the first turn
- * that doesn't fit — dropping that one but keeping older ones would splice the
- * conversation into something the model reads as a non-sequitur.
+ * Stops rather than skips: a hole mid-conversation reads as a non-sequitur.
+ * Caller appends the new turn — running before its INSERT is what keeps it
+ * from appearing twice.
  */
-async function buildContextTurns(
-  conversationId: string,
-  content: string,
-): Promise<ChatTurn[]> {
+async function buildContextTurns(conversationId: string): Promise<ChatTurn[]> {
   const history = await db
     .select()
     .from(ChatMessages)
@@ -53,16 +64,29 @@ async function buildContextTurns(
     .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
     .limit(MAX_CONTEXT_MESSAGES - 1);
 
-  const turns: ChatTurn[] = [{ role: "user", content }];
+  const admitted: typeof history = [];
   let budget = MAX_CONTEXT_CHARS;
-
   for (const message of history) {
     budget -= message.content.length;
     if (budget < 0) break;
-    turns.unshift({ role: message.role, content: message.content });
+    admitted.push(message);
   }
 
-  return turns;
+  const byMessage = await attachmentsWithUrlsByMessageId(
+    admitted.map((m) => m.id),
+  );
+
+  return admitted.reverse().map((m): ChatTurn => {
+    const imageParts = (byMessage.get(m.id) ?? [])
+      .filter((a) => a.row.kind === "image" && a.url)
+      .map((a) => imageContentPart(a.url as string));
+    if (!imageParts.length) return { role: m.role, content: m.content };
+
+    return {
+      role: m.role,
+      content: [{ type: "text", text: m.content }, ...imageParts],
+    };
+  });
 }
 
 /** GET /conversations/:conversationId/messages — full history, oldest first. */
@@ -70,8 +94,7 @@ export async function handleListMessages(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const conversationId = c.get(CTX_KEYS.conversationId);
 
-  // Ownership check and the rows themselves are independent reads; the rows
-  // are simply discarded on the 404 path.
+  // Independent reads; rows are discarded on the 404 path.
   const [owned, rows] = await Promise.all([
     findOwnedConversation(userId, conversationId),
     db
@@ -83,15 +106,24 @@ export async function handleListMessages(c: Context) {
 
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
 
-  return c.json({ messages: rows.map(toMessageJson) });
+  const byMessage = await attachmentsWithUrlsByMessageId(rows.map((m) => m.id));
+
+  return c.json({
+    messages: rows.map((row) => toMessageJson(row, byMessage.get(row.id))),
+  });
 }
 
 /**
- * Persists the user turn, runs the model, and persists the reply, reporting
- * progress into `events`. Never rejects: failures become an `error` event.
+ *   INSERT user turn  ‖  touch conversation.updatedAt
+ *   INSERT attachments                    (needs the user turn's id)
+ *   push  user_message
+ *   chatAI → push delta per chunk
+ *   INSERT assistant turn → push done
+ *   throw → push error                    always → end()
  *
- * Deliberately takes a queue rather than the response stream — the run has to
- * finish (and both rows have to land) whether or not a client is still reading.
+ * Never rejects. Takes the queue, not the stream, so the run outlives the
+ * connection. Assistant row lands only after the model finishes, so a crash
+ * leaves the user turn saved and no reply — never the reverse.
  */
 async function runChatTurn(
   args: {
@@ -100,13 +132,21 @@ async function runChatTurn(
     content: string;
     chosenModelId: string;
     turns: ChatTurn[];
+    imageRows: readonly ImageUploadRow[];
+    imageUrls: Map<string, string>;
   },
   events: SSEEventQueue,
 ) {
-  const { userId, conversationId, content, chosenModelId, turns } = args;
+  const {
+    userId,
+    conversationId,
+    content,
+    chosenModelId,
+    turns,
+    imageRows,
+    imageUrls,
+  } = args;
   try {
-    // The user turn must be durable (and its id known for the event) before the
-    // model call; touching the conversation surfaces it in the list's ordering.
     const [[userMessage]] = await Promise.all([
       db
         .insert(ChatMessages)
@@ -117,7 +157,21 @@ async function runChatTurn(
         .set({ updatedAt: new Date() })
         .where(eq(Conversations.id, conversationId)),
     ]);
-    events.push("user_message", toMessageJson(userMessage));
+
+    const attachmentRows = await insertAttachmentRows(
+      userMessage.id,
+      imageRows,
+    );
+    events.push(
+      "user_message",
+      toMessageJson(
+        userMessage,
+        attachmentRows.map((row) => ({
+          row,
+          url: imageUrls.get(row.uploadId) ?? null,
+        })),
+      ),
+    );
 
     const full = await chatAI(chosenModelId, turns, {
       onDelta: (delta) => events.push("delta", { delta }),
@@ -141,8 +195,7 @@ async function runChatTurn(
       conversationId,
       chosenModelId,
     });
-    // Reported in-band: the response is a 200 stream by the time this can fail,
-    // so an SSE "error" event is the only channel left to the client.
+    // In-band: the 200 headers are long gone, so SSE is the only channel left.
     events.push("error", { message: "Model response failed" });
   } finally {
     events.end();
@@ -150,35 +203,71 @@ async function runChatTurn(
 }
 
 /**
- * POST /conversations/:conversationId/messages — persist the user turn, then
- * stream the model's reply over SSE and persist it once complete.
+ * POST /conversations/:conversationId/messages
  *
- * The run is detached from the response: a client that disconnects the moment
- * it posts (or never reads the body at all) still comes back to a conversation
- * holding both its message and the full reply. Streaming is only for watching
- * the answer arrive; `GET .../messages` is the source of truth.
+ *   parallel: conversation owned? | attachments owned? | build history
+ *             ↳ 404               ↳ 400
+ *   turns = history + new turn (text, plus image parts if any)
+ *   spawn runChatTurn(turns) ──push──► queue
+ *   return SSE stream        ◄──pipe── queue, until done or client disconnect
  *
- * Events: `user_message` (the saved user row), `delta` ({ delta }) per model
- * chunk, `done` (the saved assistant row), `error` ({ message }). The client
- * consumes this with fetch + response.body.getReader() (EventSource can't POST).
+ * Events: user_message → delta* → done, or error. Consumed with fetch +
+ * response.body.getReader(), since EventSource can't POST.
+ *
+ * The run is detached from the response, so a client that disconnects still
+ * comes back to both rows: streaming only watches, GET is the source of truth.
+ * A 200 therefore means the run started, not that anything is persisted yet —
+ * only 400/404 are decided before the first write.
  */
 export async function handleCreateMessage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const conversationId = c.get(CTX_KEYS.conversationId);
   const content: string = c.get(CTX_KEYS.messageContent);
   const chosenModelId: string = c.get(CTX_KEYS.chosenModelId);
+  const attachments: MessageAttachmentInput[] =
+    c.get(CTX_KEYS.messageAttachments) ?? [];
 
-  // Ownership check and context building are independent reads; the turns are
-  // simply discarded on the 404 path.
-  const [owned, turns] = await Promise.all([
-    findOwnedConversation(userId, conversationId),
-    buildContextTurns(conversationId, content),
-  ]);
+  // Independent reads; turns and rows are discarded on the 404 path.
+  const { data, error } = await tryCatch(
+    Promise.all([
+      findOwnedConversation(userId, conversationId),
+      resolveImageAttachments(userId, attachments),
+      buildContextTurns(conversationId),
+    ]),
+  );
+  if (error instanceof InvalidAttachmentsError) {
+    return c.json({ message: error.message }, 400);
+  }
+  if (error) throw error;
+
+  const [owned, imageRows, historyTurns] = data;
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
+
+  // Cached from upload time in the normal case, so this signs nothing.
+  const imageUrls = await imageUrlsFor(imageRows);
+  const imageParts = imageRows
+    .map((row) => imageUrls.get(row.uploadId))
+    .filter((url): url is string => !!url)
+    .map(imageContentPart);
+  const newTurnContent: ChatTurn["content"] = imageParts.length
+    ? [{ type: "text", text: content }, ...imageParts]
+    : content;
+  const turns: ChatTurn[] = [
+    ...historyTurns,
+    { role: "user", content: newTurnContent },
+  ];
 
   const events = new SSEEventQueue();
   void runChatTurn(
-    { userId, conversationId, content, chosenModelId, turns },
+    {
+      userId,
+      conversationId,
+      content,
+      chosenModelId,
+      turns,
+      imageRows,
+      imageUrls,
+    },
     events,
   );
 
