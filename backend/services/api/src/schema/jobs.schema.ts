@@ -1,11 +1,7 @@
 import { z } from "zod";
 import { CTX_KEYS } from "../../../../shared/keys";
-import {
-  AudioTranscriptionJobs,
-  jobStatusEnum,
-  TextSummarizationJobs,
-} from "../../../../shared/db";
-import { validateModel } from "../../../../shared/ai/ai_client";
+import { jobStatusEnum } from "../../../../shared/db";
+import { validateModelOutput } from "../../../../shared/ai/ai_client";
 
 export const jobReqParamSchema = z.object({
   [CTX_KEYS.uploadId]: z.string().uuid(),
@@ -16,12 +12,6 @@ export type JobStatus = (typeof jobStatusEnum.enumValues)[number];
 type JobKindValues = ["text", "audio"];
 const jobKindValues: JobKindValues = ["text", "audio"] as const;
 export type JobKind = JobKindValues[number]; // "text" | "audio"
-
-export type JobSummaries = {
-  [K in JobKind]: K extends "text"
-    ? (typeof TextSummarizationJobs.$inferSelect)[]
-    : (typeof AudioTranscriptionJobs.$inferSelect)[];
-};
 
 /** Query params for the paginated history list (GET /jobs). */
 export const jobsListQuerySchema = z.object({
@@ -44,7 +34,7 @@ export const jobRerunBodySchema = z
     [CTX_KEYS.chosenModelId]: z.string().min(1),
   })
   .superRefine(async (data, ctx) => {
-    if (!(await validateModel(data[CTX_KEYS.chosenModelId], "text"))) {
+    if (!(await validateModelOutput(data[CTX_KEYS.chosenModelId], "text"))) {
       ctx.addIssue({
         code: "custom",
         message: "Invalid summary model: must be a text model",
@@ -64,7 +54,7 @@ export const jobTranscribeRerunBodySchema = z
   })
   .superRefine(async (data, ctx) => {
     if (
-      !(await validateModel(
+      !(await validateModelOutput(
         data[CTX_KEYS.transcriptionModelId],
         "transcription",
       ))
@@ -75,7 +65,7 @@ export const jobTranscribeRerunBodySchema = z
         path: [CTX_KEYS.transcriptionModelId],
       });
     }
-    if (!(await validateModel(data[CTX_KEYS.chosenModelId], "text"))) {
+    if (!(await validateModelOutput(data[CTX_KEYS.chosenModelId], "text"))) {
       ctx.addIssue({
         code: "custom",
         message: "Invalid summary model: must be a text model",
