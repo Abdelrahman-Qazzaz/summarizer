@@ -6,36 +6,36 @@ export type UploadId = `${string}-${string}-${string}-${string}-${string}`;
  * publishes to `transcribe` (incl. the Python youtube-fetcher) must send the
  * bare JSON string, i.e. `JSON.stringify(uploadId)`.
  */
-export type TranscribeEvent = UploadId;
+type TranscribeEvent = UploadId;
 
 /** `summarize` — like `transcribe`, the bare `UploadId` string, not an object. */
-export type SummarizeEvent = UploadId;
+type SummarizeEvent = UploadId;
 
-export type TranscribeDoneEvent = {
+type TranscribeDoneEvent = {
   uploadId: UploadId;
   userId: string;
 };
 
-export type SummarizeDoneEvent = {
+type SummarizeDoneEvent = {
   uploadId: UploadId;
   userId: string;
 };
 
-export type SummarizeChunkEvent = {
+type SummarizeChunkEvent = {
   uploadId: UploadId;
   userId: string;
   delta: string;
 };
 
 /** `yt_fetch` — api → youtube-fetcher: download this URL's audio into the bucket. */
-export type YtFetchEvent = {
+type YtFetchEvent = {
   uploadId: UploadId;
   url: string;
   userId: string;
 };
 
 /** `yt_fetch_failed` — youtube-fetcher → api: the download/upload failed. */
-export type YtFetchFailedEvent = {
+type YtFetchFailedEvent = {
   uploadId: UploadId;
   userId: string;
   error?: string;

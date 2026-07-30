@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CTX_KEYS } from "../../../../shared/keys";
 
-export const MAX_TITLE_LENGTH = 200;
+const MAX_TITLE_LENGTH = 200;
 
 export const conversationReqParamSchema = z.object({
   [CTX_KEYS.conversationId]: z.string().uuid(),

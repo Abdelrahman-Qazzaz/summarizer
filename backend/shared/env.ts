@@ -23,7 +23,7 @@ const nodeEnvSchema = z
   .default("development");
 
 /** Shared by API, worker, and Drizzle. */
-export const baseEnvSchema = z.object({
+const baseEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   MQ_URL: z.string().min(1),
   SUPABASE_URL: z.string().url(),
@@ -62,7 +62,7 @@ export const workerEnvSchema = baseEnvSchema.extend({
   WORKER_ROLE: workerRoleSchema,
 });
 
-export const drizzleEnvSchema = z.object({
+const drizzleEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
 });
 
