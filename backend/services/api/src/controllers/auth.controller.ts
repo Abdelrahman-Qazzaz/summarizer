@@ -26,15 +26,15 @@ export async function handleCallback(c: Context) {
   const code = c.req.query("code");
   if (!code) return c.json({ message: "code required" }, 400);
 
-  const id = await getUserIdFromCode(code);
+  const userId = await getUserIdFromCode(code);
 
   const week = 60 * 60 * 24 * 7;
   // Upserting the user row and signing the session token are independent;
   // both must still succeed before the cookie is issued.
   const [, token] = await Promise.all([
-    db.insert(users).values({ id }).onConflictDoNothing(),
+    db.insert(users).values({ id: userId }).onConflictDoNothing(),
     sign(
-      { sub: id, exp: Math.floor(Date.now() / 1000) + week },
+      { sub: userId, exp: Math.floor(Date.now() / 1000) + week },
       getApiEnv().SESSION_SECRET,
     ),
   ]);
