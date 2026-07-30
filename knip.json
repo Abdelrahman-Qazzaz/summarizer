@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [],
+      "project": []
+    },
+    "backend": {
+      "entry": [
+        "services/api/index.ts",
+        "services/transcribe-summarize-service/index.ts",
+        "drizzle.config.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": ["**/*.ts"],
+      // Both run inside the `doppler run -- concurrently "tsx …"` dev script,
+      // which knip can't see through to resolve the binaries.
+      "ignoreDependencies": ["concurrently", "tsx"],
+      // The plugin executes drizzle.config.ts, which parses (Doppler-backed)
+      // env and throws under a bare `npx knip`. Treated as a plain entry above.
+      "drizzle": false
+    },
+    // Entries/project come from the vite plugin's defaults.
+    "client": {}
+  },
+  // Provisioned on the machine, not via npm.
+  "ignoreBinaries": ["doppler"]
+}

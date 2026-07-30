@@ -7,6 +7,7 @@
     "dev:fetcher": "until curl -sf http://localhost:3001/contract > /dev/null; do sleep 1; done && cd youtube-fetcher && doppler run -- .venv/bin/python app/app.py"
   },
   "devDependencies": {
-    "concurrently": "9.2.1"
+    "concurrently": "^9.2.1",
+    "knip": "^6.29.0"
   }
 }
