@@ -25,10 +25,19 @@ export async function checkCache(cacheKey: RedisCacheOptions["key"]) {
   // data is null on failure — exactly the miss the callers expect.
   return data;
 }
+/**
+ * `ttlSeconds` is required, not defaulted: an entry with no expiry lives until
+ * something explicitly overwrites it, which in practice meant bumping the
+ * version in CACHE_KEYS by hand to bust a stale catalog. Every caller has to
+ * say how long its data stays true.
+ */
 export async function setCache(
   cacheKey: RedisCacheOptions["key"],
   data: unknown,
+  ttlSeconds: number,
 ) {
-  const { error } = await tryCatch(getRedisClient().set(cacheKey, data));
+  const { error } = await tryCatch(
+    getRedisClient().set(cacheKey, data, { ex: ttlSeconds }),
+  );
   if (error) logger.error("Cache write failed", error, { cacheKey });
 }
