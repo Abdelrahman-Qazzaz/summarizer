@@ -17,6 +17,8 @@ export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 // Cap on images entering the bucket (chat attachments / standalone uploads).
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 
+export const IMAGE_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 /**
  * The single handle every object operation (upload/download/remove/sign) goes
  * through, so `supabase.storage` and the bucket name are named in one place.
@@ -44,58 +46,55 @@ function objectPath(userId: string, uploadId: UploadId) {
 }
 
 /**
- * Directly upload a text string to Supabase Storage (no local write).
- * Returns the storage path.
+ * Every upload lands here (no local write): one place that builds the key and
+ * turns a storage error into a throw. The exported wrappers below add the
+ * per-kind type guard and nothing else. Returns the storage path.
  */
+async function uploadObject(
+  userId: string,
+  uploadId: UploadId,
+  body: Blob,
+  contentType: string,
+) {
+  const { data, error } = await bucket().upload(
+    objectPath(userId, uploadId),
+    body, // File is a Blob, so callers can pass one directly
+    { contentType },
+  );
+
+  if (error) throw error;
+  return data.path;
+}
+
+/** Upload a text string as a UTF-8 text object. */
 export async function uploadTextToBucket(
   userId: string,
   uploadId: UploadId,
   text: string,
 ) {
-  const body = new Blob([text], { type: "text/plain; charset=utf-8" });
-  const { data, error } = await bucket().upload(
-    objectPath(userId, uploadId),
-    body,
-    { contentType: "text/plain; charset=utf-8" },
+  const contentType = "text/plain; charset=utf-8";
+  return uploadObject(
+    userId,
+    uploadId,
+    new Blob([text], { type: contentType }),
+    contentType,
   );
-
-  if (error) throw error;
-  return data.path;
 }
 
-/**
- * Directly upload audio bytes to Supabase Storage (no local write).
- * Pass audio as ArrayBuffer/Uint8Array/Buffer/Blob.
- * Returns the storage path.
- */
+/** Upload speech audio. Rejects anything not declaring an `audio/*` type. */
 export async function uploadAudioToBucket(
   userId: string,
   uploadId: UploadId,
   file: File,
 ) {
-  // Optional: ensure you're uploading an audio file
   if (!file.type.startsWith("audio/")) {
     throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
   }
 
-  const { data, error } = await bucket().upload(
-    objectPath(userId, uploadId),
-    file, // File is a Blob, so you can pass it directly
-    {
-      contentType: file.type || "audio/mpeg",
-      // Optional: prevent "already exists" errors by overwriting
-      // upsert: true,
-    },
-  );
-
-  if (error) throw error;
-  return data.path;
+  return uploadObject(userId, uploadId, file, file.type);
 }
 
-/**
- * Directly upload an image to Supabase Storage (no local write).
- * Returns the storage path.
- */
+/** Upload an image. Rejects anything not declaring an `image/*` type. */
 export async function uploadImageToBucket(
   userId: string,
   uploadId: UploadId,
@@ -105,51 +104,86 @@ export async function uploadImageToBucket(
     throw new Error(`Expected an image file, got: ${file.type || "unknown"}`);
   }
 
-  const { data, error } = await bucket().upload(
-    objectPath(userId, uploadId),
-    file,
-    { contentType: file.type },
-  );
-
-  if (error) throw error;
-  return data.path;
+  return uploadObject(userId, uploadId, file, file.type);
 }
 
-export async function readTextFile(userId: string, uploadId: UploadId) {
+/** Counterpart to uploadObject: fetch the object bytes or throw. */
+async function downloadObject(userId: string, uploadId: UploadId) {
   const { data, error } = await bucket().download(objectPath(userId, uploadId));
 
-  if (error) throw error;
-
-  return await data.text();
-}
-export async function getAudioFile(userId: string, uploadId: UploadId) {
-  const { data, error } = await bucket().download(objectPath(userId, uploadId));
   if (error) throw error;
   return data; // Blob
 }
+
+export async function readTextFile(userId: string, uploadId: UploadId) {
+  return (await downloadObject(userId, uploadId)).text();
+}
+export async function getAudioFile(userId: string, uploadId: UploadId) {
+  return downloadObject(userId, uploadId);
+}
 export async function deleteFileFromBucket(userId: string, uploadId: UploadId) {
-  const { data, error } = await bucket().remove([objectPath(userId, uploadId)]);
+  return deleteFilesFromBucket(userId, [uploadId]);
+}
+
+/** One owner's objects in a single remove call. No-ops on an empty list. */
+export async function deleteFilesFromBucket(
+  userId: string,
+  uploadIds: readonly string[],
+) {
+  if (uploadIds.length === 0) return [];
+
+  const { data, error } = await bucket().remove(
+    uploadIds.map((uploadId) => objectPath(userId, uploadId as UploadId)),
+  );
 
   if (error) throw error;
   return data;
 }
 /**
- * If you need to read it back from a private bucket, generate a signed URL.
+ * How long an image URL is signed for. Long-lived because it's minted once at
+ * upload and cached on the row — the model provider only needs seconds, but a
+ * conversation reopened next week should not have to re-sign to render.
  */
-async function signedUrl(path: string, seconds = 600) {
-  const { data, error } = await bucket().createSignedUrl(path, seconds);
+
+/*
+Only images use this today (client thumbnails + handing the model a fetchable URL for vision input).
+*/
+export async function createSignedUrl(userId: string, uploadId: UploadId) {
+  const { data, error } = await bucket().createSignedUrl(
+    objectPath(userId, uploadId),
+    IMAGE_URL_TTL_SECONDS,
+  );
 
   if (error) throw error;
   return data.signedUrl;
 }
 
-/*
-Only images use this today (client thumbnails + handing the model a fetchable URL for vision input).
-*/
-export async function getSignedUrl(
-  userId: string,
-  uploadId: UploadId,
-  seconds = 600,
-) {
-  return signedUrl(objectPath(userId, uploadId), seconds);
+/**
+ * Signs many objects in one request. Returns uploadId → url, omitting any the
+ * storage API couldn't sign. Callers may span owners; the path carries the
+ * owner, so no grouping is needed.
+ */
+export async function createSignedUrls(
+  entries: readonly { userId: string; uploadId: string }[],
+): Promise<Map<string, string>> {
+  const urls = new Map<string, string>();
+  if (entries.length === 0) return urls;
+
+  const paths = entries.map((e) =>
+    objectPath(e.userId, e.uploadId as UploadId),
+  );
+  const { data, error } = await bucket().createSignedUrls(
+    paths,
+    IMAGE_URL_TTL_SECONDS,
+  );
+  if (error) throw error;
+
+  const byPath = new Map(
+    data.filter((d) => d.path && d.signedUrl).map((d) => [d.path, d.signedUrl]),
+  );
+  entries.forEach((entry, i) => {
+    const url = byPath.get(paths[i]);
+    if (url) urls.set(entry.uploadId, url);
+  });
+  return urls;
 }
