@@ -19,6 +19,7 @@ export const CTX_KEYS = {
   conversationTitle: "conversationTitle",
 
   messageContent: "messageContent",
+  attachmentUploadIds: "attachmentUploadIds",
 
   uploadFile,
   chosenModelId,
@@ -39,5 +40,5 @@ export const COOKIE_KEYS = {
 } as const;
 
 export const CACHE_KEYS = {
-  openRouterModels: "models:v5",
+  openRouterModels: "models:v7",
 };
