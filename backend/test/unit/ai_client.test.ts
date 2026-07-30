@@ -19,9 +19,11 @@ vi.mock("@openrouter/sdk", () => ({
 }));
 
 import {
+  buildUserTurn,
   DEFAULT_MODELS,
   getModelData,
-  validateModel,
+  validateModelInput,
+  validateModelOutput,
 } from "../../shared/ai/ai_client";
 
 const sampleModelData = {
@@ -34,6 +36,7 @@ const sampleModelData = {
     pricing: { prompt: "0.00000015", completion: "0.0000006" },
     supportedParameters: ["temperature", "max_tokens"],
     outputModalities: ["text"],
+    inputModalities: ["text", "image"],
   },
 };
 
@@ -47,7 +50,7 @@ const openRouterListModel = {
   supportedParameters: ["temperature", "max_tokens"],
   architecture: {
     outputModalities: ["text"],
-    inputModalities: ["text"],
+    inputModalities: ["text", "image"],
     modality: "text",
   },
 };
@@ -80,11 +83,62 @@ describe("getModelData", () => {
     expect(mockSetCache).toHaveBeenCalledWith(
       CACHE_KEYS.openRouterModels,
       sampleModelData,
+      expect.any(Number), // the catalog's ttl
     );
   });
 });
 
-describe("validateModel", () => {
+describe("validateModelInput", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSetCache.mockResolvedValue(undefined);
+  });
+
+  it("returns true for a modality the model accepts", async () => {
+    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+
+    expect(await validateModelInput(DEFAULT_MODELS.PROMPT, "image")).toBe(true);
+  });
+
+  it("returns false for a modality the model does not accept", async () => {
+    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+
+    expect(await validateModelInput(DEFAULT_MODELS.PROMPT, "audio")).toBe(false);
+  });
+
+  it("returns false for an unknown model id", async () => {
+    mockCheckCache.mockResolvedValue(null);
+    mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
+
+    expect(await validateModelInput("unknown/model", "image")).toBe(false);
+  });
+});
+
+describe("buildUserTurn", () => {
+  it("keeps a turn without images a plain string", () => {
+    expect(buildUserTurn("Hi there")).toEqual({
+      role: "user",
+      content: "Hi there",
+    });
+  });
+
+  it("puts the text first, then one part per image", () => {
+    expect(buildUserTurn("What is this?", ["https://bucket.test/a.png"])).toEqual(
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "What is this?" },
+          {
+            type: "image_url",
+            imageUrl: { url: "https://bucket.test/a.png" },
+          },
+        ],
+      },
+    );
+  });
+});
+
+describe("validateModelOutput", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSetCache.mockResolvedValue(undefined);
@@ -93,7 +147,7 @@ describe("validateModel", () => {
   it("returns true for a known model id from cache", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    const result = await validateModel(DEFAULT_MODELS.PROMPT);
+    const result = await validateModelOutput(DEFAULT_MODELS.PROMPT, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).not.toHaveBeenCalled();
@@ -103,7 +157,7 @@ describe("validateModel", () => {
     mockCheckCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
-    const result = await validateModel("unknown/model");
+    const result = await validateModelOutput("unknown/model", "text");
 
     expect(result).toBe(false);
     expect(mockModelsList).toHaveBeenCalled();
@@ -113,9 +167,17 @@ describe("validateModel", () => {
     mockCheckCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
-    const result = await validateModel(DEFAULT_MODELS.PROMPT);
+    const result = await validateModelOutput(DEFAULT_MODELS.PROMPT, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).toHaveBeenCalled();
+  });
+
+  it("returns false for a modality the model does not produce", async () => {
+    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+
+    expect(
+      await validateModelOutput(DEFAULT_MODELS.PROMPT, "transcription"),
+    ).toBe(false);
   });
 });

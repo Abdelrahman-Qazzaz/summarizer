@@ -43,18 +43,18 @@ describe("setCache", () => {
     vi.clearAllMocks();
   });
 
-  it("writes data to redis", async () => {
+  it("writes data to redis under the given expiry", async () => {
     const data = { models: [] };
     mockSet.mockResolvedValueOnce("OK");
 
-    await setCache("models:v1", data);
+    await setCache("models:v1", data, 900);
 
-    expect(mockSet).toHaveBeenCalledWith("models:v1", data);
+    expect(mockSet).toHaveBeenCalledWith("models:v1", data, { ex: 900 });
   });
 
   it("does not throw when set rejects", async () => {
     mockSet.mockRejectedValueOnce(new Error("redis down"));
 
-    await expect(setCache("models:v1", {})).resolves.toBeUndefined();
+    await expect(setCache("models:v1", {}, 900)).resolves.toBeUndefined();
   });
 });

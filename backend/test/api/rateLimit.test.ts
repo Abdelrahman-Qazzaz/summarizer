@@ -20,13 +20,9 @@ const {
   mockGetModelData: vi.fn(),
 }));
 
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: { select: mockSelect },
-  TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
-  AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
-  jobStatusEnum: {
-    enumValues: ["queued", "processing", "completed", "failed"],
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {

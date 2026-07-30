@@ -14,8 +14,14 @@ const {
   mockDelete,
   mockDeleteWhere,
   mockDeleteReturning,
+  mockImageWhere,
+  mockImageOrderBy,
+  mockImageRows,
   mockValidateModel,
+  mockValidateModelInput,
   mockChatAI,
+  mockCreateSignedUrls,
+  mockDeleteFilesFromBucket,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockFrom: vi.fn(),
@@ -31,53 +37,48 @@ const {
   mockDelete: vi.fn(),
   mockDeleteWhere: vi.fn(),
   mockDeleteReturning: vi.fn(),
+  mockImageWhere: vi.fn(),
+  mockImageOrderBy: vi.fn(),
+  mockImageRows: vi.fn(),
   mockValidateModel: vi.fn(),
+  mockValidateModelInput: vi.fn(),
   mockChatAI: vi.fn(),
+  mockCreateSignedUrls: vi.fn(),
+  mockDeleteFilesFromBucket: vi.fn(),
 }));
 
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: {
     select: mockSelect,
     insert: mockInsert,
     update: mockUpdate,
     delete: mockDelete,
   },
-  Conversations: {
-    id: "id",
-    title: "title",
-    userId: "user_id",
-    createdAt: "created_at",
-    updatedAt: "updated_at",
-  },
-  ChatMessages: {
-    id: "id",
-    role: "role",
-    content: "content",
-    chosenModelId: "chosen_model_id",
-    conversationId: "conversation_id",
-    userId: "user_id",
-    createdAt: "created_at",
-    updatedAt: "updated_at",
-  },
-  TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
-  AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
-  jobStatusEnum: {
-    enumValues: ["queued", "processing", "completed", "failed"],
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-vi.mock("../../shared/ai/ai_client", () => ({
-  ai_client: {},
-  pingAi: vi.fn(),
-  getModelData: vi.fn(),
-  validateModel: mockValidateModel,
-  chatAI: mockChatAI,
-  DEFAULT_MODELS: {
-    TRANSCRIBE: "openai/gpt-4o-mini-transcribe",
-    PROMPT: "openai/gpt-4o-mini",
-  },
+vi.mock("../../shared/bucket", () => ({
+  createSignedUrls: mockCreateSignedUrls,
+  deleteFilesFromBucket: mockDeleteFilesFromBucket,
+  IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
+// buildUserTurn is the real one: what the model is handed for an image turn is
+// exactly what these tests are checking.
+vi.mock("../../shared/ai/ai_client", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/ai/ai_client")>();
+  return {
+    ...actual,
+    getModelData: vi.fn(),
+    validateModelOutput: mockValidateModel,
+    validateModelInput: mockValidateModelInput,
+    chatAI: mockChatAI,
+  };
+});
+
+// Resolves to the mocked module above, so this is the stub table.
+import { ImageUploads } from "../../shared/db";
 import { createApp } from "../../services/api/app";
 import {
   MAX_CONTEXT_CHARS,
@@ -90,6 +91,8 @@ const messageId = "650e8400-e29b-41d4-a716-446655440111";
 const userId = "user_01OWNER";
 const modelId = "openai/gpt-4o-mini";
 const createdAt = "2026-07-22T00:00:00.000Z";
+
+const uploadId = "850e8400-e29b-41d4-a716-446655440333";
 
 const userRow = {
   id: messageId,
@@ -108,15 +111,49 @@ const assistantRow = {
   createdAt,
 };
 
+/** An image_uploads row as the projection in imageUploads.ts selects it. */
+const imageRow = {
+  uploadId,
+  fileName: "diagram.png",
+  mimeType: "image/png",
+  sizeBytes: 1234,
+  signedUrl: "https://bucket.test/diagram.png",
+  // Far enough out that the row's cached signature is reused as-is.
+  signedUrlExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  messageId,
+};
+const resolvedImage = {
+  uploadId,
+  fileName: "diagram.png",
+  mimeType: "image/png",
+  size: 1234,
+  url: "https://bucket.test/diagram.png",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockSelect.mockImplementation(() => ({ from: mockFrom }));
-  mockFrom.mockImplementation(() => ({ where: mockWhere }));
+  // Reads of image_uploads get their own chain: they end at `.where()` or
+  // `.orderBy()` rather than `.limit()`, and interleave with the message reads
+  // within one request, so sharing a mock would make either one's rows depend
+  // on the other's call order.
+  mockFrom.mockImplementation((table: unknown) =>
+    table === ImageUploads
+      ? { where: mockImageWhere }
+      : { where: mockWhere },
+  );
   mockWhere.mockImplementation(() => ({
     orderBy: mockOrderBy,
     limit: mockLimit,
   }));
   mockOrderBy.mockImplementation(() => ({ limit: mockLimit }));
+  mockImageWhere.mockImplementation(() =>
+    Object.assign(Promise.resolve(mockImageRows()), {
+      orderBy: mockImageOrderBy,
+    }),
+  );
+  mockImageOrderBy.mockImplementation(async () => mockImageRows());
+  mockImageRows.mockReturnValue([]);
   mockInsert.mockImplementation(() => ({ values: mockValues }));
   mockValues.mockImplementation(() => ({ returning: mockInsertReturning }));
   mockUpdate.mockImplementation(() => ({ set: mockSet }));
@@ -127,6 +164,8 @@ beforeEach(() => {
     returning: mockDeleteReturning,
   }));
   mockValidateModel.mockResolvedValue(true);
+  mockValidateModelInput.mockResolvedValue(true);
+  mockDeleteFilesFromBucket.mockResolvedValue([]);
 });
 
 describe("GET /conversations/:conversationId/messages", () => {
@@ -147,7 +186,35 @@ describe("GET /conversations/:conversationId/messages", () => {
       headers: { Cookie: await sessionCookieHeader(userId) },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ messages: [userRow, assistantRow] });
+    expect(await res.json()).toEqual({
+      messages: [
+        { ...userRow, attachments: [] },
+        { ...assistantRow, attachments: [] },
+      ],
+    });
+  });
+
+  it("returns each user turn's images as its attachments", async () => {
+    mockLimit.mockResolvedValueOnce([{ id: conversationId }]); // ownership
+    mockOrderBy.mockResolvedValueOnce([userRow, assistantRow]);
+    mockImageRows.mockReturnValue([imageRow]);
+
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/conversations/${conversationId}/messages`, {
+      headers: { Cookie: await sessionCookieHeader(userId) },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      messages: [
+        { ...userRow, attachments: [resolvedImage] },
+        // The image hangs off the user turn only.
+        { ...assistantRow, attachments: [] },
+      ],
+    });
+    // The row's signature was still fresh, so nothing was re-signed.
+    expect(mockCreateSignedUrls).not.toHaveBeenCalled();
   });
   it("returns 404 when the conversation is not owned by the user", async () => {
     mockLimit.mockResolvedValueOnce([]);
@@ -277,8 +344,8 @@ describe("POST /conversations/:conversationId/messages", () => {
       .mockResolvedValueOnce([{ id: conversationId }])
       // History arrives newest-first from the query; the controller reverses it.
       .mockResolvedValueOnce([
-        { role: "assistant", content: "Old answer" },
-        { role: "user", content: "Old question" },
+        { id: assistantRow.id, role: "assistant", content: "Old answer" },
+        { id: messageId, role: "user", content: "Old question" },
       ]);
     mockInsertReturning
       .mockResolvedValueOnce([userRow])
@@ -297,6 +364,43 @@ describe("POST /conversations/:conversationId/messages", () => {
       [
         { role: "user", content: "Old question" },
         { role: "assistant", content: "Old answer" },
+        { role: "user", content: "Hi there" },
+      ],
+      expect.objectContaining({ onDelta: expect.any(Function) }),
+    );
+  });
+
+  it("replays images a past turn was sent with", async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+      .mockResolvedValueOnce([
+        { id: messageId, role: "user", content: "What is this?" },
+      ]);
+    // The image_uploads rows for that history turn.
+    mockImageRows.mockReturnValue([imageRow]);
+    mockInsertReturning
+      .mockResolvedValueOnce([userRow])
+      .mockResolvedValueOnce([assistantRow]);
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+
+    expect(mockChatAI).toHaveBeenCalledWith(
+      modelId,
+      [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is this?" },
+            { type: "image_url", imageUrl: { url: resolvedImage.url } },
+          ],
+        },
+        // The new turn has no images of its own, so it stays a plain string.
         { role: "user", content: "Hi there" },
       ],
       expect.objectContaining({ onDelta: expect.any(Function) }),
@@ -353,6 +457,73 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockInsert).toHaveBeenCalledTimes(1);
   });
 
+  it("sends attachments as vision input and binds them to the user turn", async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+      .mockResolvedValueOnce([]); // history
+    // Not yet claimed by a message — what the send path is allowed to attach.
+    mockImageRows.mockReturnValue([{ ...imageRow, messageId: null }]);
+    mockInsertReturning
+      .mockResolvedValueOnce([userRow])
+      .mockResolvedValueOnce([assistantRow]);
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+      attachmentUploadIds: [uploadId],
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+
+    // The turn the model sees carries the text and the signed image url.
+    expect(mockChatAI).toHaveBeenCalledWith(
+      modelId,
+      [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Hi there" },
+            { type: "image_url", imageUrl: { url: resolvedImage.url } },
+          ],
+        },
+      ],
+      expect.objectContaining({ onDelta: expect.any(Function) }),
+    );
+    // The upload is claimed by the message that was just inserted.
+    expect(mockSet).toHaveBeenCalledWith({ messageId });
+    expect(body).toContain(JSON.stringify(resolvedImage));
+  });
+
+  it("rejects an attachment that is not the user's, or already sent", async () => {
+    mockLimit.mockResolvedValueOnce([{ id: conversationId }]); // ownership
+    mockImageRows.mockReturnValue([]); // no unattached row matches
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+      attachmentUploadIds: [uploadId],
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ message: "Attachment not found" });
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects attachments on a model that can't read images with 400", async () => {
+    mockValidateModelInput.mockResolvedValueOnce(false);
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+      attachmentUploadIds: [uploadId],
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when the conversation is not owned by the user", async () => {
     // Ownership and the (discarded) history fetch both run; resolve both empty.
     mockLimit.mockResolvedValue([]);
@@ -399,6 +570,31 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ message: "Message deleted" });
   });
+  it("removes the message's images from the bucket", async () => {
+    // Read before the delete, while the rows still exist.
+    mockImageRows.mockReturnValue([
+      { uploadId },
+      { uploadId: "another-upload" },
+    ]);
+    mockDeleteReturning.mockResolvedValueOnce([{ id: messageId }]);
+
+    const res = await (
+      await createApp()
+    ).request(
+      `http://localhost/conversations/${conversationId}/messages/${messageId}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: await sessionCookieHeader(userId) },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith(userId, [
+      uploadId,
+      "another-upload",
+    ]);
+  });
+
   it("returns 404 when the message does not exist for the user", async () => {
     mockDeleteReturning.mockResolvedValueOnce([]);
     const res = await (

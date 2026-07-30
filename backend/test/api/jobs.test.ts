@@ -4,7 +4,6 @@ const {
   mockWhere,
   mockFrom,
   mockSelect,
-  mockOrderBy,
   mockReadTextFile,
   mockDelete,
   mockDeleteFileFromBucket,
@@ -13,24 +12,22 @@ const {
   mockWhere: vi.fn(),
   mockFrom: vi.fn(),
   mockSelect: vi.fn(),
-  mockOrderBy: vi.fn(),
   mockReadTextFile: vi.fn(),
   mockDelete: vi.fn(),
   mockDeleteFileFromBucket: vi.fn(),
 }));
 
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: { select: mockSelect, delete: mockDelete },
-  TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
-  AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
-  jobStatusEnum: {
-    enumValues: ["queued", "processing", "completed", "failed"],
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 vi.mock("../../shared/bucket", () => ({
   readTextFile: mockReadTextFile,
   deleteFileFromBucket: mockDeleteFileFromBucket,
+  deleteFilesFromBucket: vi.fn(),
+  createSignedUrls: vi.fn(),
+  IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
 import { createApp } from "../../services/api/app";

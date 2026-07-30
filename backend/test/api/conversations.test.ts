@@ -15,6 +15,7 @@ const {
   mockDelete,
   mockDeleteWhere,
   mockDeleteReturning,
+  mockDeleteFilesFromBucket,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockFrom: vi.fn(),
@@ -31,27 +32,23 @@ const {
   mockDelete: vi.fn(),
   mockDeleteWhere: vi.fn(),
   mockDeleteReturning: vi.fn(),
+  mockDeleteFilesFromBucket: vi.fn(),
 }));
 
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: {
     select: mockSelect,
     insert: mockInsert,
     update: mockUpdate,
     delete: mockDelete,
   },
-  Conversations: {
-    id: "id",
-    title: "title",
-    userId: "user_id",
-    createdAt: "created_at",
-    updatedAt: "updated_at",
-  },
-  TextSummarizationJobs: { uploadId: "upload_id", userId: "user_id" },
-  AudioTranscriptionJobs: { uploadId: "upload_id", userId: "user_id" },
-  jobStatusEnum: {
-    enumValues: ["queued", "processing", "completed", "failed"],
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
+}));
+
+vi.mock("../../shared/bucket", () => ({
+  deleteFilesFromBucket: mockDeleteFilesFromBucket,
+  createSignedUrls: vi.fn(),
+  IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
 import { desc } from "drizzle-orm";

@@ -19,7 +19,7 @@ vi.mock("../../shared/ai/ai_client", async (importActual) => {
     await importActual<typeof import("../../shared/ai/ai_client")>();
   return {
     ...actual,
-    validateModel: mockValidateModel,
+    validateModelOutput: mockValidateModel,
   };
 });
 
@@ -27,22 +27,23 @@ import { DEFAULT_MODELS } from "../../shared/ai/ai_client";
 
 const VALID_MODEL = DEFAULT_MODELS.PROMPT;
 
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: { insert: mockInsert },
-  AudioTranscriptionJobs: {},
-  TextSummarizationJobs: {},
-  jobStatusEnum: {
-    enumValues: ["queued", "processing", "completed", "failed"],
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 vi.mock("../../shared/bucket", () => ({
   uploadTextToBucket: mockUploadTextToBucket,
   uploadAudioToBucket: mockUploadAudioToBucket,
+  uploadImageToBucket: vi.fn(),
+  createSignedUrl: vi.fn(),
+  createSignedUrls: vi.fn(),
   // Literals (not the top-level consts): vi.mock factories can run during
   // import evaluation, before this module's own bindings initialize.
   BUCKET: "Audio & Text files",
   MAX_AUDIO_BYTES: 100 * 1024 * 1024,
+  MAX_IMAGE_BYTES: 10 * 1024 * 1024,
+  IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
 vi.mock("../../shared/message-queue/messageQueue", () => ({

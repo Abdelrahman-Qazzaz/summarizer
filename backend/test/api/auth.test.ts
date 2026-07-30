@@ -21,12 +21,9 @@ vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {
   };
 });
 
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: { insert: mockInsert },
-  users: {},
-  jobStatusEnum: {
-    enumValues: ["queued", "processing", "completed", "failed"],
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 import { createApp } from "../../services/api/app";
