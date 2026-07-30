@@ -2,8 +2,22 @@ import type { Context } from "hono";
 import { and, desc, eq } from "drizzle-orm";
 import { Conversations, db } from "../../../../shared/db";
 import { CTX_KEYS } from "../../../../shared/keys";
+import { deleteFilesFromBucket } from "../../../../shared/bucket";
+import { findConversationImageUploadIds } from "../utils/imageUploads";
 
-function toConversationJson(row: typeof Conversations.$inferSelect) {
+const conversationColumns = {
+  id: Conversations.id,
+  title: Conversations.title,
+  createdAt: Conversations.createdAt,
+  updatedAt: Conversations.updatedAt,
+};
+
+type ConversationRow = Pick<
+  typeof Conversations.$inferSelect,
+  keyof typeof conversationColumns
+>;
+
+function toConversationJson(row: ConversationRow) {
   return {
     id: row.id,
     title: row.title,
@@ -21,7 +35,7 @@ export async function handleListConversations(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
 
   const rows = await db
-    .select()
+    .select(conversationColumns)
     .from(Conversations)
     .where(eq(Conversations.userId, userId))
     .orderBy(desc(Conversations.updatedAt), desc(Conversations.id));
@@ -35,7 +49,7 @@ export async function findOwnedConversation(
   conversationId: string,
 ) {
   const [row] = await db
-    .select()
+    .select(conversationColumns)
     .from(Conversations)
     .where(
       and(
@@ -66,7 +80,7 @@ export async function handleCreateConversation(c: Context) {
   const [row] = await db
     .insert(Conversations)
     .values({ userId, ...(title !== undefined ? { title } : {}) })
-    .returning();
+    .returning(conversationColumns);
 
   return c.json(toConversationJson(row), 201);
 }
@@ -86,7 +100,7 @@ export async function handlePatchConversation(c: Context) {
         eq(Conversations.userId, userId),
       ),
     )
-    .returning();
+    .returning(conversationColumns);
 
   if (!row) return c.json({ message: "Conversation not found" }, 404);
   return c.json(toConversationJson(row));

@@ -27,7 +27,13 @@ export async function handleGetSummarizeJob(c: Context) {
   const uploadId = c.get(CTX_KEYS.uploadId);
 
   const [textJob] = await db
-    .select()
+    .select({
+      uploadId: TextSummarizationJobs.uploadId,
+      fileName: TextSummarizationJobs.fileName,
+      status: TextSummarizationJobs.status,
+      summary: TextSummarizationJobs.summary,
+      error: TextSummarizationJobs.error,
+    })
     .from(TextSummarizationJobs)
     .where(
       and(
@@ -57,7 +63,12 @@ export async function handleGetTranscribeJob(c: Context) {
   // The audio row and its child text row are independent lookups.
   const [[audioJob], [textJob]] = await Promise.all([
     db
-      .select()
+      .select({
+        uploadId: AudioTranscriptionJobs.uploadId,
+        fileName: AudioTranscriptionJobs.fileName,
+        status: AudioTranscriptionJobs.status,
+        error: AudioTranscriptionJobs.error,
+      })
       .from(AudioTranscriptionJobs)
       .where(
         and(
@@ -66,8 +77,13 @@ export async function handleGetTranscribeJob(c: Context) {
         ),
       )
       .limit(1),
+    // uploadId is the bucket key the transcript is read back from below.
     db
-      .select()
+      .select({
+        uploadId: TextSummarizationJobs.uploadId,
+        status: TextSummarizationJobs.status,
+        summary: TextSummarizationJobs.summary,
+      })
       .from(TextSummarizationJobs)
       .where(
         and(
@@ -137,6 +153,25 @@ type JobSummary = Pick<AudioRow, SharedCols> & {
   kind: JobKind;
 };
 
+/** The per-table projections behind JobSummary — the list page needs no more. */
+const audioJobColumns = {
+  uploadId: AudioTranscriptionJobs.uploadId,
+  fileName: AudioTranscriptionJobs.fileName,
+  status: AudioTranscriptionJobs.status,
+  createdAt: AudioTranscriptionJobs.createdAt,
+  chosenModelId: AudioTranscriptionJobs.chosenModelId,
+  error: AudioTranscriptionJobs.error,
+};
+
+const textJobColumns = {
+  uploadId: TextSummarizationJobs.uploadId,
+  fileName: TextSummarizationJobs.fileName,
+  status: TextSummarizationJobs.status,
+  createdAt: TextSummarizationJobs.createdAt,
+  chosenModelId: TextSummarizationJobs.chosenModelId,
+  error: TextSummarizationJobs.error,
+};
+
 /**
  * Newest-first ordering shared by the SQL `ORDER BY` and the in-memory merge:
  * createdAt DESC, then uploadId DESC as a stable tiebreak so the keyset cursor
@@ -159,10 +194,10 @@ function afterCursor(
   cursor: JobCursor | null,
 ) {
   if (!cursor) return undefined;
-  const ts = sql`${cursor.createdAt}::timestamptz`;
+  const cursorCreatedAt = sql`${cursor.createdAt}::timestamptz`;
   return or(
-    lt(createdAtCol, ts),
-    and(eq(createdAtCol, ts), lt(uploadIdCol, cursor.uploadId)),
+    lt(createdAtCol, cursorCreatedAt),
+    and(eq(createdAtCol, cursorCreatedAt), lt(uploadIdCol, cursor.uploadId)),
   );
 }
 
@@ -172,7 +207,7 @@ export async function getUserJobs(c: Context) {
   const rawCursor: string | undefined = c.get(CTX_KEYS.cursor);
   const status: JobStatus | undefined = c.get(CTX_KEYS.status);
   const kind: JobKind | undefined = c.get(CTX_KEYS.kind);
-  const q: string | undefined = c.get(CTX_KEYS.q);
+  const searchQuery: string | undefined = c.get(CTX_KEYS.q);
 
   // A malformed/forged cursor decodes to null → fall back to the first page.
   const cursor = rawCursor ? decodeCursor(rawCursor, jobCursorSchema) : null;
@@ -180,37 +215,53 @@ export async function getUserJobs(c: Context) {
   const fetchCount = limit + 1;
   const merged: JobSummary[] = [];
 
-  const A = AudioTranscriptionJobs;
-  const T = TextSummarizationJobs;
   // The two per-table pages are independent reads.
   const [audioJobs, textJobs] = await Promise.all([
     db
-      .select()
-      .from(A)
+      .select(audioJobColumns)
+      .from(AudioTranscriptionJobs)
       .where(
         and(
-          eq(A.userId, userId),
-          status ? eq(A.status, status) : undefined,
-          q ? ilike(A.fileName, `%${q}%`) : undefined,
-          afterCursor(A.createdAt, A.uploadId, cursor),
+          eq(AudioTranscriptionJobs.userId, userId),
+          status ? eq(AudioTranscriptionJobs.status, status) : undefined,
+          searchQuery
+            ? ilike(AudioTranscriptionJobs.fileName, `%${searchQuery}%`)
+            : undefined,
+          afterCursor(
+            AudioTranscriptionJobs.createdAt,
+            AudioTranscriptionJobs.uploadId,
+            cursor,
+          ),
         ),
       )
-      .orderBy(desc(A.createdAt), desc(A.uploadId))
+      .orderBy(
+        desc(AudioTranscriptionJobs.createdAt),
+        desc(AudioTranscriptionJobs.uploadId),
+      )
       .limit(fetchCount),
     db
-      .select()
-      .from(T)
+      .select(textJobColumns)
+      .from(TextSummarizationJobs)
       .where(
         and(
-          eq(T.userId, userId),
+          eq(TextSummarizationJobs.userId, userId),
           // Hide audio-derived summaries; they surface via their parent audio job.
-          isNull(T.audioUploadId),
-          status ? eq(T.status, status) : undefined,
-          q ? ilike(T.fileName, `%${q}%`) : undefined,
-          afterCursor(T.createdAt, T.uploadId, cursor),
+          isNull(TextSummarizationJobs.audioUploadId),
+          status ? eq(TextSummarizationJobs.status, status) : undefined,
+          searchQuery
+            ? ilike(TextSummarizationJobs.fileName, `%${searchQuery}%`)
+            : undefined,
+          afterCursor(
+            TextSummarizationJobs.createdAt,
+            TextSummarizationJobs.uploadId,
+            cursor,
+          ),
         ),
       )
-      .orderBy(desc(T.createdAt), desc(T.uploadId))
+      .orderBy(
+        desc(TextSummarizationJobs.createdAt),
+        desc(TextSummarizationJobs.uploadId),
+      )
       .limit(fetchCount),
   ]);
 
@@ -282,7 +333,9 @@ export async function handleDeleteTranscribeJob(c: Context) {
         ),
       ),
     deleteFileFromBucket(userId, uploadId),
-    ...(child ? [deleteFileFromBucket(userId, child.uploadId as UploadId)] : []),
+    ...(child
+      ? [deleteFileFromBucket(userId, child.uploadId as UploadId)]
+      : []),
   ]);
   return c.json({ message: "Job Deleted" }, 200);
 }
@@ -324,7 +377,8 @@ export async function handleRerunSummarizeJob(c: Context) {
         eq(TextSummarizationJobs.userId, userId),
       ),
     )
-    .returning();
+    // Only whether a row matched; the response echoes the request's uploadId.
+    .returning({ uploadId: TextSummarizationJobs.uploadId });
 
   if (!job) return c.json({ message: "Job not found" }, 404);
 
@@ -354,7 +408,8 @@ export async function handleRerunTranscribeJob(c: Context) {
         eq(AudioTranscriptionJobs.userId, userId),
       ),
     )
-    .returning();
+    // Only whether a row matched; the response echoes the request's uploadId.
+    .returning({ uploadId: AudioTranscriptionJobs.uploadId });
 
   if (!job) return c.json({ message: "Job not found" }, 404);
 
