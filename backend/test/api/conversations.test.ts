@@ -16,6 +16,8 @@ const {
   mockDeleteWhere,
   mockDeleteReturning,
   mockDeleteFilesFromBucket,
+  mockImageWhere,
+  mockImageRows,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockFrom: vi.fn(),
@@ -33,6 +35,8 @@ const {
   mockDeleteWhere: vi.fn(),
   mockDeleteReturning: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
+  mockImageWhere: vi.fn(),
+  mockImageRows: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -53,7 +57,7 @@ vi.mock("../../shared/bucket", () => ({
 
 import { desc } from "drizzle-orm";
 // Resolves to the mocked module above, so these are the stub column names.
-import { Conversations } from "../../shared/db";
+import { Conversations, ImageUploads } from "../../shared/db";
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
 
@@ -66,11 +70,18 @@ const row = { id: conversationId, title: "My chat", createdAt, updatedAt };
 beforeEach(() => {
   vi.clearAllMocks();
   mockSelect.mockImplementation(() => ({ from: mockFrom }));
-  mockFrom.mockImplementation(() => ({ where: mockWhere }));
+  // Deleting a conversation reads its messages' image_uploads first, and that
+  // read is awaited at `.where()` rather than chaining on to `.limit()`.
+  mockFrom.mockImplementation((table: unknown) =>
+    table === ImageUploads ? { where: mockImageWhere } : { where: mockWhere },
+  );
   mockWhere.mockImplementation(() => ({
     orderBy: mockOrderBy,
     limit: mockLimit,
   }));
+  mockImageWhere.mockImplementation(async () => mockImageRows());
+  mockImageRows.mockReturnValue([]);
+  mockDeleteFilesFromBucket.mockResolvedValue([]);
   mockInsert.mockImplementation(() => ({ values: mockValues }));
   mockValues.mockImplementation(() => ({ returning: mockInsertReturning }));
   mockUpdate.mockImplementation(() => ({ set: mockSet }));
