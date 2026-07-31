@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { Conversations, db } from "../../../../shared/db";
 import { CTX_KEYS } from "../../../../shared/keys";
 import { deleteFilesFromBucket } from "../../../../shared/bucket";
-import { findConversationImageUploadIds } from "../utils/imageUploads";
+import { findConversationImageUploadIds } from "../data/imageUploads";
 
 const conversationColumns = {
   id: Conversations.id,
@@ -111,6 +111,13 @@ export async function handleDeleteConversation(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const conversationId = c.get(CTX_KEYS.conversationId);
 
+  // Read before the delete: the image rows naming these objects cascade away
+  // with the conversation's messages (see handleDeleteMessage).
+  const imageUploadIds = await findConversationImageUploadIds(
+    userId,
+    conversationId,
+  );
+
   const [row] = await db
     .delete(Conversations)
     .where(
@@ -122,5 +129,7 @@ export async function handleDeleteConversation(c: Context) {
     .returning({ id: Conversations.id });
 
   if (!row) return c.json({ message: "Conversation not found" }, 404);
+
+  await deleteFilesFromBucket(userId, imageUploadIds);
   return c.json({ message: "Conversation deleted" }, 200);
 }
