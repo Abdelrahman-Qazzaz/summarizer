@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "doppler run -- concurrently -k -n api,worker \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "db": "doppler run -- drizzle-kit push",
     "test": "doppler run -- vitest run",
     "test:watch": "doppler run -- vitest"
@@ -31,8 +32,10 @@
     "@types/node": "25.6.0",
     "concurrently": "9.2.1",
     "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
     "tsx": "4.20.5",
     "typescript": "5.7.3",
+    "typescript-eslint": "8.57.0",
     "vitest": "4.1.5"
   }
 }
