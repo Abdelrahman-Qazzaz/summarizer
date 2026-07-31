@@ -3,11 +3,19 @@ import { streamSSE } from "hono/streaming";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { ChatMessages, Conversations, db } from "../../../../shared/db";
 import { CTX_KEYS } from "../../../../shared/keys";
-import { chatAI } from "../../../../shared/ai/ai_client";
+import { buildUserTurn, chatAI } from "../../../../shared/ai/ai_client";
 import type { ChatTurn } from "../../../../shared/ai/ai_client";
 import { SSEEventQueue } from "../utils/sse";
 import { logger } from "../../../../shared/logger";
 import { findOwnedConversation } from "./conversations.controller";
+import {
+  attachImagesToMessage,
+  findMessageImageUploadIds,
+  resolveMessageImages,
+  resolveUnattachedImages,
+  type ResolvedImage,
+} from "../data/imageUploads";
+import { deleteFilesFromBucket } from "../../../../shared/bucket";
 
 const log = logger.child({ controller: "messages" });
 
@@ -20,7 +28,33 @@ const MAX_CONTEXT_MESSAGES = 50;
 export const MAX_CONTEXT_CHARS = 100_000;
 export const MAX_RESPONSE_TOKENS = 4_000;
 
-function toMessageJson(row: typeof ChatMessages.$inferSelect) {
+/**
+ * Images replayed from history, newest turn first. Attachments outlive the turn
+ * they arrived on — a follow-up question about an image the user sent three
+ * turns ago has to still see it — but they don't consume the character budget,
+ * so this is their own ceiling on what one turn costs.
+ */
+const MAX_CONTEXT_IMAGES = 8;
+
+/**
+ * The columns a message is exposed through — every read feeding `toMessageJson`
+ * projects exactly these, so `userId` and `updatedAt` never leave the table.
+ */
+const messageColumns = {
+  id: ChatMessages.id,
+  role: ChatMessages.role,
+  content: ChatMessages.content,
+  chosenModelId: ChatMessages.chosenModelId,
+  conversationId: ChatMessages.conversationId,
+  createdAt: ChatMessages.createdAt,
+};
+
+type MessageRow = Pick<
+  typeof ChatMessages.$inferSelect,
+  keyof typeof messageColumns
+>;
+
+function toMessageJson(row: MessageRow, attachments: ResolvedImage[] = []) {
   return {
     id: row.id,
     role: row.role,
@@ -28,7 +62,15 @@ function toMessageJson(row: typeof ChatMessages.$inferSelect) {
     chosenModelId: row.chosenModelId,
     conversationId: row.conversationId,
     createdAt: row.createdAt,
+    attachments,
   };
+}
+
+/** Assistant turns never carry images, so they're not worth looking up. */
+function userMessageIds(
+  rows: readonly { id: string; role: MessageRow["role"] }[],
+) {
+  return rows.filter((row) => row.role === "user").map((row) => row.id);
 }
 
 /**
@@ -40,26 +82,52 @@ function toMessageJson(row: typeof ChatMessages.$inferSelect) {
  * The new turn is always included, however long it is; history is admitted
  * newest-first until MAX_CONTEXT_CHARS is spent and truncated at the first turn
  * that doesn't fit — dropping that one but keeping older ones would splice the
- * conversation into something the model reads as a non-sequitur.
+ * conversation into something the model reads as a non-sequitur. Images each
+ * past turn was sent with ride along under their own MAX_CONTEXT_IMAGES cap.
  */
 async function buildContextTurns(
+  userId: string,
   conversationId: string,
-  content: string,
+  newTurn: ChatTurn,
 ): Promise<ChatTurn[]> {
   const history = await db
-    .select()
+    .select({
+      id: ChatMessages.id,
+      role: ChatMessages.role,
+      content: ChatMessages.content,
+    })
     .from(ChatMessages)
     .where(eq(ChatMessages.conversationId, conversationId))
     .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
     .limit(MAX_CONTEXT_MESSAGES - 1);
 
-  const turns: ChatTurn[] = [{ role: "user", content }];
-  let budget = MAX_CONTEXT_CHARS;
+  const imagesByMessageId = await resolveMessageImages(
+    userId,
+    userMessageIds(history),
+  );
+
+  const turns: ChatTurn[] = [newTurn];
+  let charBudget = MAX_CONTEXT_CHARS;
+  let imageBudget = MAX_CONTEXT_IMAGES;
 
   for (const message of history) {
-    budget -= message.content.length;
-    if (budget < 0) break;
-    turns.unshift({ role: message.role, content: message.content });
+    charBudget -= message.content.length;
+    if (charBudget < 0) break;
+
+    const images = (imagesByMessageId.get(message.id) ?? []).slice(
+      0,
+      imageBudget,
+    );
+    imageBudget -= images.length;
+
+    turns.unshift(
+      images.length > 0
+        ? buildUserTurn(
+            message.content,
+            images.map((image) => image.url),
+          )
+        : { role: message.role, content: message.content },
+    );
   }
 
   return turns;
@@ -75,7 +143,7 @@ export async function handleListMessages(c: Context) {
   const [owned, rows] = await Promise.all([
     findOwnedConversation(userId, conversationId),
     db
-      .select()
+      .select(messageColumns)
       .from(ChatMessages)
       .where(eq(ChatMessages.conversationId, conversationId))
       .orderBy(asc(ChatMessages.createdAt), asc(ChatMessages.id)),
@@ -83,7 +151,16 @@ export async function handleListMessages(c: Context) {
 
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
 
-  return c.json({ messages: rows.map(toMessageJson) });
+  const imagesByMessageId = await resolveMessageImages(
+    userId,
+    userMessageIds(rows),
+  );
+
+  return c.json({
+    messages: rows.map((row) =>
+      toMessageJson(row, imagesByMessageId.get(row.id)),
+    ),
+  });
 }
 
 /**
@@ -100,10 +177,12 @@ async function runChatTurn(
     content: string;
     chosenModelId: string;
     turns: ChatTurn[];
+    attachments: ResolvedImage[];
   },
   events: SSEEventQueue,
 ) {
-  const { userId, conversationId, content, chosenModelId, turns } = args;
+  const { userId, conversationId, content, chosenModelId, turns, attachments } =
+    args;
   try {
     // The user turn must be durable (and its id known for the event) before the
     // model call; touching the conversation surfaces it in the list's ordering.
@@ -111,13 +190,20 @@ async function runChatTurn(
       db
         .insert(ChatMessages)
         .values({ role: "user", content, conversationId, userId })
-        .returning(),
+        .returning(messageColumns),
       db
         .update(Conversations)
         .set({ updatedAt: new Date() })
         .where(eq(Conversations.id, conversationId)),
     ]);
-    events.push("user_message", toMessageJson(userMessage));
+
+    // Only now does the message id these uploads hang off exist.
+    await attachImagesToMessage(
+      userId,
+      userMessage.id,
+      attachments.map((attachment) => attachment.uploadId),
+    );
+    events.push("user_message", toMessageJson(userMessage, attachments));
 
     const full = await chatAI(chosenModelId, turns, {
       onDelta: (delta) => events.push("delta", { delta }),
@@ -133,7 +219,7 @@ async function runChatTurn(
         conversationId,
         userId,
       })
-      .returning();
+      .returning(messageColumns);
 
     events.push("done", toMessageJson(assistantMessage));
   } catch (err) {
@@ -167,18 +253,33 @@ export async function handleCreateMessage(c: Context) {
   const conversationId = c.get(CTX_KEYS.conversationId);
   const content: string = c.get(CTX_KEYS.messageContent);
   const chosenModelId: string = c.get(CTX_KEYS.chosenModelId);
+  const uploadIds: string[] = c.get(CTX_KEYS.attachmentUploadIds);
 
-  // Ownership check and context building are independent reads; the turns are
-  // simply discarded on the 404 path.
-  const [owned, turns] = await Promise.all([
+  // Ownership check and attachment resolution are independent reads; the images
+  // are simply discarded on the 404 path.
+  const [owned, attachments] = await Promise.all([
     findOwnedConversation(userId, conversationId),
-    buildContextTurns(conversationId, content),
+    resolveUnattachedImages(userId, uploadIds),
   ]);
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
+  // An id that resolved to nothing was never this user's, or was already sent
+  // on an earlier message — either way the turn the client asked for can't be
+  // built, and silently dropping the image would be worse than saying so.
+  if (attachments.length !== uploadIds.length)
+    return c.json({ message: "Attachment not found" }, 404);
+
+  const turns = await buildContextTurns(
+    userId,
+    conversationId,
+    buildUserTurn(
+      content,
+      attachments.map((attachment) => attachment.url),
+    ),
+  );
 
   const events = new SSEEventQueue();
   void runChatTurn(
-    { userId, conversationId, content, chosenModelId, turns },
+    { userId, conversationId, content, chosenModelId, turns, attachments },
     events,
   );
 
@@ -190,6 +291,10 @@ export async function handleDeleteMessage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const conversationId = c.get(CTX_KEYS.conversationId);
   const messageId = c.get(CTX_KEYS.messageId);
+
+  // Read before the delete: the rows naming these objects cascade with the
+  // message. Scoped to this user, so a message they don't own yields nothing.
+  const imageUploadIds = await findMessageImageUploadIds(userId, messageId);
 
   const [row] = await db
     .delete(ChatMessages)
@@ -203,5 +308,7 @@ export async function handleDeleteMessage(c: Context) {
     .returning({ id: ChatMessages.id });
 
   if (!row) return c.json({ message: "Message not found" }, 404);
+
+  await deleteFilesFromBucket(userId, imageUploadIds);
   return c.json({ message: "Message deleted" }, 200);
 }
