@@ -4,7 +4,7 @@ import {
   createSignedUrl,
   uploadImageToBucket,
 } from "../../../../shared/bucket";
-import { createImageUpload, resolveImages } from "../data/imageUploads";
+import { createImageUpload, resolveImages } from "../data/images.data";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../../shared/keys";
 

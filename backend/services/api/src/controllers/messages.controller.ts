@@ -1,20 +1,23 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { and, asc, desc, eq } from "drizzle-orm";
-import { ChatMessages, Conversations, db } from "../../../../shared/db";
+import { ChatMessages, db } from "../../../../shared/db";
 import { CTX_KEYS } from "../../../../shared/keys";
 import { buildUserTurn, chatAI } from "../../../../shared/ai/ai_client";
 import type { ChatTurn } from "../../../../shared/ai/ai_client";
 import { SSEEventQueue } from "../utils/sse";
 import { logger } from "../../../../shared/logger";
-import { findOwnedConversation } from "./conversations.controller";
+import {
+  findOwnedConversation,
+  touchConversation,
+} from "../data/conversations.data";
 import {
   attachImagesToMessage,
   findMessageImageUploadIds,
   resolveMessageImages,
   resolveUnattachedImages,
   type ResolvedImage,
-} from "../data/imageUploads";
+} from "../data/images.data";
 import { deleteFilesFromBucket } from "../../../../shared/bucket";
 
 const log = logger.child({ controller: "messages" });
@@ -191,10 +194,7 @@ async function runChatTurn(
         .insert(ChatMessages)
         .values({ role: "user", content, conversationId, userId })
         .returning(messageColumns),
-      db
-        .update(Conversations)
-        .set({ updatedAt: new Date() })
-        .where(eq(Conversations.id, conversationId)),
+      touchConversation(conversationId),
     ]);
 
     // Only now does the message id these uploads hang off exist.
