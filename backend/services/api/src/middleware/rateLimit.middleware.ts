@@ -92,6 +92,18 @@ export const modelRateLimiter = createLimiter(
   getUserId,
 );
 
+/**
+ * Reading a stored image back is not an upload: it reads a row and re-signs at
+ * most once a week. A single chat turn can ask for one per attachment, so
+ * putting these on the 30-request upload budget would exhaust it in a few
+ * renders — they get a read-sized budget instead.
+ */
+export const imageReadRateLimiter = createLimiter(
+  200,
+  "rate-limit:image-read:",
+  getUserId,
+);
+
 export const uploadRateLimiter = createLimiter(
   30,
   "rate-limit:upload:",

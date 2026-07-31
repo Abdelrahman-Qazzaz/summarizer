@@ -18,16 +18,7 @@ import {
   PdfExtractionError,
 } from "../utils/pdfText";
 
-type AudioSource = "video" | "audio";
-
 const TEXT_PREVIEW_CHARS = 2000;
-
-function parseAudioSource(raw: unknown): AudioSource | null {
-  if (raw === null || raw === "") return "audio";
-  if (typeof raw !== "string") return null;
-  if (raw === "video" || raw === "audio") return raw;
-  return null;
-}
 
 /** POST /upload/audio — speech audio (from direct upload or client-extracted from video). */
 export async function handleAudioUpload(c: Context) {

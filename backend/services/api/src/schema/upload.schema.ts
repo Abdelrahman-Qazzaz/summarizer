@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../../shared/keys";
-import { validateModel, DEFAULT_MODELS } from "../../../../shared/ai/ai_client";
+import { validateModelOutput, DEFAULT_MODELS } from "../../../../shared/ai/ai_client";
 import { MAX_AUDIO_BYTES } from "../../../../shared/bucket";
 
+// Lives here, unlike MAX_AUDIO_BYTES/MAX_IMAGE_BYTES: those sit in bucket.ts
+// because /contract publishes them for the youtube-fetcher to enforce. Nothing
+// outside this schema uploads text, so this cap has no second enforcer.
 const MAX_TEXT_BYTES = 15 * 1024 * 1024; // 15MB
 
 const YOUTUBE_HOSTS = new Set([
@@ -21,9 +24,46 @@ function isYoutubeUrl(raw: string): boolean {
   }
 }
 
-const fileField = z.instanceof(File, {
+export const fileField = z.instanceof(File, {
   message: 'Expected a file field named "file"',
 });
+
+/** Multipart sends absent optional fields as "" (or null); treat both as unset. */
+const blankToUndefined = (v: unknown) =>
+  v === "" || v === null ? undefined : v;
+
+/**
+ * The transcription model is optional on every route that has one — omit it
+ * (or send blank) to get the default.
+ */
+const transcriptionModelField = z.preprocess(
+  blankToUndefined,
+  z.string().min(1).optional().default(DEFAULT_MODELS.TRANSCRIBE),
+);
+
+/**
+ * `chosenModelId` names the model that writes the summary, so it must be a
+ * text model on all three upload routes. Shared so the three reject it with
+ * one message on one path rather than three copies that can drift apart.
+ */
+async function refineChosenModel(modelId: string, ctx: z.RefinementCtx) {
+  if (await validateModelOutput(modelId, "text")) return;
+  ctx.addIssue({
+    code: "custom",
+    message: "Invalid summary model: must be a text model",
+    path: [FORM_KEYS.chosenModelId],
+  });
+}
+
+/** Same idea for the transcription model on the audio/youtube routes. */
+async function refineTranscriptionModel(modelId: string, ctx: z.RefinementCtx) {
+  if (await validateModelOutput(modelId, "transcription")) return;
+  ctx.addIssue({
+    code: "custom",
+    message: "Invalid transcription model",
+    path: [FORM_KEYS.transcriptionModelId],
+  });
+}
 
 export const textUploadSchema = z
   .object({
@@ -38,13 +78,7 @@ export const textUploadSchema = z
         path: [FORM_KEYS.uploadFile],
       });
     }
-    if (!(await validateModel(data[FORM_KEYS.chosenModelId], "text"))) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Invalid summary model: must be a text model",
-        path: [FORM_KEYS.chosenModelId],
-      });
-    }
+    await refineChosenModel(data[FORM_KEYS.chosenModelId], ctx);
   })
   .transform((data) => ({
     [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
@@ -55,7 +89,7 @@ export const audioUploadSchema = z
   .object({
     [FORM_KEYS.uploadFile]: fileField,
     [FORM_KEYS.audioSource]: z.preprocess(
-      (v) => (v === "" || v === null ? undefined : v),
+      blankToUndefined,
       z
         .enum(["video", "audio"], {
           errorMap: () => ({
@@ -66,11 +100,7 @@ export const audioUploadSchema = z
         .default("audio"),
     ),
     [FORM_KEYS.chosenModelId]: z.string().min(1),
-    // Optional; omit (or send empty) to use the default transcription model.
-    [FORM_KEYS.transcriptionModelId]: z.preprocess(
-      (v) => (v === "" || v === null ? undefined : v),
-      z.string().min(1).optional().default(DEFAULT_MODELS.TRANSCRIBE),
-    ),
+    [FORM_KEYS.transcriptionModelId]: transcriptionModelField,
   })
   .superRefine(async (data, ctx) => {
     if (data[FORM_KEYS.uploadFile].size > MAX_AUDIO_BYTES) {
@@ -80,25 +110,8 @@ export const audioUploadSchema = z
         path: [FORM_KEYS.uploadFile],
       });
     }
-    if (!(await validateModel(data[FORM_KEYS.chosenModelId], "text"))) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Invalid summary model: must be a text model",
-        path: [FORM_KEYS.chosenModelId],
-      });
-    }
-    if (
-      !(await validateModel(
-        data[FORM_KEYS.transcriptionModelId],
-        "transcription",
-      ))
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Invalid transcription model",
-        path: [FORM_KEYS.transcriptionModelId],
-      });
-    }
+    await refineChosenModel(data[FORM_KEYS.chosenModelId], ctx);
+    await refineTranscriptionModel(data[FORM_KEYS.transcriptionModelId], ctx);
   })
   .transform((data) => ({
     [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
@@ -117,10 +130,7 @@ export const youtubeUploadSchema = z
   .object({
     [CTX_KEYS.youtubeUrl]: z.string().url(),
     [FORM_KEYS.chosenModelId]: z.string().min(1),
-    [FORM_KEYS.transcriptionModelId]: z.preprocess(
-      (v) => (v === "" || v === null ? undefined : v),
-      z.string().min(1).optional().default(DEFAULT_MODELS.TRANSCRIBE),
-    ),
+    [FORM_KEYS.transcriptionModelId]: transcriptionModelField,
   })
   .superRefine(async (data, ctx) => {
     if (!isYoutubeUrl(data[CTX_KEYS.youtubeUrl])) {
@@ -130,25 +140,8 @@ export const youtubeUploadSchema = z
         path: [CTX_KEYS.youtubeUrl],
       });
     }
-    if (!(await validateModel(data[FORM_KEYS.chosenModelId], "text"))) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Invalid summary model: must be a text model",
-        path: [FORM_KEYS.chosenModelId],
-      });
-    }
-    if (
-      !(await validateModel(
-        data[FORM_KEYS.transcriptionModelId],
-        "transcription",
-      ))
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Invalid transcription model",
-        path: [FORM_KEYS.transcriptionModelId],
-      });
-    }
+    await refineChosenModel(data[FORM_KEYS.chosenModelId], ctx);
+    await refineTranscriptionModel(data[FORM_KEYS.transcriptionModelId], ctx);
   })
   .transform((data) => ({
     [CTX_KEYS.youtubeUrl]: data[CTX_KEYS.youtubeUrl],
