@@ -194,7 +194,7 @@ async function runChatTurn(
         .insert(ChatMessages)
         .values({ role: "user", content, conversationId, userId })
         .returning(messageColumns),
-      touchConversation(conversationId),
+      touchConversation(userId, conversationId),
     ]);
 
     // Only now does the message id these uploads hang off exist.

@@ -85,9 +85,12 @@ export async function deleteOwnedConversation(
 }
 
 /** Bumps a conversation to the top of the list when a message lands on it. */
-export async function touchConversation(conversationId: string) {
+export async function touchConversation(
+  userId: string,
+  conversationId: string,
+) {
   await db
     .update(Conversations)
     .set({ updatedAt: new Date() })
-    .where(eq(Conversations.id, conversationId));
+    .where(ownedBy(userId, conversationId));
 }
