@@ -85,7 +85,7 @@ function userMessageIds(
  * conversation into something the model reads as a non-sequitur. Images each
  * past turn was sent with ride along under their own MAX_CONTEXT_IMAGES cap.
  */
-async function buildContextTurns(
+async function assembleConversationContext(
   userId: string,
   conversationId: string,
   newTurn: ChatTurn,
@@ -268,7 +268,7 @@ export async function handleCreateMessage(c: Context) {
   if (attachments.length !== uploadIds.length)
     return c.json({ message: "Attachment not found" }, 404);
 
-  const turns = await buildContextTurns(
+  const turns = await assembleConversationContext(
     userId,
     conversationId,
     buildUserTurn(
