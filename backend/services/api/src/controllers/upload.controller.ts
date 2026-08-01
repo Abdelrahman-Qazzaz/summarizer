@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import {
-  db,
-  AudioTranscriptionJobs,
-  TextSummarizationJobs,
-} from "../../../../shared/db";
+  createAudioJob,
+  createTextJob,
+} from "../../../../shared/data/jobs.data";
 import {
   uploadTextToBucket,
   uploadAudioToBucket,
@@ -32,7 +31,7 @@ export async function handleAudioUpload(c: Context) {
   const uploadId: UploadId = randomUUID();
   await uploadAudioToBucket(userId, uploadId, file);
 
-  await db.insert(AudioTranscriptionJobs).values({
+  await createAudioJob({
     uploadId,
     userId,
     source,
@@ -67,11 +66,11 @@ export async function handleYoutubeUpload(c: Context) {
   // downloaded anything yet. It uploads the audio to the bucket at `uploadId`
   // then publishes `transcribe`, so the row is claimed by the transcribe worker
   // exactly like a normal audio upload.
-  await db.insert(AudioTranscriptionJobs).values({
+  await createAudioJob({
     uploadId,
     userId,
     source: "youtube",
-    YT_sourceUrl: url,
+    youtubeSourceUrl: url,
     fileName: "YouTube audio",
     mimeType: null,
     sizeBytes: 0,
@@ -107,7 +106,7 @@ export async function handleTextUpload(c: Context) {
   } else text = await file.text();
 
   await uploadTextToBucket(userId, uploadId, text);
-  await db.insert(TextSummarizationJobs).values({
+  await createTextJob({
     uploadId,
     userId,
     fileName: file.name,

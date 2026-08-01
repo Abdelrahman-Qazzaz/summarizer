@@ -1,6 +1,9 @@
 import type { UploadId } from "../../../shared/types/mq.types";
-import { db, TextSummarizationJobs } from "../../../shared/db";
-import { and, eq } from "drizzle-orm";
+import {
+  claimTextJob,
+  completeTextJob,
+  failTextJob,
+} from "../../../shared/data/jobs.data";
 import { readTextFile } from "../../../shared/bucket";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { logger } from "../../../shared/logger";
@@ -15,13 +18,8 @@ const CHUNK_FLUSH_MS = 150;
 const CHUNK_FLUSH_CHARS = 200;
 
 export async function handleSummarizeJob(uploadId: UploadId) {
-  const TABLE = TextSummarizationJobs;
   try {
-    const [job] = await db
-      .update(TABLE)
-      .set({ status: "processing" })
-      .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "queued")))
-      .returning();
+    const job = await claimTextJob(uploadId);
 
     if (!job) return;
     const text = await readTextFile(job.userId, uploadId);
@@ -78,38 +76,25 @@ export async function handleSummarizeJob(uploadId: UploadId) {
 
       flush(); // emit whatever is left
       await sendChain; // ensure all chunks are sent before the terminal event
-      return await completeSummarizeJob(
-        TABLE,
-        uploadId,
-        summary,
-        notifyId,
-        userId,
-      );
+      return await completeSummarizeJob(uploadId, summary, notifyId, userId);
     } finally {
       if (timer) clearTimeout(timer);
     }
   } catch (err) {
     log.error("Summarization job failed", err, { uploadId });
-    await db
-      .update(TABLE)
-      .set({ status: "failed" })
-      .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
+    await failTextJob(uploadId);
 
     throw err;
   }
 }
 
 async function completeSummarizeJob(
-  TABLE: typeof TextSummarizationJobs,
   uploadId: UploadId,
   summary: string,
   notifyId: UploadId,
   userId: string,
 ) {
-  await db
-    .update(TABLE)
-    .set({ status: "completed", summary })
-    .where(and(eq(TABLE.uploadId, uploadId), eq(TABLE.status, "processing")));
+  await completeTextJob(uploadId, summary);
 
   await mq.sendEvent(mq.queues.SUMMARIZE_DONE, { uploadId: notifyId, userId });
 }
