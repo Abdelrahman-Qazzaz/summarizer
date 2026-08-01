@@ -55,7 +55,10 @@ def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         options = {
-            "format": "bestaudio/best",
+            # Lowest-bitrate audio-only stream: STT downsamples to 16kHz mono,
+            # so anything above ~48kbps is discarded work — and transcribe.ts
+            # base64s the whole file into one JSON body, where the bytes hurt.
+            "format": "worstaudio/bestaudio/best",
             "outtmpl": f"{tmp}/audio.%(ext)s",
             "noplaylist": True,
             "quiet": True,
