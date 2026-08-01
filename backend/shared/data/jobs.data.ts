@@ -172,68 +172,87 @@ function afterCursor(
   );
 }
 
-/**
- * One page of the user's history, merged across both job tables and ordered
- * newest-first. Returns whatever `fetchCount` yields — the caller over-fetches
- * to detect a next page, and owns the cursor encoding.
- */
-export async function findUserJobsPage(params: {
+type JobsPageFilters = {
   userId: string;
   status?: JobStatus;
   searchQuery?: string;
   cursor: JobCursor | null;
   fetchCount: number;
-}): Promise<JobSummary[]> {
-  const { userId, status, searchQuery, cursor, fetchCount } = params;
+};
 
-  // The two per-table pages are independent reads.
+function findAudioJobsPage(filters: JobsPageFilters) {
+  const { userId, status, searchQuery, cursor, fetchCount } = filters;
+
+  return db
+    .select(audioJobColumns)
+    .from(AudioTranscriptionJobs)
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.userId, userId),
+        status ? eq(AudioTranscriptionJobs.status, status) : undefined,
+        searchQuery
+          ? ilike(AudioTranscriptionJobs.fileName, `%${searchQuery}%`)
+          : undefined,
+        afterCursor(
+          AudioTranscriptionJobs.createdAt,
+          AudioTranscriptionJobs.uploadId,
+          cursor,
+        ),
+      ),
+    )
+    .orderBy(
+      desc(AudioTranscriptionJobs.createdAt),
+      desc(AudioTranscriptionJobs.uploadId),
+    )
+    .limit(fetchCount);
+}
+
+function findTextJobsPage(filters: JobsPageFilters) {
+  const { userId, status, searchQuery, cursor, fetchCount } = filters;
+
+  return db
+    .select(textJobColumns)
+    .from(TextSummarizationJobs)
+    .where(
+      and(
+        eq(TextSummarizationJobs.userId, userId),
+        // Hide audio-derived summaries; they surface via their parent audio job.
+        isNull(TextSummarizationJobs.audioUploadId),
+        status ? eq(TextSummarizationJobs.status, status) : undefined,
+        searchQuery
+          ? ilike(TextSummarizationJobs.fileName, `%${searchQuery}%`)
+          : undefined,
+        afterCursor(
+          TextSummarizationJobs.createdAt,
+          TextSummarizationJobs.uploadId,
+          cursor,
+        ),
+      ),
+    )
+    .orderBy(
+      desc(TextSummarizationJobs.createdAt),
+      desc(TextSummarizationJobs.uploadId),
+    )
+    .limit(fetchCount);
+}
+
+/**
+ * One page of the user's history, merged across both job tables and ordered
+ * newest-first. Returns whatever `fetchCount` yields — the caller over-fetches
+ * to detect a next page, and owns the cursor encoding.
+ */
+export async function findUserJobsPage(
+  filters: JobsPageFilters & { kind?: JobSummary["kind"] },
+): Promise<JobSummary[]> {
+  const { kind } = filters;
+
+  // A kind filter skips the other table's query rather than dropping its rows
+  // after the merge: `fetchCount` is per table, so filtering afterwards would
+  // let excluded rows eat the page and return short (or empty) pages that still
+  // report more to come.
   const [audioJobs, textJobs] = await Promise.all([
-    db
-      .select(audioJobColumns)
-      .from(AudioTranscriptionJobs)
-      .where(
-        and(
-          eq(AudioTranscriptionJobs.userId, userId),
-          status ? eq(AudioTranscriptionJobs.status, status) : undefined,
-          searchQuery
-            ? ilike(AudioTranscriptionJobs.fileName, `%${searchQuery}%`)
-            : undefined,
-          afterCursor(
-            AudioTranscriptionJobs.createdAt,
-            AudioTranscriptionJobs.uploadId,
-            cursor,
-          ),
-        ),
-      )
-      .orderBy(
-        desc(AudioTranscriptionJobs.createdAt),
-        desc(AudioTranscriptionJobs.uploadId),
-      )
-      .limit(fetchCount),
-    db
-      .select(textJobColumns)
-      .from(TextSummarizationJobs)
-      .where(
-        and(
-          eq(TextSummarizationJobs.userId, userId),
-          // Hide audio-derived summaries; they surface via their parent audio job.
-          isNull(TextSummarizationJobs.audioUploadId),
-          status ? eq(TextSummarizationJobs.status, status) : undefined,
-          searchQuery
-            ? ilike(TextSummarizationJobs.fileName, `%${searchQuery}%`)
-            : undefined,
-          afterCursor(
-            TextSummarizationJobs.createdAt,
-            TextSummarizationJobs.uploadId,
-            cursor,
-          ),
-        ),
-      )
-      .orderBy(
-        desc(TextSummarizationJobs.createdAt),
-        desc(TextSummarizationJobs.uploadId),
-      )
-      .limit(fetchCount),
+    kind === "text" ? [] : findAudioJobsPage(filters),
+    kind === "audio" ? [] : findTextJobsPage(filters),
   ]);
 
   const merged: JobSummary[] = [];

@@ -111,6 +111,7 @@ export async function getUserJobs(c: Context) {
   const merged = await findUserJobsPage({
     userId,
     status,
+    kind,
     searchQuery,
     cursor,
     // Over-fetch one extra per table so we can tell whether another page exists.

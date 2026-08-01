@@ -276,3 +276,79 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
     );
   });
 });
+
+describe("GET /jobs", () => {
+  const mockOrderBy = vi.fn();
+  const audioRow = {
+    uploadId: "550e8400-e29b-41d4-a716-44665544000a",
+    fileName: "lecture.mp3",
+    status: "completed",
+    createdAt: new Date("2026-01-02T00:00:00.000Z"),
+    chosenModelId: "prompt-model",
+    error: null,
+  };
+  const textRow = {
+    uploadId: "550e8400-e29b-41d4-a716-44665544000b",
+    fileName: "notes.txt",
+    status: "completed",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    chosenModelId: "prompt-model",
+    error: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockWhere.mockImplementation(() => ({ orderBy: mockOrderBy }));
+    mockOrderBy.mockImplementation(() => ({ limit: mockLimit }));
+    mockFrom.mockImplementation(() => ({ where: mockWhere }));
+    mockSelect.mockImplementation(() => ({ from: mockFrom }));
+  });
+
+  it("merges both tables newest-first when no kind is given", async () => {
+    mockLimit
+      .mockResolvedValueOnce([audioRow])
+      .mockResolvedValueOnce([textRow]);
+    const res = await (
+      await createApp()
+    ).request("http://localhost/jobs", {
+      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { jobs: { kind: string }[] };
+    expect(body.jobs.map((job) => job.kind)).toEqual([
+      "audio",
+      "text",
+    ]);
+    expect(mockSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns only audio jobs for kind=audio, without querying text jobs", async () => {
+    mockLimit.mockResolvedValueOnce([audioRow]);
+    const res = await (
+      await createApp()
+    ).request("http://localhost/jobs?kind=audio", {
+      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { jobs: { kind: string }[] };
+    expect(body.jobs.map((job) => job.kind)).toEqual([
+      "audio",
+    ]);
+    // The excluded table isn't queried at all: `limit` is per table, so
+    // filtering after the merge would return short pages.
+    expect(mockSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns only text jobs for kind=text, without querying audio jobs", async () => {
+    mockLimit.mockResolvedValueOnce([textRow]);
+    const res = await (
+      await createApp()
+    ).request("http://localhost/jobs?kind=text", {
+      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { jobs: { kind: string }[] };
+    expect(body.jobs.map((job) => job.kind)).toEqual(["text"]);
+    expect(mockSelect).toHaveBeenCalledTimes(1);
+  });
+});
