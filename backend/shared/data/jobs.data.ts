@@ -3,9 +3,9 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   AudioTranscriptionJobs,
   db,
-  jobStatusEnum,
   TextSummarizationJobs,
 } from "../db";
+import type { jobStatusEnum } from "../db";
 import type { UploadId } from "../types/mq.types";
 
 /**

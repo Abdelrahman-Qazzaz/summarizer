@@ -1,7 +1,12 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { and, asc, desc, eq } from "drizzle-orm";
-import { ChatMessages, db } from "../../../../shared/db";
+import {
+  createMessage,
+  deleteOwnedMessage,
+  findConversationMessages,
+  findRecentMessages,
+  type MessageRow,
+} from "../data/messages.data";
 import { CTX_KEYS } from "../../../../shared/keys";
 import { buildUserTurn, chatAI } from "../../../../shared/ai/ai_client";
 import type { ChatTurn } from "../../../../shared/ai/ai_client";
@@ -39,24 +44,6 @@ export const MAX_RESPONSE_TOKENS = 4_000;
  */
 const MAX_CONTEXT_IMAGES = 8;
 
-/**
- * The columns a message is exposed through — every read feeding `toMessageJson`
- * projects exactly these, so `userId` and `updatedAt` never leave the table.
- */
-const messageColumns = {
-  id: ChatMessages.id,
-  role: ChatMessages.role,
-  content: ChatMessages.content,
-  chosenModelId: ChatMessages.chosenModelId,
-  conversationId: ChatMessages.conversationId,
-  createdAt: ChatMessages.createdAt,
-};
-
-type MessageRow = Pick<
-  typeof ChatMessages.$inferSelect,
-  keyof typeof messageColumns
->;
-
 function toMessageJson(row: MessageRow, attachments: ResolvedImage[] = []) {
   return {
     id: row.id,
@@ -93,16 +80,10 @@ async function assembleConversationContext(
   conversationId: string,
   newTurn: ChatTurn,
 ): Promise<ChatTurn[]> {
-  const history = await db
-    .select({
-      id: ChatMessages.id,
-      role: ChatMessages.role,
-      content: ChatMessages.content,
-    })
-    .from(ChatMessages)
-    .where(eq(ChatMessages.conversationId, conversationId))
-    .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
-    .limit(MAX_CONTEXT_MESSAGES - 1);
+  const history = await findRecentMessages(
+    conversationId,
+    MAX_CONTEXT_MESSAGES - 1,
+  );
 
   const imagesByMessageId = await resolveMessageImages(
     userId,
@@ -145,11 +126,7 @@ export async function handleListMessages(c: Context) {
   // are simply discarded on the 404 path.
   const [owned, rows] = await Promise.all([
     findOwnedConversation(userId, conversationId),
-    db
-      .select(messageColumns)
-      .from(ChatMessages)
-      .where(eq(ChatMessages.conversationId, conversationId))
-      .orderBy(asc(ChatMessages.createdAt), asc(ChatMessages.id)),
+    findConversationMessages(conversationId),
   ]);
 
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
@@ -189,11 +166,8 @@ async function runChatTurn(
   try {
     // The user turn must be durable (and its id known for the event) before the
     // model call; touching the conversation surfaces it in the list's ordering.
-    const [[userMessage]] = await Promise.all([
-      db
-        .insert(ChatMessages)
-        .values({ role: "user", content, conversationId, userId })
-        .returning(messageColumns),
+    const [userMessage] = await Promise.all([
+      createMessage({ role: "user", content, conversationId, userId }),
       touchConversation(userId, conversationId),
     ]);
 
@@ -210,16 +184,13 @@ async function runChatTurn(
       maxOutputTokens: MAX_RESPONSE_TOKENS,
     });
 
-    const [assistantMessage] = await db
-      .insert(ChatMessages)
-      .values({
-        role: "assistant",
-        content: full,
-        chosenModelId,
-        conversationId,
-        userId,
-      })
-      .returning(messageColumns);
+    const assistantMessage = await createMessage({
+      role: "assistant",
+      content: full,
+      chosenModelId,
+      conversationId,
+      userId,
+    });
 
     events.push("done", toMessageJson(assistantMessage));
   } catch (err) {
@@ -296,16 +267,7 @@ export async function handleDeleteMessage(c: Context) {
   // message. Scoped to this user, so a message they don't own yields nothing.
   const imageUploadIds = await findMessageImageUploadIds(userId, messageId);
 
-  const [row] = await db
-    .delete(ChatMessages)
-    .where(
-      and(
-        eq(ChatMessages.id, messageId),
-        eq(ChatMessages.conversationId, conversationId),
-        eq(ChatMessages.userId, userId),
-      ),
-    )
-    .returning({ id: ChatMessages.id });
+  const row = await deleteOwnedMessage(userId, conversationId, messageId);
 
   if (!row) return c.json({ message: "Message not found" }, 404);
 

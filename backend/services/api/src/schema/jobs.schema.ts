@@ -26,7 +26,6 @@ export const jobCursorSchema = z.object({
   createdAt: z.string(),
   uploadId: z.string(),
 });
-export type JobCursor = z.infer<typeof jobCursorSchema>;
 
 /** Body for re-summarizing an existing transcript/text with a different model. */
 export const jobRerunBodySchema = z

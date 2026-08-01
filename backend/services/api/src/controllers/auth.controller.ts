@@ -7,7 +7,7 @@ import { getRiderctUrl, getUserIdFromCode } from "../auth/auth";
 import { clearSessionToken } from "../cookies/session";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../../shared/keys";
-import { db, users } from "../../../../shared/db";
+import { ensureUser } from "../data/users.data";
 
 export async function handleLogin(c: Context) {
   return c.redirect(getRiderctUrl());
@@ -32,7 +32,7 @@ export async function handleCallback(c: Context) {
   // Upserting the user row and signing the session token are independent;
   // both must still succeed before the cookie is issued.
   const [, token] = await Promise.all([
-    db.insert(users).values({ id: userId }).onConflictDoNothing(),
+    ensureUser(userId),
     sign(
       { sub: userId, exp: Math.floor(Date.now() / 1000) + week },
       getApiEnv().SESSION_SECRET,

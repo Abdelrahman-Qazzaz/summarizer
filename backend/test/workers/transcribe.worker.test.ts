@@ -50,16 +50,9 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
   },
 }));
 
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: { update: mockUpdate, insert: mockInsert, select: mockSelect },
-  AudioTranscriptionJobs: {
-    uploadId: "upload_id",
-    status: "status",
-  },
-  TextSummarizationJobs: {
-    uploadId: "upload_id",
-    audioUploadId: "audio_upload_id",
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 import { handleTranscribeJob } from "../../services/transcribe-summarize-service/workers/transcribe.worker";

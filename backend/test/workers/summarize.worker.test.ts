@@ -42,13 +42,9 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
     sendEvent: mockSendEvent,
   },
 }));
-vi.mock("../../shared/db", () => ({
+vi.mock("../../shared/db", async () => ({
   db: { update: mockUpdate },
-  TextSummarizationJobs: {
-    uploadId: "upload_id",
-    userId: "user_id",
-    status: "status",
-  },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 import { readTextFile } from "../../shared/bucket";
