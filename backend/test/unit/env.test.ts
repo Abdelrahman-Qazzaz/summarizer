@@ -21,6 +21,8 @@ const validApi = {
   SESSION_SECRET: "a".repeat(32),
   WORKOS_API_KEY: "sk_test",
   WORKOS_CLIENT_ID: "client_test",
+  CLIENT_URL: "http://localhost:5173",
+  API_BASE_URL: "http://localhost:3001",
 };
 
 describe("apiEnvSchema", () => {
@@ -52,6 +54,15 @@ describe("apiEnvSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it.each(["CLIENT_URL", "API_BASE_URL"] as const)(
+    "requires %s rather than defaulting to localhost",
+    (key) => {
+      const { [key]: _omitted, ...withoutUrl } = validApi;
+      const result = apiEnvSchema.safeParse(withoutUrl);
+      expect(result.success).toBe(false);
+    },
+  );
 });
 
 describe("workerEnvSchema", () => {

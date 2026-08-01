@@ -4,12 +4,13 @@
   "type": "module",
   "packageManager": "npm@11.14.1",
   "scripts": {
-    "dev": "doppler run -- concurrently -k -n api,worker \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
+    "dev": "npm run --silent doppler -- concurrently -k -n api,worker \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "db": "doppler run -- drizzle-kit push",
-    "test": "doppler run -- vitest run",
-    "test:watch": "doppler run -- vitest"
+    "db": "npm run --silent doppler -- drizzle-kit push",
+    "test": "npm run --silent doppler -- vitest run",
+    "test:watch": "npm run --silent doppler -- vitest",
+    "doppler": "set -a; [ -f .env ] && . ./.env; set +a; exec doppler run --"
   },
   "dependencies": {
     "@hono/node-server": "1.19.2",

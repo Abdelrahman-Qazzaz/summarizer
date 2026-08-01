@@ -1,10 +1,30 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const ANSI_RED = "\x1b[31m";
+const ANSI_RESET = "\x1b[0m";
+
+/**
+ * Doppler injects these into every process it wraps, so their absence means
+ * the values below came from .env instead. That fallback is legitimate but
+ * silent, and a stale .env URL points the app at the wrong host in ways that
+ * are painful to trace — so say so loudly, once.
+ */
+let warnedAboutDopplerFallback = false;
+function warnIfNotRunningUnderDoppler(): void {
+  if (warnedAboutDopplerFallback) return;
+  if (process.env.DOPPLER_PROJECT && process.env.DOPPLER_CONFIG) return;
+  warnedAboutDopplerFallback = true;
+  console.error(
+    `${ANSI_RED}[env] Doppler is not injecting this process — falling back to .env. URLs may point at the wrong host. Start it with \`doppler run -- <command>\`.${ANSI_RESET}`,
+  );
+}
+
 function parseEnv<S extends z.ZodTypeAny>(
   schema: S,
   label: string,
 ): z.infer<S> {
+  warnIfNotRunningUnderDoppler();
   const result = schema.safeParse(process.env);
   if (!result.success) {
     console.error(`Invalid environment variables (${label}):`);
@@ -36,7 +56,8 @@ export const apiEnvSchema = baseEnvSchema.extend({
   SESSION_SECRET: z.string().min(32),
   WORKOS_API_KEY: z.string().min(1),
   WORKOS_CLIENT_ID: z.string().min(1),
-  CLIENT_URL: z.string().url().default("http://localhost:5173"),
+  CLIENT_URL: z.string().url(),
+  API_BASE_URL: z.string().url(),
   PORT: z.coerce.number().int().positive().default(3001),
   WS_PORT: z.coerce.number().int().positive().default(4000),
   UPSTASH_REDIS_REST_URL: z
