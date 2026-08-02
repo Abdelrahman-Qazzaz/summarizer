@@ -36,6 +36,10 @@ export const messageCreateBodySchema = z
       .optional()
       .default([])
       .transform((uploadIds) => [...new Set(uploadIds)]),
+    // A completed transcription job whose transcript rides along with this
+    // turn. One per turn: transcripts are large, and the character budget in
+    // the controller would drop a second one anyway.
+    [CTX_KEYS.audioUploadId]: z.string().uuid().optional(),
   })
   .superRefine(async (data, ctx) => {
     const modelId = data[CTX_KEYS.chosenModelId];

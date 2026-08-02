@@ -22,6 +22,7 @@ const {
   mockChatAI,
   mockCreateSignedUrls,
   mockDeleteFilesFromBucket,
+  mockReadTextFile,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockFrom: vi.fn(),
@@ -45,6 +46,7 @@ const {
   mockChatAI: vi.fn(),
   mockCreateSignedUrls: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
+  mockReadTextFile: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -60,6 +62,7 @@ vi.mock("../../shared/db", async () => ({
 vi.mock("../../shared/bucket", () => ({
   createSignedUrls: mockCreateSignedUrls,
   deleteFilesFromBucket: mockDeleteFilesFromBucket,
+  readTextFile: mockReadTextFile,
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
@@ -435,6 +438,162 @@ describe("POST /conversations/:conversationId/messages", () => {
     // The oldest turn fell off; the new one is always kept, last.
     expect(labels).toEqual(["middle", "newest", "Hi the"]);
     expect(opts.maxOutputTokens).toBe(MAX_RESPONSE_TOKENS);
+  });
+
+  describe("with a transcript attached", () => {
+    const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
+    const transcriptUploadId = "a50e8400-e29b-41d4-a716-446655440555";
+    const transcript = "and then the speaker said something important";
+
+    /** The transcription-job row `findOwnedTranscript` projects. */
+    function transcriptJob(overrides: Record<string, unknown> = {}) {
+      return { transcriptUploadId, status: "completed", ...overrides };
+    }
+
+    it("splices the transcript into the turn and records the link", async () => {
+      mockLimit
+        .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+        .mockResolvedValueOnce([transcriptJob()]) // findOwnedTranscript
+        .mockResolvedValueOnce([]); // history
+      mockReadTextFile.mockResolvedValueOnce(transcript);
+      mockInsertReturning
+        .mockResolvedValueOnce([userRow])
+        .mockResolvedValueOnce([assistantRow]);
+      mockChatAI.mockResolvedValueOnce("Hello world");
+
+      const res = await postMessage({
+        messageContent: "Summarise this",
+        chosenModelId: modelId,
+        audioUploadId,
+      });
+      expect(res.status).toBe(200);
+      await res.text();
+
+      // The model sees transcript + prompt...
+      expect(mockChatAI).toHaveBeenCalledWith(
+        modelId,
+        [{ role: "user", content: `${transcript}\n\nSummarise this` }],
+        expect.objectContaining({ onDelta: expect.any(Function) }),
+      );
+      // ...but the row stores only what was typed, plus the link. The
+      // transcript stays in the bucket rather than being copied into the DB.
+      expect(mockValues).toHaveBeenCalledWith({
+        role: "user",
+        content: "Summarise this",
+        conversationId,
+        userId,
+        audioUploadId,
+      });
+      expect(mockReadTextFile).toHaveBeenCalledWith(userId, transcriptUploadId);
+    });
+
+    it("replays a past turn's transcript so follow-ups still see it", async () => {
+      mockLimit
+        .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+        .mockResolvedValueOnce([
+          { id: messageId, role: "user", content: "Summarise this", audioUploadId },
+        ]) // history
+        .mockResolvedValueOnce([transcriptJob()]); // its transcript
+      mockReadTextFile.mockResolvedValueOnce(transcript);
+      mockInsertReturning
+        .mockResolvedValueOnce([userRow])
+        .mockResolvedValueOnce([assistantRow]);
+      mockChatAI.mockResolvedValueOnce("Hello world");
+
+      const res = await postMessage({
+        messageContent: "What did they say about it?",
+        chosenModelId: modelId,
+      });
+      expect(res.status).toBe(200);
+      await res.text();
+
+      const [, turns] = mockChatAI.mock.calls[0];
+      expect(turns[0].content).toBe(`${transcript}\n\nSummarise this`);
+    });
+
+    it("returns 404 when the job is not the caller's", async () => {
+      mockLimit
+        .mockResolvedValueOnce([{ id: conversationId }])
+        .mockResolvedValueOnce([]); // findOwnedTranscript finds nothing
+      const res = await postMessage({
+        messageContent: "Summarise this",
+        chosenModelId: modelId,
+        audioUploadId,
+      });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ message: "Transcript not found" });
+      expect(mockChatAI).not.toHaveBeenCalled();
+      expect(mockInsert).not.toHaveBeenCalled();
+    });
+
+    it("returns 404 while transcription is still running", async () => {
+      mockLimit
+        .mockResolvedValueOnce([{ id: conversationId }])
+        .mockResolvedValueOnce([
+          transcriptJob({ status: "processing", transcriptUploadId: null }),
+        ]);
+      const res = await postMessage({
+        messageContent: "Summarise this",
+        chosenModelId: modelId,
+        audioUploadId,
+      });
+      expect(res.status).toBe(404);
+      // Never reached the bucket — there is nothing there yet to read.
+      expect(mockReadTextFile).not.toHaveBeenCalled();
+    });
+
+    it("refuses a transcript past the context budget rather than truncating it", async () => {
+      mockLimit
+        .mockResolvedValueOnce([{ id: conversationId }])
+        .mockResolvedValueOnce([transcriptJob()]);
+      mockReadTextFile.mockResolvedValueOnce("x".repeat(MAX_CONTEXT_CHARS + 1));
+
+      const res = await postMessage({
+        messageContent: "Summarise this",
+        chosenModelId: modelId,
+        audioUploadId,
+      });
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({
+        message: "Transcript is too long for one message",
+        maxChars: MAX_CONTEXT_CHARS,
+        chars: MAX_CONTEXT_CHARS + 1,
+      });
+      // A half-transcript would produce a confident answer about half the
+      // recording, so nothing is sent at all.
+      expect(mockChatAI).not.toHaveBeenCalled();
+    });
+
+    it("charges the transcript against the budget, dropping history to fit", async () => {
+      const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
+      mockLimit
+        .mockResolvedValueOnce([{ id: conversationId }]) // ownership
+        .mockResolvedValueOnce([transcriptJob()]) // findOwnedTranscript
+        .mockResolvedValueOnce([
+          { role: "user", content: `newest ${long}` },
+          { role: "assistant", content: `middle ${long}` },
+        ]); // history
+      // Half the budget: one ~third-budget history turn still fits, two don't.
+      mockReadTextFile.mockResolvedValueOnce(
+        "y".repeat(MAX_CONTEXT_CHARS / 2),
+      );
+      mockInsertReturning
+        .mockResolvedValueOnce([userRow])
+        .mockResolvedValueOnce([assistantRow]);
+      mockChatAI.mockResolvedValueOnce("Hello world");
+
+      const res = await postMessage({
+        messageContent: "Summarise this",
+        chosenModelId: modelId,
+        audioUploadId,
+      });
+      expect(res.status).toBe(200);
+      await res.text();
+
+      const [, turns] = mockChatAI.mock.calls[0];
+      expect(turns).toHaveLength(2);
+      expect(turns[0].content.slice(0, 6)).toBe("newest");
+    });
   });
 
   it("emits an SSE error event and skips the assistant insert when the model fails", async () => {

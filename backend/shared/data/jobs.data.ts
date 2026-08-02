@@ -42,6 +42,24 @@ export async function findAudioJob(userId: string, uploadId: string) {
   return row ?? null;
 }
 
+/**
+ * The transcript a chat turn wants to carry. Returns the bucket key and the
+ * job's status so the caller can refuse a job that has no transcript yet —
+ * `transcriptUploadId` is only written once transcription completes.
+ */
+export async function findOwnedTranscript(userId: string, uploadId: string) {
+  const [row] = await db
+    .select({
+      transcriptUploadId: AudioTranscriptionJobs.transcriptUploadId,
+      status: AudioTranscriptionJobs.status,
+    })
+    .from(AudioTranscriptionJobs)
+    .where(ownedBy(userId, uploadId))
+    .limit(1);
+
+  return row ?? null;
+}
+
 /* --------------------------------------------------------- API job listing */
 
 export type JobCursor = { createdAt: string; uploadId: string };

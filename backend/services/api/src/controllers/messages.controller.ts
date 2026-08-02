@@ -23,7 +23,13 @@ import {
   resolveUnattachedImages,
   type ResolvedImage,
 } from "../data/images.data";
-import { deleteFilesFromBucket } from "../../../../shared/bucket";
+import {
+  deleteFilesFromBucket,
+  readTextFile,
+} from "../../../../shared/bucket";
+import { findOwnedTranscript } from "../../../../shared/data/jobs.data";
+import { tryCatch } from "../../../../shared/try-catch";
+import type { UploadId } from "../../../../shared/types/mq.types";
 
 const log = logger.child({ controller: "messages" });
 
@@ -51,9 +57,43 @@ function toMessageJson(row: MessageRow, attachments: ResolvedImage[] = []) {
     content: row.content,
     chosenModelId: row.chosenModelId,
     conversationId: row.conversationId,
+    audioUploadId: row.audioUploadId,
     createdAt: row.createdAt,
     attachments,
   };
+}
+
+/**
+ * A turn that carried a transcript, as the model sees it: the transcript body
+ * followed by what the user actually typed. The stored `content` is only ever
+ * the typed part — the transcript lives in the bucket and is spliced in here,
+ * which is what lets one prompt carry a body far past the 50k message cap.
+ */
+function withTranscript(content: string, transcript: string) {
+  return `${transcript}\n\n${content}`;
+}
+
+/**
+ * The transcript for a turn that names a transcription job, or null when the
+ * job isn't the caller's, hasn't finished, or its object can't be read. A
+ * bucket failure is logged rather than thrown: on the history path the turn is
+ * still worth replaying without it.
+ */
+async function readTurnTranscript(userId: string, audioUploadId: string) {
+  const job = await findOwnedTranscript(userId, audioUploadId);
+  if (!job || job.status !== "completed" || !job.transcriptUploadId) {
+    return null;
+  }
+
+  const { data, error } = await tryCatch(
+    readTextFile(userId, job.transcriptUploadId as UploadId),
+  );
+  if (error)
+    log.error("Failed to read transcript from bucket", error, {
+      audioUploadId,
+      transcriptUploadId: job.transcriptUploadId,
+    });
+  return data;
 }
 
 /** Assistant turns never carry images, so they're not worth looking up. */
@@ -79,6 +119,7 @@ async function assembleConversationContext(
   userId: string,
   conversationId: string,
   newTurn: ChatTurn,
+  spentChars: number,
 ): Promise<ChatTurn[]> {
   const history = await findRecentMessages(
     conversationId,
@@ -91,12 +132,29 @@ async function assembleConversationContext(
   );
 
   const turns: ChatTurn[] = [newTurn];
-  let charBudget = MAX_CONTEXT_CHARS;
+  let charBudget = MAX_CONTEXT_CHARS - spentChars;
   let imageBudget = MAX_CONTEXT_IMAGES;
 
   for (const message of history) {
     charBudget -= message.content.length;
     if (charBudget < 0) break;
+
+    // A past turn's transcript is replayed too — a follow-up question about a
+    // transcript sent three turns ago has to still see it, same as images. It
+    // is read only once the budget can still hold something, so a spent budget
+    // costs no bucket round-trips.
+    let content = message.content;
+    if (message.audioUploadId) {
+      const transcript = await readTurnTranscript(
+        userId,
+        message.audioUploadId,
+      );
+      if (transcript) {
+        charBudget -= transcript.length;
+        if (charBudget < 0) break;
+        content = withTranscript(content, transcript);
+      }
+    }
 
     const images = (imagesByMessageId.get(message.id) ?? []).slice(
       0,
@@ -107,10 +165,10 @@ async function assembleConversationContext(
     turns.unshift(
       images.length > 0
         ? buildUserTurn(
-            message.content,
+            content,
             images.map((image) => image.url),
           )
-        : { role: message.role, content: message.content },
+        : { role: message.role, content },
     );
   }
 
@@ -158,16 +216,32 @@ async function runChatTurn(
     chosenModelId: string;
     turns: ChatTurn[];
     attachments: ResolvedImage[];
+    audioUploadId?: string;
   },
   events: SSEEventQueue,
 ) {
-  const { userId, conversationId, content, chosenModelId, turns, attachments } =
-    args;
+  const {
+    userId,
+    conversationId,
+    content,
+    chosenModelId,
+    turns,
+    attachments,
+    audioUploadId,
+  } = args;
   try {
     // The user turn must be durable (and its id known for the event) before the
     // model call; touching the conversation surfaces it in the list's ordering.
+    // Only the typed content is stored — the transcript stays in the bucket and
+    // is spliced back in whenever this turn is replayed.
     const [userMessage] = await Promise.all([
-      createMessage({ role: "user", content, conversationId, userId }),
+      createMessage({
+        role: "user",
+        content,
+        conversationId,
+        userId,
+        audioUploadId,
+      }),
       touchConversation(userId, conversationId),
     ]);
 
@@ -225,12 +299,14 @@ export async function handleCreateMessage(c: Context) {
   const content: string = c.get(CTX_KEYS.messageContent);
   const chosenModelId: string = c.get(CTX_KEYS.chosenModelId);
   const uploadIds: string[] = c.get(CTX_KEYS.attachmentUploadIds);
+  const audioUploadId: string | undefined = c.get(CTX_KEYS.audioUploadId);
 
-  // Ownership check and attachment resolution are independent reads; the images
-  // are simply discarded on the 404 path.
-  const [owned, attachments] = await Promise.all([
+  // Ownership check, attachment resolution and the transcript read are
+  // independent; all are simply discarded on the 404 paths.
+  const [owned, attachments, transcript] = await Promise.all([
     findOwnedConversation(userId, conversationId),
     resolveUnattachedImages(userId, uploadIds),
+    audioUploadId ? readTurnTranscript(userId, audioUploadId) : null,
   ]);
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
   // An id that resolved to nothing was never this user's, or was already sent
@@ -238,19 +314,50 @@ export async function handleCreateMessage(c: Context) {
   // built, and silently dropping the image would be worse than saying so.
   if (attachments.length !== uploadIds.length)
     return c.json({ message: "Attachment not found" }, 404);
+  // Same posture for the transcript: an id that resolves to nothing is not the
+  // user's, hasn't finished transcribing, or its object is unreadable. Sending
+  // the prompt without the body it was written about would answer the wrong
+  // question.
+  if (audioUploadId && !transcript)
+    return c.json({ message: "Transcript not found" }, 404);
+
+  // The transcript is the one part of a turn that has no cap of its own —
+  // `content` is schema-capped at 50k, images at MAX_CONTEXT_IMAGES, but a
+  // transcript is as long as the recording was. Refuse rather than truncate: a
+  // silently halved transcript yields a confident answer about the first half.
+  if (transcript && transcript.length >= MAX_CONTEXT_CHARS)
+    return c.json(
+      {
+        message: "Transcript is too long for one message",
+        maxChars: MAX_CONTEXT_CHARS,
+        chars: transcript.length,
+      },
+      413,
+    );
 
   const turns = await assembleConversationContext(
     userId,
     conversationId,
     buildUserTurn(
-      content,
+      transcript ? withTranscript(content, transcript) : content,
       attachments.map((attachment) => attachment.url),
     ),
+    // Charged up front so history is what falls off to make room for it,
+    // rather than the two together silently blowing past the budget.
+    (transcript?.length ?? 0) + content.length,
   );
 
   const events = new SSEEventQueue();
   void runChatTurn(
-    { userId, conversationId, content, chosenModelId, turns, attachments },
+    {
+      userId,
+      conversationId,
+      content,
+      chosenModelId,
+      turns,
+      attachments,
+      audioUploadId,
+    },
     events,
   );
 

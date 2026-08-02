@@ -109,6 +109,16 @@ export const ChatMessages = pgTable("chat_messages", {
     .notNull()
     .references(() => Conversations.id, { onDelete: "cascade" }),
 
+  // A transcription job whose transcript was sent with this turn. The text
+  // itself stays in the bucket — this is how one prompt carries a body of
+  // arbitrary length without it living in `content`.
+  // `set null` rather than `cascade`: deleting a transcription job must not
+  // take the conversation that discussed it along with it.
+  audioUploadId: text("audio_upload_id").references(
+    () => AudioTranscriptionJobs.uploadId,
+    { onDelete: "set null" },
+  ),
+
   // could be useful for future "shared chat" feature.
   userId: text("user_id")
     .notNull()

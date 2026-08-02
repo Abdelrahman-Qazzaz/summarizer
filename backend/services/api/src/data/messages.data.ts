@@ -11,6 +11,7 @@ const messageColumns = {
   content: ChatMessages.content,
   chosenModelId: ChatMessages.chosenModelId,
   conversationId: ChatMessages.conversationId,
+  audioUploadId: ChatMessages.audioUploadId,
   createdAt: ChatMessages.createdAt,
 };
 
@@ -41,6 +42,7 @@ export async function findRecentMessages(
       id: ChatMessages.id,
       role: ChatMessages.role,
       content: ChatMessages.content,
+      audioUploadId: ChatMessages.audioUploadId,
     })
     .from(ChatMessages)
     .where(eq(ChatMessages.conversationId, conversationId))
@@ -54,6 +56,7 @@ export async function createMessage(message: {
   conversationId: string;
   userId: string;
   chosenModelId?: string;
+  audioUploadId?: string;
 }) {
   const [row] = await db
     .insert(ChatMessages)
