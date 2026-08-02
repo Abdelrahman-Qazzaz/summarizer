@@ -1,3 +1,5 @@
+// TODO: add cache where the key is (kind,modelid), where kind is transcribe/text/etc. Because even when cached, the result of openRouterModelsCacheKey is too large to justify being ran every req
+
 import { getBaseEnv } from "../env";
 import { OpenRouter } from "@openrouter/sdk";
 

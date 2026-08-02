@@ -23,10 +23,7 @@ import {
   resolveUnattachedImages,
   type ResolvedImage,
 } from "../data/images.data";
-import {
-  deleteFilesFromBucket,
-  readTextFile,
-} from "../../../../shared/bucket";
+import { deleteFilesFromBucket, readTextFile } from "../../../../shared/bucket";
 import { findOwnedTranscript } from "../../../../shared/data/jobs.data";
 import { tryCatch } from "../../../../shared/try-catch";
 import type { UploadId } from "../../../../shared/types/mq.types";
@@ -379,5 +376,6 @@ export async function handleDeleteMessage(c: Context) {
   if (!row) return c.json({ message: "Message not found" }, 404);
 
   await deleteFilesFromBucket(userId, imageUploadIds);
+  //TODO: move deleteFilesFromBucket to a promise.all with deleteOwnedMessage?
   return c.json({ message: "Message deleted" }, 200);
 }

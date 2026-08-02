@@ -3,7 +3,6 @@ import {
   claimAudioJob,
   completeAudioJob,
   failAudioJob,
-  setTranscriptUploadId,
 } from "../../../shared/data/jobs.data";
 import { getAudioFile, uploadTextToBucket } from "../../../shared/bucket";
 import { transcribe } from "../../../shared/ai/transcribe";
@@ -40,9 +39,8 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     await uploadTextToBucket(job.userId, transcriptUploadId, transcript, {
       upsert: true,
     });
-    await setTranscriptUploadId(uploadId, transcriptUploadId);
 
-    await completeAudioJob(uploadId);
+    await completeAudioJob(uploadId, transcriptUploadId);
     await mq.sendEvent(mq.queues.TRANSCRIBE_DONE, {
       uploadId,
       userId: job.userId,

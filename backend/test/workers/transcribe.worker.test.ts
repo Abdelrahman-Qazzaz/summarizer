@@ -52,8 +52,8 @@ vi.mock("../../shared/db", async () => ({
 import { handleTranscribeJob } from "../../services/transcribe-service/workers/transcribe.worker";
 
 /**
- * The worker issues three updates: claim (which returns the row), record the
- * transcript key, then complete. Only the first returns anything.
+ * The worker issues two updates: claim (which returns the row), then complete
+ * — which carries the transcript key. Only the first returns anything.
  */
 function setupUpdateChain(claimedJobs: unknown[]) {
   let updateCall = 0;
@@ -96,8 +96,12 @@ describe("handleTranscribeJob", () => {
       "sample transcript",
       { upsert: true },
     );
-    // claim + record transcript key + complete
-    expect(mockUpdate).toHaveBeenCalledTimes(3);
+    // claim + complete (which carries the transcript key)
+    expect(mockUpdate).toHaveBeenCalledTimes(2);
+    expect(mockSet).toHaveBeenLastCalledWith({
+      status: "completed",
+      transcriptUploadId: generatedTranscriptId,
+    });
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
       uploadId,
       userId: "user_01",

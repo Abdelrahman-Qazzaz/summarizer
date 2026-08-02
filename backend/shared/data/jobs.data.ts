@@ -221,26 +221,20 @@ export async function claimAudioJob(uploadId: UploadId) {
   return row ?? null;
 }
 
-/** Records where the worker put the transcript, before the job is completed. */
-export async function setTranscriptUploadId(
+/**
+ * Terminal transitions are gated on `processing` for the same reason the claim
+ * is gated on `queued`: a job re-queued mid-run must not be overwritten by the
+ * previous run finishing late. The transcript key rides along in the same
+ * statement rather than a second one — one round-trip, and it falls under the
+ * same gate, so a stale run can't stamp its key onto a job someone re-queued.
+ */
+export async function completeAudioJob(
   uploadId: UploadId,
   transcriptUploadId: UploadId,
 ) {
   await db
     .update(AudioTranscriptionJobs)
-    .set({ transcriptUploadId })
-    .where(eq(AudioTranscriptionJobs.uploadId, uploadId));
-}
-
-/**
- * Terminal transitions are gated on `processing` for the same reason the claim
- * is gated on `queued`: a job re-queued mid-run must not be overwritten by the
- * previous run finishing late.
- */
-export async function completeAudioJob(uploadId: UploadId) {
-  await db
-    .update(AudioTranscriptionJobs)
-    .set({ status: "completed" })
+    .set({ status: "completed", transcriptUploadId })
     .where(
       and(
         eq(AudioTranscriptionJobs.uploadId, uploadId),

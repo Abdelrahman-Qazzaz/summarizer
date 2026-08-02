@@ -23,6 +23,13 @@ class MQ {
   private conn!: ChannelModel;
   private channel!: Channel;
   private connecting?: Promise<void>;
+  /**
+   * Queues already declared on the current channel. `assertQueue` is a broker
+   * round-trip, and it sat on the request path of every publish — an upload
+   * paid a full trip to CloudAMQP before its message was even sent. Declaring
+   * is idempotent, so once per channel is enough.
+   */
+  private assertedQueues = new Set<string>();
 
   async connect(url: string) {
     if (this.conn) return;
@@ -35,15 +42,24 @@ class MQ {
     this.connecting = (async () => {
       this.conn = await amqplib.connect(url);
       this.channel = await this.conn.createChannel();
+      // Declarations belong to the channel, so a new one starts over.
+      this.assertedQueues.clear();
       await this.channel.prefetch(1);
     })();
 
     await this.connecting;
     this.connecting = undefined;
   }
+
+  private async ensureQueue(queue: MQQueues) {
+    if (this.assertedQueues.has(queue)) return;
+    await this.channel.assertQueue(queue);
+    this.assertedQueues.add(queue);
+  }
+
   /** Publish to `queue`; `data` must match that queue's payload type. */
   async sendEvent<Q extends MQQueues>(queue: Q, data: QueuePayloads[Q]) {
-    await this.channel.assertQueue(queue);
+    await this.ensureQueue(queue);
     this.channel.sendToQueue(queue, Buffer.from(JSON.stringify(data)));
   }
 
@@ -52,7 +68,7 @@ class MQ {
     queue: Q,
     handler: (data: QueuePayloads[Q]) => Promise<void>,
   ) {
-    await this.channel.assertQueue(queue);
+    await this.ensureQueue(queue);
 
     this.channel.consume(queue, async (msg: ConsumeMessage | null) => {
       if (!msg) return;
