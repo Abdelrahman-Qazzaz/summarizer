@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "npm@11.14.1",
   "scripts": {
-    "dev": "npm run --silent doppler -- concurrently -k -n api,worker \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-summarize-service/index.ts\"",
+    "dev": "npm run --silent doppler -- concurrently -k -n api,worker \"tsx watch --inspect=9229 services/api/index.ts\" \"tsx watch --inspect=9230 services/transcribe-service/index.ts\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db": "npm run --silent doppler -- drizzle-kit push",
@@ -25,7 +25,6 @@
     "hono-rate-limiter": "0.5.3",
     "postgres": "^3.4.9",
     "socket.io": "4.8.3",
-    "unpdf": "^1.6.2",
     "zod": "3.25.76"
   },
   "devDependencies": {

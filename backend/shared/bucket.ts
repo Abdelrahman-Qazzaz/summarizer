@@ -129,10 +129,6 @@ export async function readTextFile(userId: string, uploadId: UploadId) {
 export async function getAudioFile(userId: string, uploadId: UploadId) {
   return downloadObject(userId, uploadId);
 }
-export async function deleteFileFromBucket(userId: string, uploadId: UploadId) {
-  return deleteFilesFromBucket(userId, [uploadId]);
-}
-
 /** One owner's objects in a single remove call. No-ops on an empty list. */
 export async function deleteFilesFromBucket(
   userId: string,

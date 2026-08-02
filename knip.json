@@ -8,7 +8,7 @@
     "backend": {
       "entry": [
         "services/api/index.ts",
-        "services/transcribe-summarize-service/index.ts",
+        "services/transcribe-service/index.ts",
         "drizzle.config.ts",
         "test/**/*.test.ts"
       ],
@@ -22,7 +22,5 @@
     },
     // Entries/project come from the vite plugin's defaults.
     "client": {}
-  },
-  // Provisioned on the machine, not via npm.
-  "ignoreBinaries": ["doppler"]
+  }
 }
