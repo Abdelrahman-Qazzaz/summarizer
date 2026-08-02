@@ -32,42 +32,14 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
     .notNull()
     .references(() => users.id),
 
-  // Summarization model for the downstream transcript summary.
-  chosenModelId: text("chosen_model_id").notNull(),
-
   // Model used to transcribe the audio. Null falls back to the worker default
   // (DEFAULT_MODELS.TRANSCRIBE); a transcribe re-run overwrites it.
   transcriptionModelId: text("transcription_model_id"),
-});
 
-export const TextSummarizationJobs = pgTable("text_summarization_jobs", {
-  uploadId: text("upload_id").notNull().primaryKey(),
-  fileName: text("file_name").notNull(),
-  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-  status: jobStatusEnum("status").notNull().default("queued"),
-  summary: text("summary"),
-  // queued | processing | completed | failed
-  error: text("error"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-
-  chosenModelId: text("chosen_model_id").notNull(),
-
-  // Set when this summary was derived from an audio upload. Null for jobs the
-  // user uploaded as text directly. Lets an audio job expose its summary +
-  // summaryStatus, and lets the history list hide these derived rows.
-  audioUploadId: text("audio_upload_id").references(
-    () => AudioTranscriptionJobs.uploadId,
-    { onDelete: "cascade" },
-  ),
+  // Bucket key of the transcript, written once transcription completes. The
+  // audio itself lives at this row's own uploadId, so the transcript needs a
+  // key of its own. Null until then, and on a job that never got that far.
+  transcriptUploadId: text("transcript_upload_id"),
 });
 
 export const ImageUploads = pgTable("image_uploads", {

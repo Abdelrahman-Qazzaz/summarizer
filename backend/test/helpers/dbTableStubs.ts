@@ -15,20 +15,8 @@ export const tableStubs = {
     status: "status",
     error: "error",
     createdAt: "created_at",
-    chosenModelId: "chosen_model_id",
     transcriptionModelId: "transcription_model_id",
-    userId: "user_id",
-  },
-
-  TextSummarizationJobs: {
-    uploadId: "upload_id",
-    fileName: "file_name",
-    status: "status",
-    summary: "summary",
-    error: "error",
-    createdAt: "created_at",
-    chosenModelId: "chosen_model_id",
-    audioUploadId: "audio_upload_id",
+    transcriptUploadId: "transcript_upload_id",
     userId: "user_id",
   },
 

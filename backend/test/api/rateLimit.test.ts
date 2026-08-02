@@ -63,15 +63,15 @@ describe("rate limiting", () => {
     mockLimit.mockResolvedValueOnce([
       {
         uploadId,
-        fileName: "notes.txt",
+        fileName: "clip.mp3",
         status: "completed",
-        summary: "A short summary.",
+        transcriptUploadId: null,
         error: null,
       },
     ]);
     const res = await (
       await createApp()
-    ).request(`http://localhost/jobs/summarize/${uploadId}`, {
+    ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(200);
@@ -81,9 +81,9 @@ describe("rate limiting", () => {
     mockLimit.mockResolvedValueOnce([
       {
         uploadId,
-        fileName: "notes.txt",
+        fileName: "clip.mp3",
         status: "completed",
-        summary: "A short summary.",
+        transcriptUploadId: null,
         error: null,
       },
     ]);
@@ -115,9 +115,9 @@ describe("rate limiting", () => {
     mockLimit.mockResolvedValueOnce([
       {
         uploadId,
-        fileName: "notes.txt",
+        fileName: "clip.mp3",
         status: "completed",
-        summary: "A short summary.",
+        transcriptUploadId: null,
         error: null,
       },
     ]);

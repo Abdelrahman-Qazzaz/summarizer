@@ -55,22 +55,29 @@ async function uploadObject(
   uploadId: UploadId,
   body: Blob,
   contentType: string,
+  upsert = false,
 ) {
   const { data, error } = await bucket().upload(
     objectPath(userId, uploadId),
     body, // File is a Blob, so callers can pass one directly
-    { contentType },
+    { contentType, upsert },
   );
 
   if (error) throw error;
   return data.path;
 }
 
-/** Upload a text string as a UTF-8 text object. */
+/**
+ * Upload a text string as a UTF-8 text object. `upsert` is for writes that can
+ * legitimately repeat at the same key — a transcribe re-run overwrites the
+ * transcript it produced last time, and without this the storage API rejects
+ * the second write as a duplicate.
+ */
 export async function uploadTextToBucket(
   userId: string,
   uploadId: UploadId,
   text: string,
+  { upsert = false }: { upsert?: boolean } = {},
 ) {
   const contentType = "text/plain; charset=utf-8";
   return uploadObject(
@@ -78,6 +85,7 @@ export async function uploadTextToBucket(
     uploadId,
     new Blob([text], { type: contentType }),
     contentType,
+    upsert,
   );
 }
 

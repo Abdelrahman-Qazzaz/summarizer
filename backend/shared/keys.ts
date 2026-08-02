@@ -13,13 +13,14 @@ export const CTX_KEYS = {
   limit: "limit",
   cursor: "cursor",
   status: "status",
-  kind: "kind",
   q: "q",
 
   conversationTitle: "conversationTitle",
 
   messageContent: "messageContent",
   attachmentUploadIds: "attachmentUploadIds",
+  // Transcription job whose transcript rides along with a chat turn.
+  audioUploadId: "audioUploadId",
 
   uploadFile,
   chosenModelId,
@@ -30,7 +31,6 @@ export const CTX_KEYS = {
 
 export const FORM_KEYS = {
   uploadFile,
-  chosenModelId,
   transcriptionModelId,
   audioSource,
 } as const;

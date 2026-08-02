@@ -71,24 +71,9 @@ describe("workerEnvSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("defaults WORKER_ROLE to all", () => {
-    const result = workerEnvSchema.safeParse(validBase);
-    expect(result.success && result.data.WORKER_ROLE).toBe("all");
-  });
-
-  it("accepts an explicit WORKER_ROLE", () => {
-    const result = workerEnvSchema.safeParse({
-      ...validBase,
-      WORKER_ROLE: "transcribe",
-    });
-    expect(result.success && result.data.WORKER_ROLE).toBe("transcribe");
-  });
-
-  it("rejects an unknown WORKER_ROLE", () => {
-    const result = workerEnvSchema.safeParse({
-      ...validBase,
-      WORKER_ROLE: "bogus",
-    });
+  it("requires the same base vars the API does", () => {
+    const { MQ_URL: _omitted, ...withoutMq } = validBase;
+    const result = workerEnvSchema.safeParse(withoutMq);
     expect(result.success).toBe(false);
   });
 });

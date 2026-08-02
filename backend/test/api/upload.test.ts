@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
-const MAX_TEXT_BYTES = 15 * 1024 * 1024;
 
 const {
   mockInsert,
   mockSendEvent,
-  mockUploadTextToBucket,
   mockUploadAudioToBucket,
   mockUploadImageToBucket,
   mockCreateSignedUrl,
@@ -14,7 +12,6 @@ const {
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockSendEvent: vi.fn(),
-  mockUploadTextToBucket: vi.fn(),
   mockUploadAudioToBucket: vi.fn(),
   mockUploadImageToBucket: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
@@ -35,17 +32,13 @@ vi.mock("../../shared/ai/ai_client", async (importActual) => {
   };
 });
 
-import { DEFAULT_MODELS } from "../../shared/ai/ai_client";
-
-const VALID_MODEL = DEFAULT_MODELS.PROMPT;
-
 vi.mock("../../shared/db", async () => ({
   db: { insert: mockInsert },
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  uploadTextToBucket: mockUploadTextToBucket,
+  uploadTextToBucket: vi.fn(),
   uploadAudioToBucket: mockUploadAudioToBucket,
   uploadImageToBucket: mockUploadImageToBucket,
   createSignedUrl: mockCreateSignedUrl,
@@ -62,7 +55,6 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
   mq: {
     queues: {
       TRANSCRIBE: "transcribe",
-      SUMMARIZE: "summarize",
       YT_FETCH: "yt_fetch",
     },
     sendEvent: mockSendEvent,
@@ -71,21 +63,6 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
 
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
-import {
-  loadSampleFile,
-  SAMPLE_PDF_NAME,
-  SAMPLE_EMPTY_PDF_NAME,
-} from "../helpers/sampleFiles";
-
-function textUploadBody(content = "hello", fileName = "notes.txt"): FormData {
-  const formData = new FormData();
-  formData.append(
-    "uploadFile",
-    new File([content], fileName, { type: "text/plain" }),
-  );
-  formData.append("chosenModelId", VALID_MODEL);
-  return formData;
-}
 
 function audioUploadBody(
   sizeBytes: number,
@@ -101,175 +78,19 @@ function audioUploadBody(
   if (options?.source !== undefined) {
     formData.append("audioSource", options.source);
   }
-  formData.append("chosenModelId", VALID_MODEL);
   return formData;
 }
 
 describe("POST /upload/text", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockInsert.mockReturnValue({
-      values: vi.fn().mockResolvedValue(undefined),
-    });
-    mockUploadTextToBucket.mockResolvedValue(undefined);
-    mockSendEvent.mockResolvedValue(undefined);
-    mockValidateModel.mockResolvedValue(true);
-  });
-
-  it("returns 401 without a session cookie", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/text", {
-      method: "POST",
-      body: textUploadBody(),
-    });
-    expect(res.status).toBe(401);
-    expect(mockInsert).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 when file field is missing", async () => {
-    const formData = new FormData();
-    formData.append("chosenModelId", VALID_MODEL);
+  it("is gone — summarization is a chat prompt now", async () => {
     const res = await (
       await createApp()
     ).request("http://localhost/upload/text", {
       method: "POST",
       headers: { Cookie: await sessionCookieHeader("user_01") },
-      body: formData,
+      body: new FormData(),
     });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      message: 'Expected a file field named "file"',
-    });
-  });
-
-  it("returns 413 when text file is too large", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/text", {
-      method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-      body: textUploadBody("x".repeat(MAX_TEXT_BYTES + 1)),
-    });
-    expect(res.status).toBe(413);
-    expect(await res.json()).toEqual({
-      message: "Text file is too large",
-      maxBytes: MAX_TEXT_BYTES,
-    });
-  });
-
-  it("uploads text and enqueues summarize", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/text", {
-      method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-      body: textUploadBody("sample text"),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      message: string;
-      fileName: string;
-      mode: string;
-      preview: string;
-      uploadId: string;
-    };
-    expect(body.message).toBe("File uploaded");
-    expect(body.fileName).toBe("notes.txt");
-    expect(body.mode).toBe("text");
-    expect(body.preview).toBe("sample text");
-    expect(typeof body.uploadId).toBe("string");
-    expect(mockUploadTextToBucket).toHaveBeenCalledWith(
-      "user_01",
-      body.uploadId,
-      "sample text",
-    );
-    expect(mockInsert).toHaveBeenCalledTimes(1);
-    expect(mockSendEvent).toHaveBeenCalledWith("summarize", body.uploadId);
-  });
-});
-
-// PDFs ride the same route; extraction runs for real (unpdf is not mocked).
-describe("POST /upload/text with PDFs", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockInsert.mockReturnValue({
-      values: vi.fn().mockResolvedValue(undefined),
-    });
-    mockUploadTextToBucket.mockResolvedValue(undefined);
-    mockSendEvent.mockResolvedValue(undefined);
-    mockValidateModel.mockResolvedValue(true);
-  });
-
-  async function pdfUploadBody(file: File): Promise<FormData> {
-    const formData = new FormData();
-    formData.append("uploadFile", file);
-    formData.append("chosenModelId", VALID_MODEL);
-    return formData;
-  }
-
-  it("extracts text from a PDF and enqueues summarize", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/text", {
-      method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-      body: await pdfUploadBody(
-        await loadSampleFile(SAMPLE_PDF_NAME, "application/pdf"),
-      ),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      fileName: string;
-      preview: string;
-      uploadId: string;
-    };
-    expect(body.fileName).toBe(SAMPLE_PDF_NAME);
-    expect(body.preview).toContain("hi there pdf");
-    // The bucket receives the extracted text, never PDF bytes.
-    expect(mockUploadTextToBucket).toHaveBeenCalledWith(
-      "user_01",
-      body.uploadId,
-      expect.stringContaining("hi there pdf"),
-    );
-    expect(mockSendEvent).toHaveBeenCalledWith("summarize", body.uploadId);
-  });
-
-  it("returns 422 for a PDF with no text layer, without side effects", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/text", {
-      method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-      body: await pdfUploadBody(
-        await loadSampleFile(SAMPLE_EMPTY_PDF_NAME, "application/pdf"),
-      ),
-    });
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as { message: string };
-    expect(body.message).toContain("scanned");
-    expect(mockUploadTextToBucket).not.toHaveBeenCalled();
-    expect(mockInsert).not.toHaveBeenCalled();
-    expect(mockSendEvent).not.toHaveBeenCalled();
-  });
-
-  it("returns 422 for unparseable PDF bytes, without side effects", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/text", {
-      method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-      body: await pdfUploadBody(
-        new File([new Uint8Array([1, 2, 3])], "x.pdf", {
-          type: "application/pdf",
-        }),
-      ),
-    });
-    expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ message: "Could not parse PDF file." });
-    expect(mockUploadTextToBucket).not.toHaveBeenCalled();
-    expect(mockInsert).not.toHaveBeenCalled();
-    expect(mockSendEvent).not.toHaveBeenCalled();
+    expect(res.status).toBe(404);
   });
 });
 
@@ -370,7 +191,7 @@ describe("POST /upload/youtube", () => {
     ).request("http://localhost/upload/youtube", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ youtubeUrl: YT_URL, chosenModelId: VALID_MODEL }),
+      body: JSON.stringify({ youtubeUrl: YT_URL }),
     });
     expect(res.status).toBe(401);
     expect(mockInsert).not.toHaveBeenCalled();
@@ -386,10 +207,7 @@ describe("POST /upload/youtube", () => {
         "Content-Type": "application/json",
         Cookie: await sessionCookieHeader("user_01"),
       },
-      body: JSON.stringify({
-        youtubeUrl: "https://example.com/watch?v=x",
-        chosenModelId: VALID_MODEL,
-      }),
+      body: JSON.stringify({ youtubeUrl: "https://example.com/watch?v=x" }),
     });
     expect(res.status).toBe(400);
     // The schema's own message must reach the client, not a generic string.
@@ -406,7 +224,7 @@ describe("POST /upload/youtube", () => {
         "Content-Type": "application/json",
         Cookie: await sessionCookieHeader("user_01"),
       },
-      body: JSON.stringify({ youtubeUrl: YT_URL, chosenModelId: VALID_MODEL }),
+      body: JSON.stringify({ youtubeUrl: YT_URL }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {

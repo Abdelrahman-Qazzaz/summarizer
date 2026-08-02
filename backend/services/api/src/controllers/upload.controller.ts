@@ -1,29 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import {
-  createAudioJob,
-  createTextJob,
-} from "../../../../shared/data/jobs.data";
-import {
-  uploadTextToBucket,
-  uploadAudioToBucket,
-} from "../../../../shared/bucket";
+import { createAudioJob } from "../../../../shared/data/jobs.data";
+import { uploadAudioToBucket } from "../../../../shared/bucket";
 import { mq } from "../../../../shared/message-queue/messageQueue";
 import type { UploadId } from "../../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../../shared/keys";
-import {
-  isPdfUpload,
-  extractPdfText,
-  PdfExtractionError,
-} from "../utils/pdfText";
-
-const TEXT_PREVIEW_CHARS = 2000;
 
 /** POST /upload/audio — speech audio (from direct upload or client-extracted from video). */
 export async function handleAudioUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const file = c.get(CTX_KEYS.uploadFile);
-  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
   const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
 
   const source = c.get(CTX_KEYS.audioSource);
@@ -38,7 +24,6 @@ export async function handleAudioUpload(c: Context) {
     fileName: file.name,
     mimeType: file.type || null,
     sizeBytes: file.size,
-    chosenModelId,
     transcriptionModelId,
   });
 
@@ -57,7 +42,6 @@ export async function handleAudioUpload(c: Context) {
 export async function handleYoutubeUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const url = c.get(CTX_KEYS.youtubeUrl);
-  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
   const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
 
   const uploadId: UploadId = randomUUID();
@@ -74,7 +58,6 @@ export async function handleYoutubeUpload(c: Context) {
     fileName: "YouTube audio",
     mimeType: null,
     sizeBytes: 0,
-    chosenModelId,
     transcriptionModelId,
   });
 
@@ -84,45 +67,5 @@ export async function handleYoutubeUpload(c: Context) {
     uploadId,
     source: "youtube" as const,
     url,
-  });
-}
-
-/** POST /upload/text — plain text or PDF files for summarization. */
-export async function handleTextUpload(c: Context) {
-  const userId = c.get(CTX_KEYS.userId);
-  const chosenModelId = c.get(CTX_KEYS.chosenModelId);
-  const file = c.get(CTX_KEYS.uploadFile);
-
-  const uploadId: UploadId = randomUUID();
-  let text: string;
-  if (isPdfUpload(file)) {
-    try {
-      text = await extractPdfText(file);
-    } catch (err) {
-      if (err instanceof PdfExtractionError)
-        return c.json({ message: err.message }, 422);
-      throw err;
-    }
-  } else text = await file.text();
-
-  await uploadTextToBucket(userId, uploadId, text);
-  await createTextJob({
-    uploadId,
-    userId,
-    fileName: file.name,
-    sizeBytes: file.size,
-    chosenModelId,
-  });
-  await mq.sendEvent(mq.queues.SUMMARIZE, uploadId);
-  return c.json({
-    message: "File uploaded",
-    uploadId,
-    fileName: file.name,
-    size: file.size,
-    mode: "text" as const,
-    preview:
-      text.length > TEXT_PREVIEW_CHARS
-        ? `${text.slice(0, TEXT_PREVIEW_CHARS)}…`
-        : text,
   });
 }

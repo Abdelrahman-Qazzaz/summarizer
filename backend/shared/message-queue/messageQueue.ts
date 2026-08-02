@@ -13,10 +13,7 @@ class MQ {
    */
   queues = {
     TRANSCRIBE: "transcribe",
-    SUMMARIZE: "summarize",
-    SUMMARIZE_CHUNK: "summarize_chunk",
     TRANSCRIBE_DONE: "transcribe_done",
-    SUMMARIZE_DONE: "summarize_done",
     // Cross-language boundary with youtube-fetcher (Python).
     YT_FETCH: "yt_fetch",
     YT_FETCH_FAILED: "yt_fetch_failed",

@@ -15,12 +15,6 @@ const app = await createApp();
 export const port = env.PORT;
 
 export const io = await startSocketServer();
-mq.listen(mq.queues.SUMMARIZE_CHUNK, async ({ uploadId, userId, delta }) => {
-  io.to(userId).emit("jobChunk", { uploadId, delta });
-});
-mq.listen(mq.queues.SUMMARIZE_DONE, async ({ uploadId, userId }) => {
-  io.to(userId).emit("jobUpdated", { uploadId });
-});
 mq.listen(mq.queues.TRANSCRIBE_DONE, async ({ uploadId, userId }) => {
   io.to(userId).emit("jobUpdated", { uploadId });
 });

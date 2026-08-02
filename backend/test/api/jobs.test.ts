@@ -6,7 +6,7 @@ const {
   mockSelect,
   mockReadTextFile,
   mockDelete,
-  mockDeleteFileFromBucket,
+  mockDeleteFilesFromBucket,
 } = vi.hoisted(() => ({
   mockLimit: vi.fn(),
   mockWhere: vi.fn(),
@@ -14,7 +14,7 @@ const {
   mockSelect: vi.fn(),
   mockReadTextFile: vi.fn(),
   mockDelete: vi.fn(),
-  mockDeleteFileFromBucket: vi.fn(),
+  mockDeleteFilesFromBucket: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -24,8 +24,8 @@ vi.mock("../../shared/db", async () => ({
 
 vi.mock("../../shared/bucket", () => ({
   readTextFile: mockReadTextFile,
-  deleteFileFromBucket: mockDeleteFileFromBucket,
-  deleteFilesFromBucket: vi.fn(),
+  deleteFileFromBucket: vi.fn(),
+  deleteFilesFromBucket: mockDeleteFilesFromBucket,
   createSignedUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
@@ -33,58 +33,16 @@ vi.mock("../../shared/bucket", () => ({
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
 const uploadId = "550e8400-e29b-41d4-a716-446655440000";
+const transcriptUploadId = "660e8400-e29b-41d4-a716-446655440001";
 
 describe("GET /jobs/summarize/:uploadId", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockWhere.mockImplementation(() => ({ limit: mockLimit }));
-    mockFrom.mockImplementation(() => ({ where: mockWhere }));
-    mockSelect.mockImplementation(() => ({ from: mockFrom }));
-  });
-  it("returns 401 without a session cookie", async () => {
-    const res = await (
-      await createApp()
-    ).request(`http://localhost/jobs/summarize/${uploadId}`);
-    expect(res.status).toBe(401);
-    expect(mockSelect).not.toHaveBeenCalled();
-  });
-  it("returns a text job for the owner", async () => {
-    mockLimit.mockResolvedValueOnce([
-      {
-        uploadId,
-        fileName: "notes.txt",
-        status: "completed",
-        summary: "A short summary.",
-        error: null,
-      },
-    ]);
-    const userId = "user_01OWNER";
+  it("is gone — summarization is a chat prompt now", async () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/summarize/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      kind: "text",
-      uploadId,
-      fileName: "notes.txt",
-      status: "completed",
-      summary: "A short summary.",
-      error: null,
-    });
-    expect(mockSelect).toHaveBeenCalledTimes(1);
-  });
-  it("returns 404 when no text job exists for the user", async () => {
-    mockLimit.mockResolvedValueOnce([]);
-    const res = await (
-      await createApp()
-    ).request(`http://localhost/jobs/summarize/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OTHER") },
+      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ message: "Job not found" });
-    expect(mockSelect).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -95,48 +53,43 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     mockFrom.mockImplementation(() => ({ where: mockWhere }));
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
   });
+
   it("returns an audio job for the owner", async () => {
-    mockLimit
-      .mockResolvedValueOnce([
-        {
-          uploadId,
-          fileName: "clip.mp3",
-          status: "processing",
-          error: null,
-        },
-      ])
-      .mockResolvedValueOnce([]);
-    const userId = "user_01OWNER";
+    mockLimit.mockResolvedValueOnce([
+      {
+        uploadId,
+        fileName: "clip.mp3",
+        status: "processing",
+        transcriptUploadId: null,
+        error: null,
+      },
+    ]);
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      kind: "audio",
       uploadId,
       fileName: "clip.mp3",
       status: "processing",
       transcript: null,
-      summary: null,
-      summaryStatus: null,
       error: null,
     });
-    expect(mockSelect).toHaveBeenCalledTimes(2);
+    expect(mockSelect).toHaveBeenCalledTimes(1);
   });
-  it("returns the transcript and summary once the child text job exists", async () => {
-    mockLimit
-      .mockResolvedValueOnce([
-        { uploadId, fileName: "clip.mp3", status: "completed", error: null },
-      ])
-      .mockResolvedValueOnce([
-        {
-          uploadId: "child-text-id",
-          status: "completed",
-          summary: "A short summary.",
-        },
-      ]);
+
+  it("returns the transcript once the job has completed", async () => {
+    mockLimit.mockResolvedValueOnce([
+      {
+        uploadId,
+        fileName: "clip.mp3",
+        status: "completed",
+        transcriptUploadId,
+        error: null,
+      },
+    ]);
     mockReadTextFile.mockResolvedValueOnce("the full transcript text");
     const res = await (
       await createApp()
@@ -145,73 +98,62 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      kind: "audio",
       uploadId,
       fileName: "clip.mp3",
       status: "completed",
       transcript: "the full transcript text",
-      summary: "A short summary.",
-      summaryStatus: "completed",
       error: null,
     });
-    expect(mockReadTextFile).toHaveBeenCalledWith("user_01OWNER", "child-text-id");
+    expect(mockReadTextFile).toHaveBeenCalledWith(
+      "user_01OWNER",
+      transcriptUploadId,
+    );
   });
-  it("surfaces summaryStatus when the downstream summary failed", async () => {
-    mockLimit
-      .mockResolvedValueOnce([
-        { uploadId, fileName: "clip.mp3", status: "completed", error: null },
-      ])
-      .mockResolvedValueOnce([
-        { uploadId: "child-text-id", status: "failed", summary: null },
-      ]);
-    mockReadTextFile.mockResolvedValueOnce("the full transcript text");
+
+  it("reports no transcript rather than failing when the bucket read fails", async () => {
+    mockLimit.mockResolvedValueOnce([
+      {
+        uploadId,
+        fileName: "clip.mp3",
+        status: "completed",
+        transcriptUploadId,
+        error: null,
+      },
+    ]);
+    mockReadTextFile.mockRejectedValueOnce(new Error("storage down"));
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      kind: "audio",
-      uploadId,
-      fileName: "clip.mp3",
-      status: "completed",
-      transcript: "the full transcript text",
-      summary: null,
-      summaryStatus: "failed",
-      error: null,
-    });
+    expect(((await res.json()) as { transcript: null }).transcript).toBeNull();
   });
-  it("does not read a stale transcript while the audio job is not completed", async () => {
-    // A re-run resets the audio row to "queued" while the previous child text
-    // row/file still exist; the transcript must not be read in that window.
-    mockLimit
-      .mockResolvedValueOnce([
-        { uploadId, fileName: "clip.mp3", status: "queued", error: null },
-      ])
-      .mockResolvedValueOnce([
-        { uploadId: "child-text-id", status: "queued", summary: null },
-      ]);
+
+  it("does not read a stale transcript while the job is not completed", async () => {
+    // A re-run resets the row to "queued" while the previous transcript is
+    // still in the bucket; it must not be read in that window.
+    mockLimit.mockResolvedValueOnce([
+      {
+        uploadId,
+        fileName: "clip.mp3",
+        status: "queued",
+        transcriptUploadId,
+        error: null,
+      },
+    ]);
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      kind: "audio",
-      uploadId,
-      fileName: "clip.mp3",
-      status: "queued",
-      transcript: null,
-      summary: null,
-      summaryStatus: "queued",
-      error: null,
-    });
+    expect(((await res.json()) as { transcript: null }).transcript).toBeNull();
     expect(mockReadTextFile).not.toHaveBeenCalled();
   });
+
   it("returns 404 when no audio job exists for the user", async () => {
-    mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockLimit.mockResolvedValueOnce([]);
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
@@ -219,7 +161,14 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Job not found" });
-    expect(mockSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 401 without a session cookie", async () => {
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/transcribe/${uploadId}`);
+    expect(res.status).toBe(401);
+    expect(mockSelect).not.toHaveBeenCalled();
   });
 });
 
@@ -232,10 +181,19 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
     mockDelete.mockImplementation(() => ({
       where: () => Promise.resolve(),
     }));
-    mockDeleteFileFromBucket.mockResolvedValue(undefined);
+    mockDeleteFilesFromBucket.mockResolvedValue(undefined);
   });
-  it("also deletes the orphaned child transcript file", async () => {
-    mockLimit.mockResolvedValueOnce([{ uploadId: "child-text-id" }]);
+
+  it("also deletes the transcript file, which is keyed separately", async () => {
+    mockLimit.mockResolvedValueOnce([
+      {
+        uploadId,
+        fileName: "clip.mp3",
+        status: "completed",
+        transcriptUploadId,
+        error: null,
+      },
+    ]);
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
@@ -243,12 +201,22 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("user_01OWNER", uploadId);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("user_01OWNER", "child-text-id");
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(2);
+    expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith("user_01OWNER", [
+      uploadId,
+      transcriptUploadId,
+    ]);
   });
-  it("deletes only the audio file when there is no child transcript", async () => {
-    mockLimit.mockResolvedValueOnce([]);
+
+  it("deletes only the audio when the job never produced a transcript", async () => {
+    mockLimit.mockResolvedValueOnce([
+      {
+        uploadId,
+        fileName: "clip.mp3",
+        status: "failed",
+        transcriptUploadId: null,
+        error: "boom",
+      },
+    ]);
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
@@ -256,9 +224,11 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith("user_01OWNER", uploadId);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith("user_01OWNER", [
+      uploadId,
+    ]);
   });
+
   it("scopes bucket deletes to the requesting user", async () => {
     // Ownership is structural: the bucket key is <userId>/<uploadId>, so a
     // non-owner's delete resolves to a path that doesn't exist and no-ops.
@@ -270,10 +240,9 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01INTRUDER") },
     });
     expect(res.status).toBe(200);
-    expect(mockDeleteFileFromBucket).toHaveBeenCalledWith(
-      "user_01INTRUDER",
+    expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith("user_01INTRUDER", [
       uploadId,
-    );
+    ]);
   });
 });
 
@@ -284,15 +253,6 @@ describe("GET /jobs", () => {
     fileName: "lecture.mp3",
     status: "completed",
     createdAt: new Date("2026-01-02T00:00:00.000Z"),
-    chosenModelId: "prompt-model",
-    error: null,
-  };
-  const textRow = {
-    uploadId: "550e8400-e29b-41d4-a716-44665544000b",
-    fileName: "notes.txt",
-    status: "completed",
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    chosenModelId: "prompt-model",
     error: null,
   };
 
@@ -304,51 +264,41 @@ describe("GET /jobs", () => {
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
   });
 
-  it("merges both tables newest-first when no kind is given", async () => {
-    mockLimit
-      .mockResolvedValueOnce([audioRow])
-      .mockResolvedValueOnce([textRow]);
+  it("returns the user's transcription jobs", async () => {
+    mockLimit.mockResolvedValueOnce([audioRow]);
     const res = await (
       await createApp()
     ).request("http://localhost/jobs", {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { jobs: { kind: string }[] };
-    expect(body.jobs.map((job) => job.kind)).toEqual([
-      "audio",
-      "text",
-    ]);
-    expect(mockSelect).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns only audio jobs for kind=audio, without querying text jobs", async () => {
-    mockLimit.mockResolvedValueOnce([audioRow]);
-    const res = await (
-      await createApp()
-    ).request("http://localhost/jobs?kind=audio", {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { jobs: { kind: string }[] };
-    expect(body.jobs.map((job) => job.kind)).toEqual([
-      "audio",
-    ]);
-    // The excluded table isn't queried at all: `limit` is per table, so
-    // filtering after the merge would return short pages.
+    const body = (await res.json()) as {
+      jobs: { uploadId: string }[];
+      nextCursor: string | null;
+    };
+    expect(body.jobs.map((job) => job.uploadId)).toEqual([audioRow.uploadId]);
+    expect(body.nextCursor).toBeNull();
+    // One table now, so one query.
     expect(mockSelect).toHaveBeenCalledTimes(1);
   });
 
-  it("returns only text jobs for kind=text, without querying audio jobs", async () => {
-    mockLimit.mockResolvedValueOnce([textRow]);
+  it("issues a cursor when the over-fetch shows another page", async () => {
+    const rows = Array.from({ length: 21 }, (_, index) => ({
+      ...audioRow,
+      uploadId: `550e8400-e29b-41d4-a716-4466554400${String(index).padStart(2, "0")}`,
+    }));
+    mockLimit.mockResolvedValueOnce(rows);
     const res = await (
       await createApp()
-    ).request("http://localhost/jobs?kind=text", {
+    ).request("http://localhost/jobs", {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { jobs: { kind: string }[] };
-    expect(body.jobs.map((job) => job.kind)).toEqual(["text"]);
-    expect(mockSelect).toHaveBeenCalledTimes(1);
+    const body = (await res.json()) as {
+      jobs: unknown[];
+      nextCursor: string | null;
+    };
+    expect(body.jobs).toHaveLength(20);
+    expect(body.nextCursor).toBeTruthy();
   });
 });

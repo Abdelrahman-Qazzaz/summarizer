@@ -8,7 +8,6 @@ import {
   validateReqBody,
 } from "../middleware/validate.middleware";
 import {
-  textUploadSchema,
   audioUploadSchema,
   youtubeUploadSchema,
 } from "../schema/upload.schema";
@@ -25,19 +24,10 @@ uploadRouter.route("/image", imagesRouter);
 uploadRouter.use("*", requireAuth, uploadRateLimiter);
 
 uploadRouter.post(
-  "/text",
-  validateMultipart(textUploadSchema, [
-    FORM_KEYS.uploadFile,
-    FORM_KEYS.chosenModelId,
-  ]),
-  uploadController.handleTextUpload,
-);
-uploadRouter.post(
   "/audio",
   validateMultipart(audioUploadSchema, [
     FORM_KEYS.uploadFile,
     FORM_KEYS.audioSource,
-    FORM_KEYS.chosenModelId,
     FORM_KEYS.transcriptionModelId,
   ]),
   uploadController.handleAudioUpload,

@@ -69,19 +69,8 @@ export const apiEnvSchema = baseEnvSchema.extend({
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
 });
 
-/**
- * Which queue consumers a worker process attaches. Run the same image with
- * `transcribe` and `summarize` to scale the two pools independently; `all`
- * (the default) runs both in one process, which keeps local dev a single
- * process.
- */
-const workerRoleSchema = z
-  .enum(["transcribe", "summarize", "all"])
-  .default("all");
-
-export const workerEnvSchema = baseEnvSchema.extend({
-  WORKER_ROLE: workerRoleSchema,
-});
+/** The worker consumes one queue, so it needs nothing beyond the base env. */
+export const workerEnvSchema = baseEnvSchema;
 
 const drizzleEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
@@ -90,7 +79,6 @@ const drizzleEnvSchema = z.object({
 export type BaseEnv = z.infer<typeof baseEnvSchema>;
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
-export type WorkerRole = z.infer<typeof workerRoleSchema>;
 
 /** For `drizzle-kit` only — does not require MQ, WorkOS, etc. */
 export const drizzleEnv = parseEnv(drizzleEnvSchema, "drizzle");

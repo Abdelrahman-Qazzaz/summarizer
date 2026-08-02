@@ -11,7 +11,6 @@ import { CTX_KEYS } from "../../../../shared/keys";
 import {
   jobReqParamSchema,
   jobsListQuerySchema,
-  jobRerunBodySchema,
   jobTranscribeRerunBodySchema,
 } from "../schema/jobs.schema";
 
@@ -25,21 +24,10 @@ jobsRouter.get(
   jobsController.handleGetTranscribeJob,
 );
 
-jobsRouter.get(
-  `/summarize/:${CTX_KEYS.uploadId}`,
-  validateReqParams(jobReqParamSchema),
-  jobsController.handleGetSummarizeJob,
-);
-
 jobsRouter.delete(
   `/transcribe/:${CTX_KEYS.uploadId}`,
   validateReqParams(jobReqParamSchema),
   jobsController.handleDeleteTranscribeJob,
-);
-jobsRouter.delete(
-  `/summarize/:${CTX_KEYS.uploadId}`,
-  validateReqParams(jobReqParamSchema),
-  jobsController.handleDeleteSummarizeJob,
 );
 
 jobsRouter.post(
@@ -47,12 +35,6 @@ jobsRouter.post(
   validateReqParams(jobReqParamSchema),
   validateReqBody(jobTranscribeRerunBodySchema),
   jobsController.handleRerunTranscribeJob,
-);
-jobsRouter.post(
-  `/summarize/:${CTX_KEYS.uploadId}/rerun`,
-  validateReqParams(jobReqParamSchema),
-  validateReqBody(jobRerunBodySchema),
-  jobsController.handleRerunSummarizeJob,
 );
 
 jobsRouter.get(

@@ -8,23 +8,9 @@ export type UploadId = `${string}-${string}-${string}-${string}-${string}`;
  */
 type TranscribeEvent = UploadId;
 
-/** `summarize` — like `transcribe`, the bare `UploadId` string, not an object. */
-type SummarizeEvent = UploadId;
-
 type TranscribeDoneEvent = {
   uploadId: UploadId;
   userId: string;
-};
-
-type SummarizeDoneEvent = {
-  uploadId: UploadId;
-  userId: string;
-};
-
-type SummarizeChunkEvent = {
-  uploadId: UploadId;
-  userId: string;
-  delta: string;
 };
 
 /** `yt_fetch` — api → youtube-fetcher: download this URL's audio into the bucket. */
@@ -52,10 +38,7 @@ type YtFetchFailedEvent = {
  */
 export type QueuePayloads = {
   transcribe: TranscribeEvent;
-  summarize: SummarizeEvent;
-  summarize_chunk: SummarizeChunkEvent;
   transcribe_done: TranscribeDoneEvent;
-  summarize_done: SummarizeDoneEvent;
   yt_fetch: YtFetchEvent;
   yt_fetch_failed: YtFetchFailedEvent;
 };
