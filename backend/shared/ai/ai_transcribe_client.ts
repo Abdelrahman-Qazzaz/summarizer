@@ -1,5 +1,21 @@
 import { DeepgramClient } from "@deepgram/sdk";
 import { getBaseEnv } from "../env";
+import {
+  claimAudioJob,
+  completeAudioJob,
+  failAudioJob,
+} from "../data/jobs.data";
+import {
+  AUDIO_URL_TTL_SECONDS,
+  createSignedUrl,
+  uploadTextToBucket,
+} from "../bucket";
+import type { UploadId } from "../types/mq.types";
+import { randomUUID } from "crypto";
+import { logger } from "../logger";
+import { mq } from "../message-queue/messageQueue";
+
+const log = logger.child({ ai_transcribe_client: "transcribe" });
 
 const deepgram = new DeepgramClient({ apiKey: getBaseEnv().DEEPGRAM_API_KEY });
 
@@ -45,6 +61,52 @@ export async function transcribe(
   // `paragraphs.transcript` is the same text broken into paragraphs, which
   // reads better as summarizer input than the single unbroken line.
   return alternative?.paragraphs?.transcript ?? alternative?.transcript ?? "";
+}
+
+export async function handleTranscribeJob(uploadId: UploadId) {
+  try {
+    const job = await claimAudioJob(uploadId);
+
+    if (!job) return;
+
+    // A signed URL rather than the bytes: the provider fetches the object
+    // itself, so audio length never becomes this process's memory problem.
+    const audioUrl = await createSignedUrl(
+      job.userId,
+      uploadId,
+      AUDIO_URL_TTL_SECONDS,
+    );
+    const model = job.transcriptionModelId ?? DEFAULT_TRANSCRIBE_MODEL;
+    const transcript = await transcribe(model, audioUrl);
+    if (!transcript.trim()) {
+      throw new Error("Transcription produced no text");
+    }
+    log.debug("Transcription produced", {
+      uploadId,
+      length: transcript.length,
+    });
+
+    // The audio occupies this job's own uploadId, so the transcript needs a key
+    // of its own. A re-run reuses the key it already has and overwrites the
+    // object — hence the upsert. Minting a fresh id per run would instead leave
+    // the previous transcript orphaned in the bucket.
+    const transcriptUploadId: UploadId =
+      (job.transcriptUploadId as UploadId | null) ?? randomUUID();
+    await uploadTextToBucket(job.userId, transcriptUploadId, transcript, {
+      upsert: true,
+    });
+
+    await completeAudioJob(uploadId, transcriptUploadId);
+    await mq.sendEvent(mq.queues.TRANSCRIBE_DONE, {
+      uploadId,
+      userId: job.userId,
+    });
+  } catch (err) {
+    log.error("Transcription job failed", err, { uploadId });
+    await failAudioJob(uploadId);
+
+    throw err;
+  }
 }
 
 export const DEFAULT_TRANSCRIBE_MODEL = "nova-3";
