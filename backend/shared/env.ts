@@ -49,6 +49,7 @@ const baseEnvSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   OPENROUTER_API_KEY: z.string().min(1),
+  DEEPGRAM_API_KEY: z.string().min(1),
   NODE_ENV: nodeEnvSchema,
 });
 

@@ -7,6 +7,7 @@ const validBase = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "test-key",
   OPENROUTER_API_KEY: "test-key",
+  DEEPGRAM_API_KEY: "test-key",
   NODE_ENV: "test" as const,
 };
 

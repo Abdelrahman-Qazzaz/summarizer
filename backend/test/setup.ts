@@ -7,6 +7,7 @@ process.env.MQ_URL = "amqp://localhost";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-key";
 process.env.OPENROUTER_API_KEY = "test-key";
+process.env.DEEPGRAM_API_KEY = "test-key";
 process.env.WORKOS_API_KEY = "sk_test";
 process.env.WORKOS_CLIENT_ID = "client_test";
 process.env.SESSION_SECRET = "test-session-secret-must-be-32-chars-min";
