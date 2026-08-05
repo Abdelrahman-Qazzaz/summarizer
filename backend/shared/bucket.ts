@@ -20,6 +20,13 @@ export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 export const IMAGE_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 /**
+ * How long an audio URL handed to the transcription provider stays valid. Long
+ * enough to outlive a multi-hour file's transcription job and short enough that
+ * the link is useless by the time the job row is history.
+ */
+export const AUDIO_URL_TTL_SECONDS = 60 * 60;
+
+/**
  * The single handle every object operation (upload/download/remove/sign) goes
  * through, so `supabase.storage` and the bucket name are named in one place.
  * (pingBucket uses the bucket-management API `getBucket`, not this handle.)
@@ -150,12 +157,17 @@ export async function deleteFilesFromBucket(
  */
 
 /*
-Only images use this today (client thumbnails + handing the model a fetchable URL for vision input).
+Images (client thumbnails + handing the model a fetchable URL for vision input)
+and audio, which the transcription provider fetches for itself.
 */
-export async function createSignedUrl(userId: string, uploadId: UploadId) {
+export async function createSignedUrl(
+  userId: string,
+  uploadId: UploadId,
+  ttlSeconds: number,
+) {
   const { data, error } = await bucket().createSignedUrl(
     objectPath(userId, uploadId),
-    IMAGE_URL_TTL_SECONDS,
+    ttlSeconds,
   );
 
   if (error) throw error;
