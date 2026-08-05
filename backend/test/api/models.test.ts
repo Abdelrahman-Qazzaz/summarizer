@@ -17,7 +17,7 @@ vi.mock("../../shared/ai/ai_client", async (importActual) => {
 
 // Now this import gets the mocked module, with real DEFAULT_MODELS intact
 
-import { createApp } from "../../services/api/app";
+import { createApp } from "../../api/app";
 import { sessionCookieHeader } from "../helpers/session";
 import { DEFAULT_CHAT_MODEL } from "../../shared/ai/ai_chat_client";
 

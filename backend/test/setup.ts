@@ -18,7 +18,7 @@ process.env.WS_PORT = "4000";
 process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
 process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
 
-vi.mock("../services/api/src/rateLimit/storage", async () => {
+vi.mock("../api/src/rateLimit/storage", async () => {
   const { createMockRateLimitStore } =
     await import("./helpers/rateLimitStoreMock");
   return { createRateLimitStore: createMockRateLimitStore };
@@ -26,6 +26,6 @@ vi.mock("../services/api/src/rateLimit/storage", async () => {
 
 // createApp() runs a fail-fast preflight against real third-party services.
 // Tests build the app against fake hosts, so stub the preflight to a no-op.
-vi.mock("../services/api/startup", () => ({
+vi.mock("../api/startup", () => ({
   verifyApiServices: vi.fn(async () => {}),
 }));

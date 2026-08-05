@@ -1,4 +1,4 @@
-import { RateLimitStoreUnavailableError } from "../../services/api/src/rateLimit/errors";
+import { RateLimitStoreUnavailableError } from "../../api/src/rateLimit/errors";
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 

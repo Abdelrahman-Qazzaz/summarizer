@@ -58,7 +58,7 @@ vi.mock("../../shared/bucket", () => ({
 import { desc } from "drizzle-orm";
 // Resolves to the mocked module above, so these are the stub column names.
 import { Conversations, ImageUploads } from "../../shared/db";
-import { createApp } from "../../services/api/app";
+import { createApp } from "../../api/app";
 import { sessionCookieHeader } from "../helpers/session";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";

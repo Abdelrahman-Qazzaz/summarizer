@@ -5,7 +5,7 @@ import pytest
 import contract as contract_module
 from contract import _Contract
 
-# /contract serves every backend queue (backend/services/api/app.ts); the
+# /contract serves every backend queue (backend/api/app.ts); the
 # fetcher must pick out only the ones it uses.
 FULL_CONTRACT = {
     "queues": {

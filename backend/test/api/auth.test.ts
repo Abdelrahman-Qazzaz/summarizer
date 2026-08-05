@@ -11,9 +11,9 @@ const { mockGetRiderctUrl, mockGetUserIdFromCode, mockInsert } = vi.hoisted(
   }),
 );
 
-vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {
+vi.mock("../../api/src/auth/auth", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../services/api/src/auth/auth")>();
+    await importOriginal<typeof import("../../api/src/auth/auth")>();
   return {
     ...actual,
     getRiderctUrl: mockGetRiderctUrl,
@@ -26,9 +26,9 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-import { createApp } from "../../services/api/app";
+import { createApp } from "../../api/app";
 import { sessionCookieHeader } from "../helpers/session";
-import { WORKOS_REDIRECT_URI } from "../../services/api/src/auth/auth";
+import { WORKOS_REDIRECT_URI } from "../../api/src/auth/auth";
 import { COOKIE_KEYS } from "../../shared/keys";
 
 describe("GET /auth/me", () => {

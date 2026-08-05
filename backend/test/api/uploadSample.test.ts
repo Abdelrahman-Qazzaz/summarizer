@@ -47,7 +47,7 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
   },
 }));
 
-import { createApp } from "../../services/api/app";
+import { createApp } from "../../api/app";
 import { sessionCookieHeader } from "../helpers/session";
 import { loadSampleFile, SAMPLE_AUDIO_NAME } from "../helpers/sampleFiles";
 

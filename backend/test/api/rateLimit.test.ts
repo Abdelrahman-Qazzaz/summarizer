@@ -25,9 +25,9 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-vi.mock("../../services/api/src/auth/auth", async (importOriginal) => {
+vi.mock("../../api/src/auth/auth", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../services/api/src/auth/auth")>();
+    await importOriginal<typeof import("../../api/src/auth/auth")>();
   return {
     ...actual,
     getUserIdFromCode: mockGetUserIdFromCode,
@@ -43,7 +43,7 @@ vi.mock("../../shared/ai/ai_client", async (importActual) => {
   };
 });
 
-import { createApp } from "../../services/api/app";
+import { createApp } from "../../api/app";
 import { sessionCookieHeader } from "../helpers/session";
 
 const uploadId = "550e8400-e29b-41d4-a716-446655440000";

@@ -82,11 +82,11 @@ vi.mock("../../shared/ai/ai_client", async (importActual) => {
 
 // Resolves to the mocked module above, so this is the stub table.
 import { ImageUploads } from "../../shared/db";
-import { createApp } from "../../services/api/app";
+import { createApp } from "../../api/app";
 import {
   MAX_CONTEXT_CHARS,
   MAX_RESPONSE_TOKENS,
-} from "../../services/api/src/controllers/messages.controller";
+} from "../../api/src/controllers/messages.controller";
 import { sessionCookieHeader } from "../helpers/session";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
@@ -141,9 +141,7 @@ beforeEach(() => {
   // within one request, so sharing a mock would make either one's rows depend
   // on the other's call order.
   mockFrom.mockImplementation((table: unknown) =>
-    table === ImageUploads
-      ? { where: mockImageWhere }
-      : { where: mockWhere },
+    table === ImageUploads ? { where: mockImageWhere } : { where: mockWhere },
   );
   mockWhere.mockImplementation(() => ({
     orderBy: mockOrderBy,
@@ -319,7 +317,8 @@ describe("POST /conversations/:conversationId/messages", () => {
       ) => {
         await opts.onDelta("Hello ");
         client.abort(); // the user closes the tab mid-answer
-        for (const chunk of ["w", "o", "r", "l", "d"]) await opts.onDelta(chunk);
+        for (const chunk of ["w", "o", "r", "l", "d"])
+          await opts.onDelta(chunk);
         return "Hello world";
       },
     );
@@ -491,7 +490,12 @@ describe("POST /conversations/:conversationId/messages", () => {
       mockLimit
         .mockResolvedValueOnce([{ id: conversationId }]) // ownership
         .mockResolvedValueOnce([
-          { id: messageId, role: "user", content: "Summarise this", audioUploadId },
+          {
+            id: messageId,
+            role: "user",
+            content: "Summarise this",
+            audioUploadId,
+          },
         ]) // history
         .mockResolvedValueOnce([transcriptJob()]); // its transcript
       mockReadTextFile.mockResolvedValueOnce(transcript);
@@ -574,9 +578,7 @@ describe("POST /conversations/:conversationId/messages", () => {
           { role: "assistant", content: `middle ${long}` },
         ]); // history
       // Half the budget: one ~third-budget history turn still fits, two don't.
-      mockReadTextFile.mockResolvedValueOnce(
-        "y".repeat(MAX_CONTEXT_CHARS / 2),
-      );
+      mockReadTextFile.mockResolvedValueOnce("y".repeat(MAX_CONTEXT_CHARS / 2));
       mockInsertReturning
         .mockResolvedValueOnce([userRow])
         .mockResolvedValueOnce([assistantRow]);
@@ -708,7 +710,10 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("rejects an empty message with 400", async () => {
-    const res = await postMessage({ messageContent: "   ", chosenModelId: modelId });
+    const res = await postMessage({
+      messageContent: "   ",
+      chosenModelId: modelId,
+    });
     expect(res.status).toBe(400);
     expect(mockSelect).not.toHaveBeenCalled();
   });

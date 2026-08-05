@@ -1,0 +1,24 @@
+import { createMiddleware } from "hono/factory";
+import { getCookie } from "hono/cookie";
+import { verify } from "hono/jwt";
+import { getApiEnv } from "../../../shared/env";
+
+import { COOKIE_KEYS, CTX_KEYS } from "../../../shared/keys";
+import { logger } from "../../../shared/logger";
+
+export const requireAuth = createMiddleware(async (c, next) => {
+  const token = getCookie(c, COOKIE_KEYS.session);
+  if (!token) return c.json({ message: "Unauthorized" }, 401);
+  try {
+    const payload = await verify(token, getApiEnv().SESSION_SECRET, "HS256");
+    const userId = payload.sub;
+    if (typeof userId !== "string") {
+      return c.json({ message: "Unauthorized" }, 401);
+    }
+    c.set(CTX_KEYS.userId, userId);
+    await next();
+  } catch (error) {
+    logger.debug("Session token verification failed", { error: String(error) });
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+});

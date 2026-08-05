@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createApp } from "../../services/api/app";
+import { createApp } from "../../api/app";
 import { mq } from "../../shared/message-queue/messageQueue";
 import { BUCKET, MAX_AUDIO_BYTES } from "../../shared/bucket";
 
