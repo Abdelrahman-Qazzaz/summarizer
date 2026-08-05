@@ -13,6 +13,7 @@
     "doppler": "set -a; [ -f .env ] && . ./.env; set +a; exec doppler run --"
   },
   "dependencies": {
+    "@deepgram/sdk": "^5.7.0",
     "@hono/node-server": "1.19.2",
     "@openrouter/sdk": "^0.12.79",
     "@supabase/supabase-js": "2.103.0",
