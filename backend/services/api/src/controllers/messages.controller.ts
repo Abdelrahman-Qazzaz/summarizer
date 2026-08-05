@@ -8,8 +8,8 @@ import {
   type MessageRow,
 } from "../data/messages.data";
 import { CTX_KEYS } from "../../../../shared/keys";
-import { buildUserTurn, chatAI } from "../../../../shared/ai/ai_client";
-import type { ChatTurn } from "../../../../shared/ai/ai_client";
+import { buildUserTurn, chatAI } from "../../../../shared/ai/ai_chat_client";
+import type { ChatTurn } from "../../../../shared/ai/ai_chat_client";
 import { SSEEventQueue } from "../utils/sse";
 import { logger } from "../../../../shared/logger";
 import {

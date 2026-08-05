@@ -3,7 +3,7 @@ import { CTX_KEYS, FORM_KEYS } from "../../../../shared/keys";
 import {
   validateModelOutput,
   DEFAULT_MODELS,
-} from "../../../../shared/ai/ai_client";
+} from "../../../../shared/ai/ai_chat_client";
 import { MAX_AUDIO_BYTES } from "../../../../shared/bucket";
 
 const YOUTUBE_HOSTS = new Set([

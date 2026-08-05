@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CTX_KEYS } from "../../../../shared/keys";
 import { jobStatusEnum } from "../../../../shared/db";
-import { validateModelOutput } from "../../../../shared/ai/ai_client";
+import { validateModelOutput } from "../../../../shared/ai/ai_chat_client";
 
 export const jobReqParamSchema = z.object({
   [CTX_KEYS.uploadId]: z.string().uuid(),

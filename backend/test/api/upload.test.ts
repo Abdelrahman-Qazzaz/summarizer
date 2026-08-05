@@ -24,7 +24,7 @@ const { mockGetModelData } = vi.hoisted(() => ({
 vi.mock("../../shared/ai/ai_client", async (importActual) => {
   // importActual is the correct way to get real values inside vi.mock
   const actual =
-    await importActual<typeof import("../../shared/ai/ai_client")>();
+    await importActual<typeof import("../../shared/ai/ai_chat_client")>();
   return {
     ...actual, // preserves DEFAULT_MODELS and anything else
     getModelData: mockGetModelData, // override only what needs mocking

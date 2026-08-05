@@ -2,7 +2,7 @@ import { verifyServices } from "../../shared/preflight";
 import { startMQ } from "../../shared/message-queue/messageQueue";
 import { pingDb } from "../../shared/db";
 import { pingBucket } from "../../shared/bucket";
-import { pingAi } from "../../shared/ai/ai_client";
+import { pingAi } from "../../shared/ai/ai_chat_client";
 
 /**
  * Fail-fast preflight for the worker: aborts startup if any third-party

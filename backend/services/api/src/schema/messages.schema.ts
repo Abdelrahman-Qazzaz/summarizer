@@ -3,7 +3,7 @@ import { CTX_KEYS } from "../../../../shared/keys";
 import {
   validateModelInput,
   validateModelOutput,
-} from "../../../../shared/ai/ai_client";
+} from "../../../../shared/ai/ai_chat_client";
 
 export const MAX_MESSAGE_LENGTH = 50_000;
 

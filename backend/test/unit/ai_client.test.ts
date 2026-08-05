@@ -24,7 +24,7 @@ import {
   getModelData,
   validateModelInput,
   validateModelOutput,
-} from "../../shared/ai/ai_client";
+} from "../../shared/ai/ai_chat_client";
 
 const sampleModelData = {
   [DEFAULT_MODELS.PROMPT]: {

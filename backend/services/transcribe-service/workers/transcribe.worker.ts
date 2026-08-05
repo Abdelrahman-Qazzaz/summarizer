@@ -8,7 +8,7 @@ import { getAudioFile, uploadTextToBucket } from "../../../shared/bucket";
 import { transcribe } from "../../../shared/ai/transcribe";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { randomUUID } from "crypto";
-import { DEFAULT_MODELS } from "../../../shared/ai/ai_client";
+import { DEFAULT_MODELS } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
 
 const log = logger.child({ worker: "transcribe" });

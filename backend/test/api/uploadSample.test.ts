@@ -14,7 +14,7 @@ const {
 
 vi.mock("../../shared/ai/ai_client", async (importActual) => {
   const actual =
-    await importActual<typeof import("../../shared/ai/ai_client")>();
+    await importActual<typeof import("../../shared/ai/ai_chat_client")>();
   return {
     ...actual,
     validateModelOutput: mockValidateModel,
