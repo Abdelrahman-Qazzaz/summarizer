@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../../shared/keys";
-import {
-  validateModelOutput,
-  DEFAULT_MODELS,
-} from "../../../../shared/ai/ai_chat_client";
+import { validateModelOutput } from "../../../../shared/ai/ai_chat_client";
 import { MAX_AUDIO_BYTES } from "../../../../shared/bucket";
+import { DEFAULT_TRANSCRIBE_MODEL } from "../../../../shared/ai/ai_transcribe_client";
 
 const YOUTUBE_HOSTS = new Set([
   "youtube.com",
@@ -36,7 +34,7 @@ const blankToUndefined = (v: unknown) =>
  */
 const transcriptionModelField = z.preprocess(
   blankToUndefined,
-  z.string().min(1).optional().default(DEFAULT_MODELS.TRANSCRIBE),
+  z.string().min(1).optional().default(DEFAULT_TRANSCRIBE_MODEL),
 );
 
 /**

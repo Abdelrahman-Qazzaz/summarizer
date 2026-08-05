@@ -20,15 +20,15 @@ vi.mock("@openrouter/sdk", () => ({
 
 import {
   buildUserTurn,
-  DEFAULT_MODELS,
+  DEFAULT_CHAT_MODEL,
   getModelData,
   validateModelInput,
   validateModelOutput,
 } from "../../shared/ai/ai_chat_client";
 
 const sampleModelData = {
-  [DEFAULT_MODELS.PROMPT]: {
-    id: DEFAULT_MODELS.PROMPT,
+  [DEFAULT_CHAT_MODEL]: {
+    id: DEFAULT_CHAT_MODEL,
     name: "GPT-4o Mini",
     description: "Fast chat model",
     knowledgeCutoff: null,
@@ -41,7 +41,7 @@ const sampleModelData = {
 };
 
 const openRouterListModel = {
-  id: DEFAULT_MODELS.PROMPT,
+  id: DEFAULT_CHAT_MODEL,
   name: "GPT-4o Mini",
   description: "Fast chat model",
   knowledgeCutoff: null,
@@ -97,13 +97,13 @@ describe("validateModelInput", () => {
   it("returns true for a modality the model accepts", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(await validateModelInput(DEFAULT_MODELS.PROMPT, "image")).toBe(true);
+    expect(await validateModelInput(DEFAULT_CHAT_MODEL, "image")).toBe(true);
   });
 
   it("returns false for a modality the model does not accept", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(await validateModelInput(DEFAULT_MODELS.PROMPT, "audio")).toBe(false);
+    expect(await validateModelInput(DEFAULT_CHAT_MODEL, "audio")).toBe(false);
   });
 
   it("returns false for an unknown model id", async () => {
@@ -123,18 +123,18 @@ describe("buildUserTurn", () => {
   });
 
   it("puts the text first, then one part per image", () => {
-    expect(buildUserTurn("What is this?", ["https://bucket.test/a.png"])).toEqual(
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "What is this?" },
-          {
-            type: "image_url",
-            imageUrl: { url: "https://bucket.test/a.png" },
-          },
-        ],
-      },
-    );
+    expect(
+      buildUserTurn("What is this?", ["https://bucket.test/a.png"]),
+    ).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "What is this?" },
+        {
+          type: "image_url",
+          imageUrl: { url: "https://bucket.test/a.png" },
+        },
+      ],
+    });
   });
 });
 
@@ -147,7 +147,7 @@ describe("validateModelOutput", () => {
   it("returns true for a known model id from cache", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    const result = await validateModelOutput(DEFAULT_MODELS.PROMPT, "text");
+    const result = await validateModelOutput(DEFAULT_CHAT_MODEL, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).not.toHaveBeenCalled();
@@ -167,7 +167,7 @@ describe("validateModelOutput", () => {
     mockCheckCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
-    const result = await validateModelOutput(DEFAULT_MODELS.PROMPT, "text");
+    const result = await validateModelOutput(DEFAULT_CHAT_MODEL, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).toHaveBeenCalled();
@@ -176,8 +176,8 @@ describe("validateModelOutput", () => {
   it("returns false for a modality the model does not produce", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(
-      await validateModelOutput(DEFAULT_MODELS.PROMPT, "transcription"),
-    ).toBe(false);
+    expect(await validateModelOutput(DEFAULT_CHAT_MODEL, "transcription")).toBe(
+      false,
+    );
   });
 });

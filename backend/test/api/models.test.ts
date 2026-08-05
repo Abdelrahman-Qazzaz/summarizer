@@ -16,13 +16,14 @@ vi.mock("../../shared/ai/ai_client", async (importActual) => {
 });
 
 // Now this import gets the mocked module, with real DEFAULT_MODELS intact
-import { DEFAULT_MODELS } from "../../shared/ai/ai_chat_client";
+
 import { createApp } from "../../services/api/app";
 import { sessionCookieHeader } from "../helpers/session";
+import { DEFAULT_CHAT_MODEL } from "../../shared/ai/ai_chat_client";
 
 const sampleModelData = {
-  [DEFAULT_MODELS.PROMPT]: {
-    id: DEFAULT_MODELS.PROMPT,
+  [DEFAULT_CHAT_MODEL]: {
+    id: DEFAULT_CHAT_MODEL,
     name: "GPT-4o Mini",
     description: "Fast chat model",
     knowledgeCutoff: null,

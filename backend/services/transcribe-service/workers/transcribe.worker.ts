@@ -4,11 +4,17 @@ import {
   completeAudioJob,
   failAudioJob,
 } from "../../../shared/data/jobs.data";
-import { getAudioFile, uploadTextToBucket } from "../../../shared/bucket";
-import { transcribe } from "../../../shared/ai/transcribe";
+import {
+  AUDIO_URL_TTL_SECONDS,
+  createSignedUrl,
+  uploadTextToBucket,
+} from "../../../shared/bucket";
+import {
+  DEFAULT_TRANSCRIBE_MODEL,
+  transcribe,
+} from "../../../shared/ai/ai_transcribe_client";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { randomUUID } from "crypto";
-import { DEFAULT_MODELS } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
 
 const log = logger.child({ worker: "transcribe" });
@@ -19,9 +25,15 @@ export async function handleTranscribeJob(uploadId: UploadId) {
 
     if (!job) return;
 
-    const audio = await getAudioFile(job.userId, uploadId);
-    const model = job.transcriptionModelId ?? DEFAULT_MODELS.TRANSCRIBE;
-    const transcript = await transcribe(model, audio);
+    // A signed URL rather than the bytes: the provider fetches the object
+    // itself, so audio length never becomes this process's memory problem.
+    const audioUrl = await createSignedUrl(
+      job.userId,
+      uploadId,
+      AUDIO_URL_TTL_SECONDS,
+    );
+    const model = job.transcriptionModelId ?? DEFAULT_TRANSCRIBE_MODEL;
+    const transcript = await transcribe(model, audioUrl);
     if (!transcript.trim()) {
       throw new Error("Transcription produced no text");
     }

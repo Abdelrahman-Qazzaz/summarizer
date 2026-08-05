@@ -189,7 +189,4 @@ export async function validateModelInput(
   return Boolean(model?.inputModalities.includes(requiredModality));
 }
 
-export const DEFAULT_MODELS = {
-  TRANSCRIBE: "openai/gpt-4o-mini-transcribe",
-  PROMPT: "openai/gpt-4o-mini",
-};
+export const DEFAULT_CHAT_MODEL = "openai/gpt-4o-mini";

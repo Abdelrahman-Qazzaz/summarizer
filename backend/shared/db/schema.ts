@@ -32,8 +32,7 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
     .notNull()
     .references(() => users.id),
 
-  // Model used to transcribe the audio. Null falls back to the worker default
-  // (DEFAULT_MODELS.TRANSCRIBE); a transcribe re-run overwrites it.
+  // Model used to transcribe the audio. Null falls back to the default
   transcriptionModelId: text("transcription_model_id"),
 
   // Bucket key of the transcript, written once transcription completes. The
