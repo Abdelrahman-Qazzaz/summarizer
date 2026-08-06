@@ -24,7 +24,10 @@ import {
   type ResolvedImage,
 } from "../data/images.data";
 import { deleteFilesFromBucket, readTextFile } from "../../../shared/bucket";
-import { findOwnedTranscript } from "../../../shared/data/jobs.data";
+import {
+  findOwnedTranscript,
+  findOwnedTranscripts,
+} from "../../../shared/data/jobs.data";
 import { tryCatch } from "../../../shared/try-catch";
 import type { UploadId } from "../../../shared/types/mq.types";
 
@@ -35,6 +38,9 @@ const log = logger.child({ controller: "messages" });
  * of the 50k chars the schema allows is a ~2.5M-char prompt, so the character
  * budget is what actually holds the line. Older turns simply fall off.
  */
+
+// TODO: (not rn): add col on conversations that shows which msg context cut off at, that way we solve the unncessary transcripts prefetch
+
 const MAX_CONTEXT_MESSAGES = 50;
 export const MAX_CONTEXT_CHARS = 100_000;
 export const MAX_RESPONSE_TOKENS = 4_000;
@@ -71,26 +77,77 @@ function withTranscript(content: string, transcript: string) {
 }
 
 /**
+ * One transcript object from the bucket, or null when it can't be read. A bucket
+ * failure is logged rather than thrown: the turn is still worth replaying
+ * without it. Shared by the single-turn and batched history paths.
+ */
+async function readTranscriptObject(
+  userId: string,
+  audioUploadId: string,
+  transcriptUploadId: string,
+) {
+  const { data, error } = await tryCatch(
+    readTextFile(userId, transcriptUploadId as UploadId),
+  );
+  if (error)
+    log.error("Failed to read transcript from bucket", error, {
+      audioUploadId,
+      transcriptUploadId,
+    });
+  return data;
+}
+
+/**
  * The transcript for a turn that names a transcription job, or null when the
- * job isn't the caller's, hasn't finished, or its object can't be read. A
- * bucket failure is logged rather than thrown: on the history path the turn is
- * still worth replaying without it.
+ * job isn't the caller's, hasn't finished, or its object can't be read.
  */
 async function readTurnTranscript(userId: string, audioUploadId: string) {
   const job = await findOwnedTranscript(userId, audioUploadId);
   if (!job || job.status !== "completed" || !job.transcriptUploadId) {
     return null;
   }
+  return readTranscriptObject(userId, audioUploadId, job.transcriptUploadId);
+}
 
-  const { data, error } = await tryCatch(
-    readTextFile(userId, job.transcriptUploadId as UploadId),
+/**
+ * Every history turn's transcript, keyed by audioUploadId: one job query, then
+ * the bucket objects read in parallel — so replaying a conversation of audio
+ * turns no longer awaits a DB+bucket round-trip per turn inside the assembly
+ * loop. A job that isn't completed, or whose object can't be read, is simply
+ * absent, the same posture readTurnTranscript takes for the single-turn path.
+ */
+async function loadHistoryTranscripts(
+  userId: string,
+  history: readonly { audioUploadId: string | null }[],
+): Promise<Map<string, string>> {
+  const audioUploadIds = [
+    ...new Set(
+      history
+        .map((message) => message.audioUploadId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+
+  const transcriptsByUploadId = new Map<string, string>();
+  if (audioUploadIds.length === 0) return transcriptsByUploadId;
+
+  const jobs = await findOwnedTranscripts(userId, audioUploadIds);
+
+  await Promise.all(
+    jobs.map(async (job) => {
+      if (job.status !== "completed" || !job.transcriptUploadId) return;
+      const transcript = await readTranscriptObject(
+        userId,
+        job.uploadId,
+        job.transcriptUploadId,
+      );
+      if (transcript !== null) {
+        transcriptsByUploadId.set(job.uploadId, transcript);
+      }
+    }),
   );
-  if (error)
-    log.error("Failed to read transcript from bucket", error, {
-      audioUploadId,
-      transcriptUploadId: job.transcriptUploadId,
-    });
-  return data;
+
+  return transcriptsByUploadId;
 }
 
 /** Assistant turns never carry images, so they're not worth looking up. */
@@ -123,10 +180,12 @@ async function assembleConversationContext(
     MAX_CONTEXT_MESSAGES - 1,
   );
 
-  const imagesByMessageId = await resolveMessageImages(
-    userId,
-    userMessageIds(history),
-  );
+  // Both depend only on the history and the owner, so they run together; the
+  // transcripts are prefetched here rather than read one-per-turn in the loop.
+  const [imagesByMessageId, transcriptsByUploadId] = await Promise.all([
+    resolveMessageImages(userId, userMessageIds(history)),
+    loadHistoryTranscripts(userId, history),
+  ]);
 
   const turns: ChatTurn[] = [newTurn];
   let charBudget = MAX_CONTEXT_CHARS - spentChars;
@@ -137,15 +196,11 @@ async function assembleConversationContext(
     if (charBudget < 0) break;
 
     // A past turn's transcript is replayed too — a follow-up question about a
-    // transcript sent three turns ago has to still see it, same as images. It
-    // is read only once the budget can still hold something, so a spent budget
-    // costs no bucket round-trips.
+    // transcript sent three turns ago has to still see it, same as images.
+    // Prefetched above, so this is a map lookup, not a per-turn bucket read.
     let content = message.content;
     if (message.audioUploadId) {
-      const transcript = await readTurnTranscript(
-        userId,
-        message.audioUploadId,
-      );
+      const transcript = transcriptsByUploadId.get(message.audioUploadId);
       if (transcript) {
         charBudget -= transcript.length;
         if (charBudget < 0) break;

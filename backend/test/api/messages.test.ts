@@ -23,6 +23,7 @@ const {
   mockCreateSignedUrls,
   mockDeleteFilesFromBucket,
   mockReadTextFile,
+  mockTranscriptRows,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockFrom: vi.fn(),
@@ -47,6 +48,7 @@ const {
   mockCreateSignedUrls: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
   mockReadTextFile: vi.fn(),
+  mockTranscriptRows: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -143,10 +145,15 @@ beforeEach(() => {
   mockFrom.mockImplementation((table: unknown) =>
     table === ImageUploads ? { where: mockImageWhere } : { where: mockWhere },
   );
-  mockWhere.mockImplementation(() => ({
-    orderBy: mockOrderBy,
-    limit: mockLimit,
-  }));
+  // The batched findOwnedTranscripts read terminates at `.where()` (no orderBy
+  // or limit), so `.where()` has to be awaitable — resolving to the history
+  // transcript rows — while still exposing the chain the other reads continue.
+  mockWhere.mockImplementation(() =>
+    Object.assign(Promise.resolve(mockTranscriptRows()), {
+      orderBy: mockOrderBy,
+      limit: mockLimit,
+    }),
+  );
   mockOrderBy.mockImplementation(() => ({ limit: mockLimit }));
   mockImageWhere.mockImplementation(() =>
     Object.assign(Promise.resolve(mockImageRows()), {
@@ -155,6 +162,7 @@ beforeEach(() => {
   );
   mockImageOrderBy.mockImplementation(async () => mockImageRows());
   mockImageRows.mockReturnValue([]);
+  mockTranscriptRows.mockReturnValue([]);
   mockInsert.mockImplementation(() => ({ values: mockValues }));
   mockValues.mockImplementation(() => ({ returning: mockInsertReturning }));
   mockUpdate.mockImplementation(() => ({ set: mockSet }));
@@ -496,8 +504,11 @@ describe("POST /conversations/:conversationId/messages", () => {
             content: "Summarise this",
             audioUploadId,
           },
-        ]) // history
-        .mockResolvedValueOnce([transcriptJob()]); // its transcript
+        ]); // history
+      // Its transcript, from the batched history read (resolves at `.where()`).
+      mockTranscriptRows.mockReturnValue([
+        transcriptJob({ uploadId: audioUploadId }),
+      ]);
       mockReadTextFile.mockResolvedValueOnce(transcript);
       mockInsertReturning
         .mockResolvedValueOnce([userRow])
