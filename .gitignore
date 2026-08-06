@@ -22,3 +22,4 @@ backend/shared/logger/logs/
 **/.claude
 .aliases.sh
 .vscode
+.DS_Store
