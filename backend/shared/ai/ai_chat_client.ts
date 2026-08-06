@@ -126,7 +126,10 @@ export async function getChatModelData() {
 
   if (hit != null) return hit;
 
-  const models = (await ai_client.models.list({ outputModalities: "all" })) //TODO: make this smaller
+  // Only text-output models are ever chosen here (summary/chat); transcription
+  // is served by Deepgram. "text" is the SDK default — passed explicitly for
+  // clarity — and keeps the fetched + cached catalog small.
+  const models = (await ai_client.models.list({ outputModalities: "text" }))
     .data;
   const modelData: ChatModelData = Object.fromEntries(
     models.map((model) => [

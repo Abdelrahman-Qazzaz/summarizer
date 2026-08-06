@@ -53,14 +53,16 @@ const sampleModelData = {
   },
 };
 
-describe("GET /models", () => {
+describe("GET /models/chat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockgetChatModelData.mockResolvedValue(sampleModelData);
   });
 
   it("returns 401 without a session cookie", async () => {
-    const res = await (await createApp()).request("http://localhost/models");
+    const res = await (
+      await createApp()
+    ).request("http://localhost/models/chat");
     expect(res.status).toBe(401);
     expect(mockgetChatModelData).not.toHaveBeenCalled();
   });
@@ -68,7 +70,7 @@ describe("GET /models", () => {
   it("returns modelData for a valid session", async () => {
     const res = await (
       await createApp()
-    ).request("http://localhost/models", {
+    ).request("http://localhost/models/chat", {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(200);
@@ -79,7 +81,7 @@ describe("GET /models", () => {
   it("returns RateLimit draft-6 headers on success", async () => {
     const res = await (
       await createApp()
-    ).request("http://localhost/models", {
+    ).request("http://localhost/models/chat", {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(200);

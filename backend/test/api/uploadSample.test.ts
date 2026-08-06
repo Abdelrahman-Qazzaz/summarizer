@@ -16,8 +16,8 @@ vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
   const actual =
     await importActual<typeof import("../../shared/ai/ai_transcribe_client")>();
   return {
-    ...actual,
-    validateChatModelOutput: mockValidateModel,
+    ...actual, // preserves DEFAULT_TRANSCRIBE_MODEL
+    isValidTranscribeModel: mockIsValidTranscribeModel,
   };
 });
 

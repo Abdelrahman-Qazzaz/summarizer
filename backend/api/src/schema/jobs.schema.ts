@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CTX_KEYS } from "../../../shared/keys";
 import { jobStatusEnum } from "../../../shared/db";
-import { validateChatModelOutput } from "../../../shared/ai/ai_chat_client";
+import { isValidTranscribeModel } from "../../../shared/ai/ai_transcribe_client";
 
 export const jobReqParamSchema = z.object({
   [CTX_KEYS.uploadId]: z.string().uuid(),
@@ -29,12 +29,7 @@ export const jobTranscribeRerunBodySchema = z
     [CTX_KEYS.transcriptionModelId]: z.string().min(1),
   })
   .superRefine(async (data, ctx) => {
-    if (
-      !(await validateChatModelOutput(
-        data[CTX_KEYS.transcriptionModelId],
-        "transcription",
-      ))
-    ) {
+    if (!(await isValidTranscribeModel(data[CTX_KEYS.transcriptionModelId]))) {
       ctx.addIssue({
         code: "custom",
         message: "Invalid transcription model",

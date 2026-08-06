@@ -80,6 +80,8 @@ describe("getChatModelData", () => {
 
     expect(result).toEqual(sampleModelData);
     expect(mockModelsList).toHaveBeenCalledTimes(1);
+    // Only text-output models are relevant here; transcription is Deepgram's.
+    expect(mockModelsList).toHaveBeenCalledWith({ outputModalities: "text" });
     expect(mockSetCache).toHaveBeenCalledWith(
       CACHE_KEYS.openRouterModels,
       sampleModelData,
