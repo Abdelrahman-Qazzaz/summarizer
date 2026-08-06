@@ -68,7 +68,7 @@ vi.mock("../../shared/bucket", () => ({
 
 // buildUserTurn is the real one: what the model is handed for an image turn is
 // exactly what these tests are checking.
-vi.mock("../../shared/ai/ai_client", async (importActual) => {
+vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
   const actual =
     await importActual<typeof import("../../shared/ai/ai_chat_client")>();
   return {

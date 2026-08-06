@@ -8,7 +8,6 @@
     "backend": {
       "entry": [
         "api/index.ts",
-        "transcribe-service/index.ts",
         "drizzle.config.ts",
         "test/**/*.test.ts"
       ],

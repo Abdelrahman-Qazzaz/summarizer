@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "npm@11.14.1",
   "scripts": {
-    "dev": "npm run --silent doppler -- concurrently -k -n api,worker \"tsx watch --inspect=9229 api/index.ts\" \"tsx watch --inspect=9230 transcribe-service/index.ts\"",
+    "dev": "npm run --silent doppler -- concurrently -k -n api \"tsx watch --inspect=9229 api/index.ts\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db": "npm run --silent doppler -- drizzle-kit push",

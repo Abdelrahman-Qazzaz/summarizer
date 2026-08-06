@@ -10,8 +10,8 @@ const {
   mockWhere,
   mockSet,
   mockUpdate,
-  mockGetAudioFile,
-  mockTranscribe,
+  mockCreateSignedUrl,
+  mockTranscribeUrl,
   mockUploadTextToBucket,
 } = vi.hoisted(() => ({
   mockSendEvent: vi.fn(),
@@ -19,22 +19,34 @@ const {
   mockWhere: vi.fn(),
   mockSet: vi.fn(),
   mockUpdate: vi.fn(),
-  mockGetAudioFile: vi.fn(),
-  mockTranscribe: vi.fn(),
+  mockCreateSignedUrl: vi.fn(),
+  mockTranscribeUrl: vi.fn(),
   mockUploadTextToBucket: vi.fn(),
 }));
+
+// Shape a Deepgram transcribeUrl response carrying a single transcript string.
+function deepgramResponse(transcript: string) {
+  return { results: { channels: [{ alternatives: [{ paragraphs: { transcript } }] }] } };
+}
 
 vi.mock("crypto", () => ({
   randomUUID: () => generatedTranscriptId,
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  getAudioFile: mockGetAudioFile,
+  createSignedUrl: mockCreateSignedUrl,
+  AUDIO_URL_TTL_SECONDS: 3600,
   uploadTextToBucket: mockUploadTextToBucket,
 }));
 
-vi.mock("../../shared/ai/transcribe", () => ({
-  transcribe: mockTranscribe,
+// transcribe() lives in the same module as handleTranscribeJob, so it can't be
+// mocked as an export — an intra-module call binds directly. Mock the Deepgram
+// SDK it calls through instead.
+vi.mock("@deepgram/sdk", () => ({
+  DeepgramClient: class {
+    listen = { v1: { media: { transcribeUrl: mockTranscribeUrl } } };
+    auth = { v1: { tokens: { grant: vi.fn() } } };
+  },
 }));
 
 vi.mock("../../shared/message-queue/messageQueue", () => ({
@@ -49,7 +61,7 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-import { handleTranscribeJob } from "../../services/transcribe-service/workers/transcribe.worker";
+import { handleTranscribeJob } from "../../shared/ai/ai_transcribe_client";
 
 /**
  * The worker issues two updates: claim (which returns the row), then complete
@@ -78,8 +90,8 @@ const claimedJob = {
 describe("handleTranscribeJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetAudioFile.mockResolvedValue(new Uint8Array([1, 2, 3]));
-    mockTranscribe.mockResolvedValue("sample transcript");
+    mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
+    mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
     mockUploadTextToBucket.mockResolvedValue(undefined);
     mockSendEvent.mockResolvedValue(undefined);
     setupUpdateChain([claimedJob]);
@@ -88,8 +100,12 @@ describe("handleTranscribeJob", () => {
   it("transcribes audio, stores the transcript, and announces completion", async () => {
     await handleTranscribeJob(uploadId);
 
-    expect(mockGetAudioFile).toHaveBeenCalledWith("user_01", uploadId);
-    expect(mockTranscribe).toHaveBeenCalled();
+    expect(mockCreateSignedUrl).toHaveBeenCalledWith(
+      "user_01",
+      uploadId,
+      expect.any(Number),
+    );
+    expect(mockTranscribeUrl).toHaveBeenCalled();
     expect(mockUploadTextToBucket).toHaveBeenCalledWith(
       "user_01",
       generatedTranscriptId,
@@ -128,13 +144,13 @@ describe("handleTranscribeJob", () => {
   it("no-ops when no queued job is claimed", async () => {
     setupUpdateChain([]);
     await handleTranscribeJob(uploadId);
-    expect(mockGetAudioFile).not.toHaveBeenCalled();
-    expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
+    expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
   it("rejects an empty transcript", async () => {
-    mockTranscribe.mockResolvedValueOnce("   ");
+    mockTranscribeUrl.mockResolvedValueOnce(deepgramResponse("   "));
     await expect(handleTranscribeJob(uploadId)).rejects.toThrow(
       "Transcription produced no text",
     );
@@ -143,7 +159,7 @@ describe("handleTranscribeJob", () => {
   });
 
   it("marks the job failed and rethrows when transcription fails", async () => {
-    mockTranscribe.mockRejectedValueOnce(new Error("transcription failed"));
+    mockTranscribeUrl.mockRejectedValueOnce(new Error("transcription failed"));
     await expect(handleTranscribeJob(uploadId)).rejects.toThrow(
       "transcription failed",
     );
