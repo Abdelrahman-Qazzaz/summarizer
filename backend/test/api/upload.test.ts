@@ -28,7 +28,7 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
   return {
     ...actual, // preserves DEFAULT_MODELS and anything else
     getModelData: mockGetModelData, // override only what needs mocking
-    validateModelOutput: mockValidateModel,
+    validateChatModelOutput: mockValidateModel,
   };
 });
 

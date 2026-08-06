@@ -14,12 +14,12 @@ import type {
   TopProviderInfo,
 } from "@openrouter/sdk/models";
 
-export const ai_client = new OpenRouter({
+const ai_client = new OpenRouter({
   apiKey: getBaseEnv().OPENROUTER_API_KEY,
 });
 
 /** Startup health check: fails if OpenRouter is unreachable or rejects the API key. */
-export async function pingAi(): Promise<void> {
+export async function pingChatAI(): Promise<void> {
   await ai_client.models.list();
 }
 
@@ -98,7 +98,7 @@ export async function chatAI(
   return full;
 }
 
-type ModelData = {
+type ChatModelData = {
   [k: string]: {
     id: string;
     name: string;
@@ -116,17 +116,19 @@ type ModelData = {
  * The catalog changes rarely, but it does change — a day-long entry keeps a
  * newly listed model from waiting on a hand-bumped CACHE_KEYS version.
  */
-const MODEL_CATALOG_TTL_SECONDS = 24 * 60 * 60;
+const CHAT_MODEL_CATALOG_TTL_SECONDS = 24 * 60 * 60;
 
-export async function getModelData() {
+export async function getChatModelData() {
   const openRouterModelsCacheKey = CACHE_KEYS.openRouterModels;
-  const hit = (await checkCache(openRouterModelsCacheKey)) as ModelData | null;
+  const hit = (await checkCache(
+    openRouterModelsCacheKey,
+  )) as ChatModelData | null;
 
   if (hit != null) return hit;
 
   const models = (await ai_client.models.list({ outputModalities: "all" })) //TODO: make this smaller
     .data;
-  const modelData: ModelData = Object.fromEntries(
+  const modelData: ChatModelData = Object.fromEntries(
     models.map((model) => [
       model.id,
       {
@@ -146,7 +148,7 @@ export async function getModelData() {
   await setCache(
     openRouterModelsCacheKey,
     modelData,
-    MODEL_CATALOG_TTL_SECONDS,
+    CHAT_MODEL_CATALOG_TTL_SECONDS,
   );
   return modelData;
 }
@@ -158,20 +160,20 @@ export async function getModelData() {
  * transcription-only model passes as a summary model and only fails deep in the
  * worker when the provider rejects the chat-completion request.
  */
-async function findModel(modelId: string) {
+async function findChatModel(modelId: string) {
   const hit = (await checkCache(
     CACHE_KEYS.openRouterModels,
-  )) as ModelData | null;
+  )) as ChatModelData | null;
 
-  const modelData: ModelData = hit ?? (await getModelData());
+  const modelData: ChatModelData = hit ?? (await getChatModelData());
   return modelData[modelId];
 }
 
-export async function validateModelOutput(
+export async function validateChatModelOutput(
   modelId: string,
   requiredModality: OutputModality,
 ): Promise<boolean> {
-  const model = await findModel(modelId);
+  const model = await findChatModel(modelId);
   return Boolean(model?.outputModalities.includes(requiredModality));
 }
 
@@ -181,11 +183,11 @@ export async function validateModelOutput(
  * up front so a text-only model is a 400 on the request rather than a provider
  * rejection mid-stream, where the only channel left is an SSE error event.
  */
-export async function validateModelInput(
+export async function validateChatModelInput(
   modelId: string,
   requiredModality: InputModality,
 ): Promise<boolean> {
-  const model = await findModel(modelId);
+  const model = await findChatModel(modelId);
   return Boolean(model?.inputModalities.includes(requiredModality));
 }
 

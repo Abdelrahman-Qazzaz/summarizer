@@ -22,8 +22,8 @@ import {
   buildUserTurn,
   DEFAULT_CHAT_MODEL,
   getModelData,
-  validateModelInput,
-  validateModelOutput,
+  validateChatModelInput,
+  validateChatModelOutput,
 } from "../../shared/ai/ai_chat_client";
 
 const sampleModelData = {
@@ -88,7 +88,7 @@ describe("getModelData", () => {
   });
 });
 
-describe("validateModelInput", () => {
+describe("validateChatModelInput", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSetCache.mockResolvedValue(undefined);
@@ -97,20 +97,24 @@ describe("validateModelInput", () => {
   it("returns true for a modality the model accepts", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(await validateModelInput(DEFAULT_CHAT_MODEL, "image")).toBe(true);
+    expect(await validateChatModelInput(DEFAULT_CHAT_MODEL, "image")).toBe(
+      true,
+    );
   });
 
   it("returns false for a modality the model does not accept", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(await validateModelInput(DEFAULT_CHAT_MODEL, "audio")).toBe(false);
+    expect(await validateChatModelInput(DEFAULT_CHAT_MODEL, "audio")).toBe(
+      false,
+    );
   });
 
   it("returns false for an unknown model id", async () => {
     mockCheckCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
-    expect(await validateModelInput("unknown/model", "image")).toBe(false);
+    expect(await validateChatModelInput("unknown/model", "image")).toBe(false);
   });
 });
 
@@ -138,7 +142,7 @@ describe("buildUserTurn", () => {
   });
 });
 
-describe("validateModelOutput", () => {
+describe("validateChatModelOutput", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSetCache.mockResolvedValue(undefined);
@@ -147,7 +151,7 @@ describe("validateModelOutput", () => {
   it("returns true for a known model id from cache", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    const result = await validateModelOutput(DEFAULT_CHAT_MODEL, "text");
+    const result = await validateChatModelOutput(DEFAULT_CHAT_MODEL, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).not.toHaveBeenCalled();
@@ -157,7 +161,7 @@ describe("validateModelOutput", () => {
     mockCheckCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
-    const result = await validateModelOutput("unknown/model", "text");
+    const result = await validateChatModelOutput("unknown/model", "text");
 
     expect(result).toBe(false);
     expect(mockModelsList).toHaveBeenCalled();
@@ -167,7 +171,7 @@ describe("validateModelOutput", () => {
     mockCheckCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
-    const result = await validateModelOutput(DEFAULT_CHAT_MODEL, "text");
+    const result = await validateChatModelOutput(DEFAULT_CHAT_MODEL, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).toHaveBeenCalled();
@@ -176,8 +180,8 @@ describe("validateModelOutput", () => {
   it("returns false for a modality the model does not produce", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(await validateModelOutput(DEFAULT_CHAT_MODEL, "transcription")).toBe(
-      false,
-    );
+    expect(
+      await validateChatModelOutput(DEFAULT_CHAT_MODEL, "transcription"),
+    ).toBe(false);
   });
 });

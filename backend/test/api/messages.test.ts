@@ -74,8 +74,8 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
   return {
     ...actual,
     getModelData: vi.fn(),
-    validateModelOutput: mockValidateModel,
-    validateModelInput: mockValidateModelInput,
+    validateChatModelOutput: mockValidateModel,
+    validateChatModelInput: mockValidateModelInput,
     chatAI: mockChatAI,
   };
 });

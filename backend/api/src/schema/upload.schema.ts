@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../shared/keys";
-import { validateModelOutput } from "../../../shared/ai/ai_chat_client";
+import { validateChatModelOutput } from "../../../shared/ai/ai_chat_client";
 import { MAX_AUDIO_BYTES } from "../../../shared/bucket";
 import { DEFAULT_TRANSCRIBE_MODEL } from "../../../shared/ai/ai_transcribe_client";
 
@@ -42,7 +42,7 @@ const transcriptionModelField = z.preprocess(
  * with one message on one path rather than two copies that can drift apart.
  */
 async function refineTranscriptionModel(modelId: string, ctx: z.RefinementCtx) {
-  if (await validateModelOutput(modelId, "transcription")) return;
+  if (await validateChatModelOutput(modelId, "transcription")) return;
   ctx.addIssue({
     code: "custom",
     message: "Invalid transcription model",

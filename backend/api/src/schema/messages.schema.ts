@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { CTX_KEYS } from "../../../shared/keys";
 import {
-  validateModelInput,
-  validateModelOutput,
+  validateChatModelInput,
+  validateChatModelOutput,
 } from "../../../shared/ai/ai_chat_client";
 
 export const MAX_MESSAGE_LENGTH = 50_000;
@@ -43,7 +43,7 @@ export const messageCreateBodySchema = z
   })
   .superRefine(async (data, ctx) => {
     const modelId = data[CTX_KEYS.chosenModelId];
-    if (!(await validateModelOutput(modelId, "text"))) {
+    if (!(await validateChatModelOutput(modelId, "text"))) {
       ctx.addIssue({
         code: "custom",
         message: "Invalid model: must be a text model",
@@ -53,7 +53,7 @@ export const messageCreateBodySchema = z
     }
     if (
       data[CTX_KEYS.attachmentUploadIds].length > 0 &&
-      !(await validateModelInput(modelId, "image"))
+      !(await validateChatModelInput(modelId, "image"))
     ) {
       ctx.addIssue({
         code: "custom",
