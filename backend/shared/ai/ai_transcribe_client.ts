@@ -28,7 +28,7 @@ const TRANSCRIBE_TIMEOUT_SECONDS = 20 * 60;
 const TRANSCRIBE_MAX_RETRIES = 1;
 
 /** Startup health check: fails if Deepgram is unreachable or rejects the API key. */
-export async function pingTranscriber(): Promise<void> {
+export async function pingTranscribeAI(): Promise<void> {
   await deepgram.auth.v1.tokens.grant();
 }
 
