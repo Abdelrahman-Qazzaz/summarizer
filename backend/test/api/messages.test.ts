@@ -23,6 +23,7 @@ const {
   mockCreateSignedUrls,
   mockDeleteFilesFromBucket,
   mockReadTextFile,
+  mockReadTextFiles,
   mockTranscriptRows,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
@@ -48,6 +49,7 @@ const {
   mockCreateSignedUrls: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
   mockReadTextFile: vi.fn(),
+  mockReadTextFiles: vi.fn(),
   mockTranscriptRows: vi.fn(),
 }));
 
@@ -65,6 +67,7 @@ vi.mock("../../shared/bucket", () => ({
   createSignedUrls: mockCreateSignedUrls,
   deleteFilesFromBucket: mockDeleteFilesFromBucket,
   readTextFile: mockReadTextFile,
+  readTextFiles: mockReadTextFiles,
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
@@ -163,6 +166,10 @@ beforeEach(() => {
   mockImageOrderBy.mockImplementation(async () => mockImageRows());
   mockImageRows.mockReturnValue([]);
   mockTranscriptRows.mockReturnValue([]);
+  mockReadTextFiles.mockResolvedValue({
+    texts: new Map(),
+    failedUploadIds: [],
+  });
   mockInsert.mockImplementation(() => ({ values: mockValues }));
   mockValues.mockImplementation(() => ({ returning: mockInsertReturning }));
   mockUpdate.mockImplementation(() => ({ set: mockSet }));
@@ -505,11 +512,15 @@ describe("POST /conversations/:conversationId/messages", () => {
             audioUploadId,
           },
         ]); // history
-      // Its transcript, from the batched history read (resolves at `.where()`).
+      // Its job row (resolves at `.where()`), then its object from the batched
+      // bucket read keyed by the transcript's own object id.
       mockTranscriptRows.mockReturnValue([
         transcriptJob({ uploadId: audioUploadId }),
       ]);
-      mockReadTextFile.mockResolvedValueOnce(transcript);
+      mockReadTextFiles.mockResolvedValueOnce({
+        texts: new Map([[transcriptUploadId, transcript]]),
+        failedUploadIds: [],
+      });
       mockInsertReturning
         .mockResolvedValueOnce([userRow])
         .mockResolvedValueOnce([assistantRow]);

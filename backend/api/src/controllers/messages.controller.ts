@@ -23,7 +23,11 @@ import {
   resolveUnattachedImages,
   type ResolvedImage,
 } from "../data/images.data";
-import { deleteFilesFromBucket, readTextFile } from "../../../shared/bucket";
+import {
+  deleteFilesFromBucket,
+  readTextFile,
+  readTextFiles,
+} from "../../../shared/bucket";
 import {
   findOwnedTranscript,
   findOwnedTranscripts,
@@ -77,44 +81,35 @@ function withTranscript(content: string, transcript: string) {
 }
 
 /**
- * One transcript object from the bucket, or null when it can't be read. A bucket
- * failure is logged rather than thrown: the turn is still worth replaying
- * without it. Shared by the single-turn and batched history paths.
- */
-async function readTranscriptObject(
-  userId: string,
-  audioUploadId: string,
-  transcriptUploadId: string,
-) {
-  const { data, error } = await tryCatch(
-    readTextFile(userId, transcriptUploadId as UploadId),
-  );
-  if (error)
-    log.error("Failed to read transcript from bucket", error, {
-      audioUploadId,
-      transcriptUploadId,
-    });
-  return data;
-}
-
-/**
  * The transcript for a turn that names a transcription job, or null when the
- * job isn't the caller's, hasn't finished, or its object can't be read.
+ * job isn't the caller's, hasn't finished, or its object can't be read. A
+ * bucket failure is logged rather than thrown: the turn is still worth replaying
+ * without it.
  */
 async function readTurnTranscript(userId: string, audioUploadId: string) {
   const job = await findOwnedTranscript(userId, audioUploadId);
   if (!job || job.status !== "completed" || !job.transcriptUploadId) {
     return null;
   }
-  return readTranscriptObject(userId, audioUploadId, job.transcriptUploadId);
+
+  const { data, error } = await tryCatch(
+    readTextFile(userId, job.transcriptUploadId as UploadId),
+  );
+  if (error)
+    log.error("Failed to read transcript from bucket", error, {
+      audioUploadId,
+      transcriptUploadId: job.transcriptUploadId,
+    });
+  return data;
 }
 
 /**
  * Every history turn's transcript, keyed by audioUploadId: one job query, then
- * the bucket objects read in parallel — so replaying a conversation of audio
- * turns no longer awaits a DB+bucket round-trip per turn inside the assembly
- * loop. A job that isn't completed, or whose object can't be read, is simply
- * absent, the same posture readTurnTranscript takes for the single-turn path.
+ * the objects read in a single batched bucket fetch — so replaying a
+ * conversation of audio turns no longer awaits a DB+bucket round-trip per turn
+ * inside the assembly loop. A job that isn't completed is skipped; one whose
+ * object can't be read is logged and simply absent, the same posture
+ * readTurnTranscript takes for the single-turn path.
  */
 async function loadHistoryTranscripts(
   userId: string,
@@ -132,20 +127,28 @@ async function loadHistoryTranscripts(
   if (audioUploadIds.length === 0) return transcriptsByUploadId;
 
   const jobs = await findOwnedTranscripts(userId, audioUploadIds);
-
-  await Promise.all(
-    jobs.map(async (job) => {
-      if (job.status !== "completed" || !job.transcriptUploadId) return;
-      const transcript = await readTranscriptObject(
-        userId,
-        job.uploadId,
-        job.transcriptUploadId,
-      );
-      if (transcript !== null) {
-        transcriptsByUploadId.set(job.uploadId, transcript);
-      }
-    }),
+  const readable = jobs.filter(
+    (job): job is typeof job & { transcriptUploadId: string } =>
+      job.status === "completed" && job.transcriptUploadId !== null,
   );
+  if (readable.length === 0) return transcriptsByUploadId;
+
+  const { texts, failedUploadIds } = await readTextFiles(
+    readable.map((job) => ({ userId, uploadId: job.transcriptUploadId })),
+  );
+  if (failedUploadIds.length > 0)
+    log.error("Failed to read transcripts from bucket", undefined, {
+      transcriptUploadIds: failedUploadIds,
+    });
+
+  // The map the loop reads is keyed by audioUploadId — the id a turn is replayed
+  // under — while the bucket read is keyed by the transcript's own object id.
+  for (const job of readable) {
+    const transcript = texts.get(job.transcriptUploadId);
+    if (transcript !== undefined) {
+      transcriptsByUploadId.set(job.uploadId, transcript);
+    }
+  }
 
   return transcriptsByUploadId;
 }
