@@ -1,4 +1,4 @@
-import { bigint, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
 
 export const jobStatusEnum = pgEnum("job_status", [
@@ -39,7 +39,15 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   // audio itself lives at this row's own uploadId, so the transcript needs a
   // key of its own. Null until then, and on a job that never got that far.
   transcriptUploadId: text("transcript_upload_id"),
-});
+}, (table) => [
+  // Matches findUserJobsPage: owner filter + the (created_at, upload_id) keyset
+  // ordering, so a page is served from the index without a scan-and-sort.
+  index("audio_jobs_user_created_upload_idx").on(
+    table.userId,
+    table.createdAt,
+    table.uploadId,
+  ),
+]);
 
 export const ImageUploads = pgTable("image_uploads", {
   uploadId: text("upload_id").notNull().primaryKey(),
@@ -68,7 +76,11 @@ export const ImageUploads = pgTable("image_uploads", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-});
+}, (table) => [
+  // resolveMessageImages / findMessageImageUploadIds look images up by the
+  // message they hang off; message_id is highly selective (few per message).
+  index("image_uploads_message_idx").on(table.messageId),
+]);
 
 /** Chat conversations owned by a user. */
 export const Conversations = pgTable("conversations", {
@@ -84,7 +96,15 @@ export const Conversations = pgTable("conversations", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-});
+}, (table) => [
+  // findUserConversations: owner filter + the (updated_at, id) ordering the
+  // list is served in.
+  index("conversations_user_updated_idx").on(
+    table.userId,
+    table.updatedAt,
+    table.id,
+  ),
+]);
 
 export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant"] as const);
 
@@ -122,7 +142,16 @@ export const ChatMessages = pgTable("chat_messages", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-});
+}, (table) => [
+  // The busiest read in the app: findConversationMessages (asc) and
+  // findRecentMessages (desc) both filter by conversation and order by
+  // (created_at, id), fully covered here so neither scans nor sorts.
+  index("chat_messages_conversation_created_idx").on(
+    table.conversationId,
+    table.createdAt,
+    table.id,
+  ),
+]);
 
 export const users = pgTable("users", {
   // WorkOS user id (eg "user_01...")
