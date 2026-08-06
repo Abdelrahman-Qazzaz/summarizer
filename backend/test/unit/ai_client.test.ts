@@ -21,7 +21,7 @@ vi.mock("@openrouter/sdk", () => ({
 import {
   buildUserTurn,
   DEFAULT_CHAT_MODEL,
-  getModelData,
+  getChatModelData,
   validateChatModelInput,
   validateChatModelOutput,
 } from "../../shared/ai/ai_chat_client";
@@ -55,7 +55,7 @@ const openRouterListModel = {
   },
 };
 
-describe("getModelData", () => {
+describe("getChatModelData", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSetCache.mockResolvedValue(undefined);
@@ -64,7 +64,7 @@ describe("getModelData", () => {
   it("returns cached data on cache hit without calling OpenRouter", async () => {
     mockCheckCache.mockResolvedValueOnce(sampleModelData);
 
-    const result = await getModelData();
+    const result = await getChatModelData();
 
     expect(result).toEqual(sampleModelData);
     expect(mockCheckCache).toHaveBeenCalledWith(CACHE_KEYS.openRouterModels);
@@ -76,7 +76,7 @@ describe("getModelData", () => {
     mockCheckCache.mockResolvedValueOnce(null);
     mockModelsList.mockResolvedValueOnce({ data: [openRouterListModel] });
 
-    const result = await getModelData();
+    const result = await getChatModelData();
 
     expect(result).toEqual(sampleModelData);
     expect(mockModelsList).toHaveBeenCalledTimes(1);

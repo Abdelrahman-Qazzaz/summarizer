@@ -4,17 +4,17 @@ const {
   mockInsert,
   mockSendEvent,
   mockUploadAudioToBucket,
-  mockValidateModel,
+  mockIsValidTranscribeModel,
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockSendEvent: vi.fn(),
   mockUploadAudioToBucket: vi.fn(),
-  mockValidateModel: vi.fn(),
+  mockIsValidTranscribeModel: vi.fn(),
 }));
 
-vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
+vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
   const actual =
-    await importActual<typeof import("../../shared/ai/ai_chat_client")>();
+    await importActual<typeof import("../../shared/ai/ai_transcribe_client")>();
   return {
     ...actual,
     validateChatModelOutput: mockValidateModel,
@@ -58,7 +58,7 @@ beforeEach(() => {
   });
   mockUploadAudioToBucket.mockResolvedValue(undefined);
   mockSendEvent.mockResolvedValue(undefined);
-  mockValidateModel.mockResolvedValue(true);
+  mockIsValidTranscribeModel.mockResolvedValue(true);
 });
 
 describe("POST /upload/audio with sample file", () => {

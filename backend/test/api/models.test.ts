@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Only hoist the mock function factory — no async work here
-const { mockGetModelData } = vi.hoisted(() => ({
-  mockGetModelData: vi.fn(),
+const { mockgetChatModelData, mockGetTranscribeModelData } = vi.hoisted(() => ({
+  mockgetChatModelData: vi.fn(),
+  mockGetTranscribeModelData: vi.fn(),
 }));
 
 vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
@@ -11,7 +12,25 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
     await importActual<typeof import("../../shared/ai/ai_chat_client")>();
   return {
     ...actual, // preserves DEFAULT_MODELS and anything else
-    getModelData: mockGetModelData, // override only what needs mocking
+    getChatModelData: mockgetChatModelData, // override only what needs mocking
+  };
+});
+
+vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/ai/ai_transcribe_client")>();
+  return {
+    ...actual,
+    getTranscribeModelData: mockGetTranscribeModelData,
+  };
+});
+
+vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/ai/ai_transcribe_client")>();
+  return {
+    ...actual,
+    getTranscribeModelData: mockGetTranscribeModelData,
   };
 });
 
@@ -37,13 +56,13 @@ const sampleModelData = {
 describe("GET /models", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetModelData.mockResolvedValue(sampleModelData);
+    mockgetChatModelData.mockResolvedValue(sampleModelData);
   });
 
   it("returns 401 without a session cookie", async () => {
     const res = await (await createApp()).request("http://localhost/models");
     expect(res.status).toBe(401);
-    expect(mockGetModelData).not.toHaveBeenCalled();
+    expect(mockgetChatModelData).not.toHaveBeenCalled();
   });
 
   it("returns modelData for a valid session", async () => {
@@ -54,7 +73,7 @@ describe("GET /models", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ modelData: sampleModelData });
-    expect(mockGetModelData).toHaveBeenCalledTimes(1);
+    expect(mockgetChatModelData).toHaveBeenCalledTimes(1);
   });
 
   it("returns RateLimit draft-6 headers on success", async () => {
@@ -66,5 +85,47 @@ describe("GET /models", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("RateLimit-Limit")).toBe("100");
     expect(res.headers.get("RateLimit-Remaining")).toBeTruthy();
+  });
+});
+
+const sampleTranscribeModelData = {
+  "nova-3": {
+    name: "nova-3",
+    canonicalName: "nova-3-general",
+    architecture: "nova-3",
+    languages: ["en"],
+    version: "2024-01-01",
+    uuid: "abc-123",
+    batch: true,
+    streaming: true,
+    formattedOutput: true,
+  },
+};
+
+describe("GET /models/transcription", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetTranscribeModelData.mockResolvedValue(sampleTranscribeModelData);
+  });
+
+  it("returns 401 without a session cookie", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/models/transcription");
+    expect(res.status).toBe(401);
+    expect(mockGetTranscribeModelData).not.toHaveBeenCalled();
+  });
+
+  it("returns transcriptionModelData for a valid session", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/models/transcription", {
+      headers: { Cookie: await sessionCookieHeader("user_01") },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      transcriptionModelData: sampleTranscribeModelData,
+    });
+    expect(mockGetTranscribeModelData).toHaveBeenCalledTimes(1);
   });
 });

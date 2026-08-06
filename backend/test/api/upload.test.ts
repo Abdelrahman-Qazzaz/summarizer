@@ -8,18 +8,18 @@ const {
   mockUploadAudioToBucket,
   mockUploadImageToBucket,
   mockCreateSignedUrl,
-  mockValidateModel,
+  mockIsValidTranscribeModel,
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockSendEvent: vi.fn(),
   mockUploadAudioToBucket: vi.fn(),
   mockUploadImageToBucket: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
-  mockValidateModel: vi.fn(),
+  mockIsValidTranscribeModel: vi.fn(),
 }));
 
-const { mockGetModelData } = vi.hoisted(() => ({
-  mockGetModelData: vi.fn(),
+const { mockgetChatModelData } = vi.hoisted(() => ({
+  mockgetChatModelData: vi.fn(),
 }));
 vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
   // importActual is the correct way to get real values inside vi.mock
@@ -27,8 +27,16 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
     await importActual<typeof import("../../shared/ai/ai_chat_client")>();
   return {
     ...actual, // preserves DEFAULT_MODELS and anything else
-    getModelData: mockGetModelData, // override only what needs mocking
-    validateChatModelOutput: mockValidateModel,
+    getChatModelData: mockgetChatModelData, // override only what needs mocking
+  };
+});
+
+vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/ai/ai_transcribe_client")>();
+  return {
+    ...actual, // preserves DEFAULT_TRANSCRIBE_MODEL
+    isValidTranscribeModel: mockIsValidTranscribeModel,
   };
 });
 
@@ -102,7 +110,7 @@ describe("POST /upload/audio", () => {
     });
     mockUploadAudioToBucket.mockResolvedValue(undefined);
     mockSendEvent.mockResolvedValue(undefined);
-    mockValidateModel.mockResolvedValue(true);
+    mockIsValidTranscribeModel.mockResolvedValue(true);
   });
 
   it("returns 400 when file field is missing", async () => {
@@ -182,7 +190,7 @@ describe("POST /upload/youtube", () => {
     mockValues = vi.fn().mockResolvedValue(undefined);
     mockInsert.mockReturnValue({ values: mockValues });
     mockSendEvent.mockResolvedValue(undefined);
-    mockValidateModel.mockResolvedValue(true);
+    mockIsValidTranscribeModel.mockResolvedValue(true);
   });
 
   it("returns 401 without a session cookie", async () => {

@@ -10,14 +10,14 @@ const {
   mockFrom,
   mockSelect,
   mockGetUserIdFromCode,
-  mockGetModelData,
+  mockgetChatModelData,
 } = vi.hoisted(() => ({
   mockLimit: vi.fn(),
   mockWhere: vi.fn(),
   mockFrom: vi.fn(),
   mockSelect: vi.fn(),
   mockGetUserIdFromCode: vi.fn(),
-  mockGetModelData: vi.fn(),
+  mockgetChatModelData: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -39,7 +39,7 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
     await importActual<typeof import("../../shared/ai/ai_chat_client")>();
   return {
     ...actual, // preserves DEFAULT_MODELS, used at upload.schema import time
-    getModelData: mockGetModelData,
+    getChatModelData: mockgetChatModelData,
   };
 });
 
@@ -53,7 +53,7 @@ describe("rate limiting", () => {
     resetRateLimitMock();
     vi.clearAllMocks();
     mockGetUserIdFromCode.mockRejectedValue(new Error("WorkOS unavailable"));
-    mockGetModelData.mockResolvedValue({});
+    mockgetChatModelData.mockResolvedValue({});
     mockWhere.mockImplementation(() => ({ limit: mockLimit }));
     mockFrom.mockImplementation(() => ({ where: mockWhere }));
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
@@ -138,7 +138,7 @@ describe("GET /models rate limiting", () => {
   beforeEach(() => {
     resetRateLimitMock();
     vi.clearAllMocks();
-    mockGetModelData.mockResolvedValue({});
+    mockgetChatModelData.mockResolvedValue({});
   });
 
   it("returns 429 when model limit is exceeded", async () => {
