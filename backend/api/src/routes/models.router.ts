@@ -8,3 +8,4 @@ export const modelsRouter = new Hono();
 modelsRouter.use("*", requireAuth, modelRateLimiter);
 
 modelsRouter.get("/chat", modelsController.handleGetModels);
+modelsRouter.get("/transcription", modelsController.handleGetTranscribeModels);

@@ -41,4 +41,5 @@ export const COOKIE_KEYS = {
 
 export const CACHE_KEYS = {
   openRouterModels: "models:v7",
+  deepgramTranscribeModels: "transcribe-models:v1",
 };

@@ -14,6 +14,8 @@ import type { UploadId } from "../types/mq.types";
 import { randomUUID } from "crypto";
 import { logger } from "../logger";
 import { mq } from "../message-queue/messageQueue";
+import { CACHE_KEYS } from "../keys";
+import { checkCache, setCache } from "../redis";
 
 const log = logger.child({ ai_transcribe_client: "transcribe" });
 
@@ -61,6 +63,78 @@ export async function transcribe(
   // `paragraphs.transcript` is the same text broken into paragraphs, which
   // reads better as summarizer input than the single unbroken line.
   return alternative?.paragraphs?.transcript ?? alternative?.transcript ?? "";
+}
+
+type TranscribeModel = {
+  name: string;
+  canonicalName: string;
+  architecture: string | undefined;
+  languages: string[] | undefined;
+  version: string | undefined;
+  uuid: string | undefined;
+  batch: boolean | undefined;
+  streaming: boolean | undefined;
+  formattedOutput: boolean | undefined;
+};
+
+type TranscribeModelData = {
+  [modelId: string]: TranscribeModel;
+};
+
+/** Deepgram's model list changes rarely; a day-long entry keeps a newly listed
+ * model from waiting on a hand-bumped CACHE_KEYS version. */
+const TRANSCRIBE_MODEL_CATALOG_TTL_SECONDS = 24 * 60 * 60;
+
+export async function getTranscribeModelData(): Promise<TranscribeModelData> {
+  const cacheKey = CACHE_KEYS.deepgramTranscribeModels;
+  const hit = (await checkCache(cacheKey)) as TranscribeModelData | null;
+  if (hit != null) return hit;
+
+  const response = await deepgram.manage.v1.models.list();
+  const modelData: TranscribeModelData = Object.fromEntries(
+    (response.stt ?? []).flatMap((model) => {
+      const id = model.canonical_name ?? model.name;
+      if (!id) return [];
+      return [
+        [
+          id,
+          {
+            name: model.name ?? id,
+            canonicalName: model.canonical_name ?? id,
+            architecture: model.architecture,
+            languages: model.languages,
+            version: model.version,
+            uuid: model.uuid,
+            batch: model.batch,
+            streaming: model.streaming,
+            formattedOutput: model.formatted_output,
+          },
+        ],
+      ];
+    }),
+  );
+
+  await setCache(cacheKey, modelData, TRANSCRIBE_MODEL_CATALOG_TTL_SECONDS);
+  return modelData;
+}
+
+/**
+ * Whether a model id can be used for transcription. Deepgram STT models are
+ * single-modality, so presence in the catalog is the whole check — the analog
+ * of validateModelOutput(id, "transcription") on the chat side. A model id can
+ * arrive as either the display `name` or the `canonical_name`, so both are
+ * matched.
+ */
+export async function isValidTranscribeModel(modelId: string): Promise<boolean> {
+  const hit = (await checkCache(
+    CACHE_KEYS.deepgramTranscribeModels,
+  )) as TranscribeModelData | null;
+  const modelData = hit ?? (await getTranscribeModelData());
+
+  if (modelData[modelId]) return true;
+  return Object.values(modelData).some(
+    (model) => model.name === modelId || model.canonicalName === modelId,
+  );
 }
 
 export async function handleTranscribeJob(uploadId: UploadId) {
