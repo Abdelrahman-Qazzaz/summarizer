@@ -38,3 +38,5 @@ imagesRouter.get(
   validateReqParams(imageFetchParamSchema),
   imagesController.handleGetImage,
 );
+
+//TODO: add DELETE route, triggered either by user removing an image from the message input, or from a dashboard (batched)
