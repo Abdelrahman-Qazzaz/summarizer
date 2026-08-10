@@ -1,5 +1,5 @@
 import { and, desc, eq, type SQL } from "drizzle-orm";
-import { Conversations, db } from "../../../shared/db";
+import { Conversations, db, type Executor } from "../../../shared/db";
 
 const conversationColumns = {
   id: Conversations.id,
@@ -94,8 +94,9 @@ export async function recordConversationContext(
   userId: string,
   conversationId: string,
   contextHash: string,
+  executor: Executor = db,
 ) {
-  await db
+  await executor
     .update(Conversations)
     .set({ updatedAt: new Date(), contextHash })
     .where(ownedBy(userId, conversationId));

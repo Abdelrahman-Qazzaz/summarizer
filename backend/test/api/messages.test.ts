@@ -2,14 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const {
   mockFindOwnedConversation,
-  mockRecordConversationContext,
   mockFindRecentMessagesWithContext,
-  mockCreateMessage,
+  mockPersistChatTurn,
   mockFindConversationMessages,
   mockDeleteOwnedMessage,
   mockResolveUnattachedImages,
   mockResolveMessageImages,
-  mockAttachImagesToMessage,
   mockFindMessageImageUploadIds,
   mockResolveImageUploadUrls,
   mockFindTranscript,
@@ -20,14 +18,12 @@ const {
   mockChatAI,
 } = vi.hoisted(() => ({
   mockFindOwnedConversation: vi.fn(),
-  mockRecordConversationContext: vi.fn(),
   mockFindRecentMessagesWithContext: vi.fn(),
-  mockCreateMessage: vi.fn(),
+  mockPersistChatTurn: vi.fn(),
   mockFindConversationMessages: vi.fn(),
   mockDeleteOwnedMessage: vi.fn(),
   mockResolveUnattachedImages: vi.fn(),
   mockResolveMessageImages: vi.fn(),
-  mockAttachImagesToMessage: vi.fn(),
   mockFindMessageImageUploadIds: vi.fn(),
   mockResolveImageUploadUrls: vi.fn(),
   mockFindTranscript: vi.fn(),
@@ -53,13 +49,12 @@ vi.mock("../../api/src/data/conversations.data", async (importActual) => ({
     typeof import("../../api/src/data/conversations.data")
   >()),
   findOwnedConversation: mockFindOwnedConversation,
-  recordConversationContext: mockRecordConversationContext,
 }));
 
 vi.mock("../../api/src/data/messages.data", async (importActual) => ({
   ...(await importActual<typeof import("../../api/src/data/messages.data")>()),
   findRecentMessagesWithContext: mockFindRecentMessagesWithContext,
-  createMessage: mockCreateMessage,
+  persistChatTurn: mockPersistChatTurn,
   findConversationMessages: mockFindConversationMessages,
   deleteOwnedMessage: mockDeleteOwnedMessage,
 }));
@@ -68,7 +63,6 @@ vi.mock("../../api/src/data/images.data", async (importActual) => ({
   ...(await importActual<typeof import("../../api/src/data/images.data")>()),
   resolveUnattachedImages: mockResolveUnattachedImages,
   resolveMessageImages: mockResolveMessageImages,
-  attachImagesToMessage: mockAttachImagesToMessage,
   findMessageImageUploadIds: mockFindMessageImageUploadIds,
   resolveImageUploadUrls: mockResolveImageUploadUrls,
 }));
@@ -171,11 +165,7 @@ beforeEach(() => {
   mockResolveImageUploadUrls.mockResolvedValue(new Map());
   mockFindTranscript.mockResolvedValue(null);
   mockFindTranscriptContents.mockResolvedValue(new Map());
-  mockCreateMessage.mockImplementation(async (message: { role: string }) =>
-    message.role === "user" ? userRow : assistantRow,
-  );
-  mockAttachImagesToMessage.mockResolvedValue(undefined);
-  mockRecordConversationContext.mockResolvedValue(undefined);
+  mockPersistChatTurn.mockResolvedValue(undefined);
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
   mockDeleteFilesFromBucket.mockResolvedValue([]);
@@ -291,28 +281,21 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
 
-    // The writes are fire-and-forget, so they land after the response resolves.
-    await vi.waitFor(() => {
-      expect(mockCreateMessage).toHaveBeenCalledWith({
-        role: "user",
-        content: "Hi there",
-        conversationId,
-        userId,
-        audioUploadId: undefined,
-      });
-      expect(mockCreateMessage).toHaveBeenCalledWith({
-        role: "assistant",
-        content: "Hello world",
-        chosenModelId: modelId,
-        conversationId,
-        userId,
-      });
-      expect(mockRecordConversationContext).toHaveBeenCalledWith(
-        userId,
-        conversationId,
-        expect.any(String),
-      );
-    });
+    // The write is fire-and-forget, so it lands after the response resolves —
+    // one transactional call carrying the whole turn.
+    await vi.waitFor(() =>
+      expect(mockPersistChatTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          conversationId,
+          content: "Hi there",
+          assistantContent: "Hello world",
+          chosenModelId: modelId,
+          attachmentUploadIds: [],
+          contextHash: expect.any(String),
+        }),
+      ),
+    );
   });
 
   it("persists the turn even when the client disconnects mid-stream", async () => {
@@ -340,27 +323,16 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     // The run is decoupled from the response, so it completes and persists the
     // whole turn regardless of the disconnect. Persistence is fire-and-forget.
-    await vi.waitFor(() => {
-      expect(mockCreateMessage).toHaveBeenCalledWith({
-        role: "user",
-        content: "Hi there",
-        conversationId,
-        userId,
-        audioUploadId: undefined,
-      });
-      expect(mockCreateMessage).toHaveBeenCalledWith({
-        role: "assistant",
-        content: "Hello world",
-        chosenModelId: modelId,
-        conversationId,
-        userId,
-      });
-      expect(mockRecordConversationContext).toHaveBeenCalledWith(
-        userId,
-        conversationId,
-        expect.any(String),
-      );
-    });
+    await vi.waitFor(() =>
+      expect(mockPersistChatTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          conversationId,
+          content: "Hi there",
+          assistantContent: "Hello world",
+        }),
+      ),
+    );
   });
 
   it("replays prior history to the model, oldest first", async () => {
@@ -512,13 +484,12 @@ describe("POST /conversations/:conversationId/messages", () => {
       );
       // ...but the row stores only what was typed, plus the link.
       await vi.waitFor(() =>
-        expect(mockCreateMessage).toHaveBeenCalledWith({
-          role: "user",
-          content: "Summarise this",
-          conversationId,
-          userId,
-          audioUploadId,
-        }),
+        expect(mockPersistChatTurn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            content: "Summarise this",
+            audioUploadId,
+          }),
+        ),
       );
       expect(mockFindTranscript).toHaveBeenCalledWith(userId, audioUploadId);
     });
@@ -560,7 +531,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(res.status).toBe(404);
       expect(await res.json()).toEqual({ message: "Transcript not found" });
       expect(mockChatAI).not.toHaveBeenCalled();
-      expect(mockCreateMessage).not.toHaveBeenCalled();
+      expect(mockPersistChatTurn).not.toHaveBeenCalled();
     });
 
     it("refuses a transcript past the context budget rather than truncating it", async () => {
@@ -622,7 +593,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     // The writes only run once a reply is known, so a failed turn saves nothing.
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
   });
 
   it("sends attachments as vision input and binds them to the user turn", async () => {
@@ -651,11 +622,12 @@ describe("POST /conversations/:conversationId/messages", () => {
       ],
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
-    // The upload is claimed by the message that was just inserted.
+    // The upload rides along on the turn's transactional write, to be claimed
+    // by the user message it inserts.
     await vi.waitFor(() =>
-      expect(mockAttachImagesToMessage).toHaveBeenCalledWith(userId, messageId, [
-        uploadId,
-      ]),
+      expect(mockPersistChatTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ attachmentUploadIds: [uploadId] }),
+      ),
     );
   });
 
@@ -670,7 +642,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Attachment not found" });
-    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
   });
 
   it("rejects attachments on a model that can't read images with 400", async () => {
@@ -684,7 +656,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(res.status).toBe(400);
     expect(mockFindOwnedConversation).not.toHaveBeenCalled();
-    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the conversation is not owned by the user", async () => {
@@ -694,7 +666,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       chosenModelId: modelId,
     });
     expect(res.status).toBe(404);
-    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid model with 400 before touching the db", async () => {
@@ -707,7 +679,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
     expect(res.status).toBe(400);
     expect(mockFindOwnedConversation).not.toHaveBeenCalled();
-    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
   });
 
   it("rejects an empty message with 400", async () => {

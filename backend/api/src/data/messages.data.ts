@@ -4,7 +4,10 @@ import {
   ImageUploads,
   TranscriptContents,
   db,
+  type Executor,
 } from "../../../shared/db";
+import { attachImagesToMessage } from "./images.data";
+import { recordConversationContext } from "./conversations.data";
 
 /**
  * The columns a message is exposed through — every read feeding `toMessageJson`
@@ -139,15 +142,18 @@ export async function findRecentMessagesWithContext(
   return [...byId.values()];
 }
 
-export async function createMessage(message: {
-  role: "user" | "assistant";
-  content: string;
-  conversationId: string;
-  userId: string;
-  chosenModelId?: string;
-  audioUploadId?: string;
-}) {
-  const [row] = await db
+export async function createMessage(
+  message: {
+    role: "user" | "assistant";
+    content: string;
+    conversationId: string;
+    userId: string;
+    chosenModelId?: string;
+    audioUploadId?: string;
+  },
+  executor: Executor = db,
+) {
+  const [row] = await executor
     .insert(ChatMessages)
     .values(message)
     .returning(messageColumns);
@@ -177,4 +183,56 @@ export async function deleteOwnedMessage(
     .returning({ id: ChatMessages.id });
 
   return row ?? null;
+}
+
+/**
+ * Persists a completed turn as one transaction: the user message, the images it
+ * claimed, the assistant reply, and the conversation's new context fingerprint.
+ * All-or-nothing, so a mid-write failure can't leave a turn half-recorded — a
+ * user message with no reply, or a reply the conversation never points at.
+ */
+export async function persistChatTurn(turn: {
+  userId: string;
+  conversationId: string;
+  content: string;
+  audioUploadId?: string;
+  attachmentUploadIds: readonly string[];
+  chosenModelId: string;
+  assistantContent: string;
+  contextHash: string;
+}) {
+  await db.transaction(async (tx) => {
+    const userMessage = await createMessage(
+      {
+        role: "user",
+        content: turn.content,
+        conversationId: turn.conversationId,
+        userId: turn.userId,
+        audioUploadId: turn.audioUploadId,
+      },
+      tx,
+    );
+    await attachImagesToMessage(
+      turn.userId,
+      userMessage.id,
+      turn.attachmentUploadIds,
+      tx,
+    );
+    await createMessage(
+      {
+        role: "assistant",
+        content: turn.assistantContent,
+        chosenModelId: turn.chosenModelId,
+        conversationId: turn.conversationId,
+        userId: turn.userId,
+      },
+      tx,
+    );
+    await recordConversationContext(
+      turn.userId,
+      turn.conversationId,
+      turn.contextHash,
+      tx,
+    );
+  });
 }

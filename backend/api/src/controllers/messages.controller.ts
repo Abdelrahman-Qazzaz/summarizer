@@ -3,10 +3,10 @@ import { streamSSE } from "hono/streaming";
 import { createHash } from "node:crypto";
 import { SSEEventQueue } from "../utils/sse";
 import {
-  createMessage,
   deleteOwnedMessage,
   findConversationMessages,
   findRecentMessagesWithContext,
+  persistChatTurn,
   type ContextMessage,
   type MessageRow,
 } from "../data/messages.data";
@@ -14,12 +14,8 @@ import { CTX_KEYS } from "../../../shared/keys";
 import { buildUserTurn, chatAI } from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
+import { findOwnedConversation } from "../data/conversations.data";
 import {
-  findOwnedConversation,
-  recordConversationContext,
-} from "../data/conversations.data";
-import {
-  attachImagesToMessage,
   findMessageImageUploadIds,
   resolveImageUploadUrls,
   resolveMessageImages,
@@ -311,26 +307,18 @@ export async function handleCreateMessage(c: Context) {
   // abandoned turn is persisted in full and shows up on GET .../messages.
   const persistTurn = async (assistantContent: string) => {
     try {
-      const userMessage = await createMessage({
-        role: "user",
+      // One transaction, so a mid-write failure rolls the whole turn back rather
+      // than leaving a user message with no reply (or vice versa).
+      await persistChatTurn({
+        userId,
+        conversationId,
         content,
-        conversationId,
-        userId,
         audioUploadId,
-      });
-      await attachImagesToMessage(
-        userId,
-        userMessage.id,
-        attachments.map((attachment) => attachment.uploadId),
-      );
-      await createMessage({
-        role: "assistant",
-        content: assistantContent,
+        attachmentUploadIds: attachments.map((attachment) => attachment.uploadId),
         chosenModelId,
-        conversationId,
-        userId,
+        assistantContent,
+        contextHash,
       });
-      await recordConversationContext(userId, conversationId, contextHash);
     } catch (err) {
       // TODO: implement solution
       log.error("Failed to persist chat turn", err, { conversationId });

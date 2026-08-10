@@ -10,6 +10,13 @@ const client = postgres(getBaseEnv().DATABASE_URL, { prepare: false });
 
 export const db = drizzle(client, { schema });
 
+/**
+ * A query runner that is either the pool (`db`) or an open transaction. Write
+ * helpers take one so several can be composed into a single atomic transaction;
+ * it defaults to `db`, so a standalone call is unaffected.
+ */
+export type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 /** Startup health check: fails if the database is unreachable. */
 export async function pingDb(): Promise<void> {
   await db.execute(drizzleSql`select 1`);

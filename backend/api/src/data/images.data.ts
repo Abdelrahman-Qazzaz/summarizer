@@ -1,5 +1,10 @@
 import { and, asc, eq, inArray, isNull, type SQL } from "drizzle-orm";
-import { ChatMessages, ImageUploads, db } from "../../../shared/db";
+import {
+  ChatMessages,
+  ImageUploads,
+  db,
+  type Executor,
+} from "../../../shared/db";
 import {
   IMAGE_URL_TTL_SECONDS,
   createSignedUrls,
@@ -274,10 +279,11 @@ export async function attachImagesToMessage(
   userId: string,
   messageId: string,
   uploadIds: readonly string[],
+  executor: Executor = db,
 ) {
   if (uploadIds.length === 0) return;
 
-  await db
+  await executor
     .update(ImageUploads)
     .set({ messageId })
     .where(
