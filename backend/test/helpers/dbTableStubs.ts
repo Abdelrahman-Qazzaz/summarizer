@@ -51,6 +51,13 @@ export const tableStubs = {
     userId: "user_id",
   },
 
+  TranscriptContents: {
+    uploadId: "upload_id",
+    content: "content",
+    charCount: "char_count",
+    userId: "user_id",
+  },
+
   jobStatusEnum: {
     enumValues: ["queued", "processing", "completed", "failed"],
   },

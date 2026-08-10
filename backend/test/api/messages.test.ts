@@ -1,73 +1,87 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
 const {
-  mockSelect,
-  mockFrom,
-  mockWhere,
-  mockOrderBy,
-  mockLimit,
-  mockInsert,
-  mockValues,
-  mockInsertReturning,
-  mockUpdate,
-  mockSet,
-  mockUpdateWhere,
-  mockDelete,
-  mockDeleteWhere,
-  mockDeleteReturning,
-  mockImageWhere,
-  mockImageOrderBy,
-  mockImageRows,
+  mockFindOwnedConversation,
+  mockRecordConversationContext,
+  mockFindRecentMessagesWithContext,
+  mockCreateMessage,
+  mockFindConversationMessages,
+  mockDeleteOwnedMessage,
+  mockResolveUnattachedImages,
+  mockResolveMessageImages,
+  mockAttachImagesToMessage,
+  mockFindMessageImageUploadIds,
+  mockResolveImageUploadUrls,
+  mockFindTranscript,
+  mockFindTranscriptContents,
+  mockDeleteFilesFromBucket,
   mockValidateModel,
   mockValidateModelInput,
   mockChatAI,
-  mockCreateSignedUrls,
-  mockDeleteFilesFromBucket,
-  mockReadTextFile,
-  mockReadTextFiles,
-  mockTranscriptRows,
 } = vi.hoisted(() => ({
-  mockSelect: vi.fn(),
-  mockFrom: vi.fn(),
-  mockWhere: vi.fn(),
-  mockOrderBy: vi.fn(),
-  mockLimit: vi.fn(),
-  mockInsert: vi.fn(),
-  mockValues: vi.fn(),
-  mockInsertReturning: vi.fn(),
-  mockUpdate: vi.fn(),
-  mockSet: vi.fn(),
-  mockUpdateWhere: vi.fn(),
-  mockDelete: vi.fn(),
-  mockDeleteWhere: vi.fn(),
-  mockDeleteReturning: vi.fn(),
-  mockImageWhere: vi.fn(),
-  mockImageOrderBy: vi.fn(),
-  mockImageRows: vi.fn(),
+  mockFindOwnedConversation: vi.fn(),
+  mockRecordConversationContext: vi.fn(),
+  mockFindRecentMessagesWithContext: vi.fn(),
+  mockCreateMessage: vi.fn(),
+  mockFindConversationMessages: vi.fn(),
+  mockDeleteOwnedMessage: vi.fn(),
+  mockResolveUnattachedImages: vi.fn(),
+  mockResolveMessageImages: vi.fn(),
+  mockAttachImagesToMessage: vi.fn(),
+  mockFindMessageImageUploadIds: vi.fn(),
+  mockResolveImageUploadUrls: vi.fn(),
+  mockFindTranscript: vi.fn(),
+  mockFindTranscriptContents: vi.fn(),
+  mockDeleteFilesFromBucket: vi.fn(),
   mockValidateModel: vi.fn(),
   mockValidateModelInput: vi.fn(),
   mockChatAI: vi.fn(),
-  mockCreateSignedUrls: vi.fn(),
-  mockDeleteFilesFromBucket: vi.fn(),
-  mockReadTextFile: vi.fn(),
-  mockReadTextFiles: vi.fn(),
-  mockTranscriptRows: vi.fn(),
 }));
 
+// The data layer is mocked directly — these tests drive the controller's
+// context assembly, streaming and (non-blocking) persistence, not the SQL. The
+// join query behind findRecentMessagesWithContext is a data-layer concern. The
+// table stubs stand in for the columns other controllers read at module scope
+// when createApp wires the whole app.
 vi.mock("../../shared/db", async () => ({
-  db: {
-    select: mockSelect,
-    insert: mockInsert,
-    update: mockUpdate,
-    delete: mockDelete,
-  },
+  db: {},
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
+vi.mock("../../api/src/data/conversations.data", async (importActual) => ({
+  ...(await importActual<
+    typeof import("../../api/src/data/conversations.data")
+  >()),
+  findOwnedConversation: mockFindOwnedConversation,
+  recordConversationContext: mockRecordConversationContext,
+}));
+
+vi.mock("../../api/src/data/messages.data", async (importActual) => ({
+  ...(await importActual<typeof import("../../api/src/data/messages.data")>()),
+  findRecentMessagesWithContext: mockFindRecentMessagesWithContext,
+  createMessage: mockCreateMessage,
+  findConversationMessages: mockFindConversationMessages,
+  deleteOwnedMessage: mockDeleteOwnedMessage,
+}));
+
+vi.mock("../../api/src/data/images.data", async (importActual) => ({
+  ...(await importActual<typeof import("../../api/src/data/images.data")>()),
+  resolveUnattachedImages: mockResolveUnattachedImages,
+  resolveMessageImages: mockResolveMessageImages,
+  attachImagesToMessage: mockAttachImagesToMessage,
+  findMessageImageUploadIds: mockFindMessageImageUploadIds,
+  resolveImageUploadUrls: mockResolveImageUploadUrls,
+}));
+
+vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
+  ...(await importActual<typeof import("../../shared/data/transcripts.data")>()),
+  findTranscript: mockFindTranscript,
+  findTranscriptContents: mockFindTranscriptContents,
+}));
+
 vi.mock("../../shared/bucket", () => ({
-  createSignedUrls: mockCreateSignedUrls,
   deleteFilesFromBucket: mockDeleteFilesFromBucket,
-  readTextFile: mockReadTextFile,
-  readTextFiles: mockReadTextFiles,
+  createSignedUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
@@ -85,14 +99,13 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
   };
 });
 
-// Resolves to the mocked module above, so this is the stub table.
-import { ImageUploads } from "../../shared/db";
 import { createApp } from "../../api/app";
 import {
   MAX_CONTEXT_CHARS,
   MAX_RESPONSE_TOKENS,
 } from "../../api/src/controllers/messages.controller";
 import { sessionCookieHeader } from "../helpers/session";
+import type { ContextMessage } from "../../api/src/data/messages.data";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
 const messageId = "650e8400-e29b-41d4-a716-446655440111";
@@ -101,6 +114,14 @@ const modelId = "openai/gpt-4o-mini";
 const createdAt = "2026-07-22T00:00:00.000Z";
 
 const uploadId = "850e8400-e29b-41d4-a716-446655440333";
+
+const ownedConversation = {
+  id: conversationId,
+  title: "A chat",
+  createdAt,
+  updatedAt: createdAt,
+  contextHash: null,
+};
 
 const userRow = {
   id: messageId,
@@ -119,17 +140,6 @@ const assistantRow = {
   createdAt,
 };
 
-/** An image_uploads row as the projection in imageUploads.ts selects it. */
-const imageRow = {
-  uploadId,
-  fileName: "diagram.png",
-  mimeType: "image/png",
-  sizeBytes: 1234,
-  signedUrl: "https://bucket.test/diagram.png",
-  // Far enough out that the row's cached signature is reused as-is.
-  signedUrlExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-  messageId,
-};
 const resolvedImage = {
   uploadId,
   fileName: "diagram.png",
@@ -138,47 +148,34 @@ const resolvedImage = {
   url: "https://bucket.test/diagram.png",
 };
 
+/** A history turn as findRecentMessagesWithContext hands it back, newest first. */
+function contextMessage(partial: Partial<ContextMessage> = {}): ContextMessage {
+  return {
+    id: messageId,
+    role: "user",
+    content: "",
+    createdAt: new Date(createdAt),
+    audioUploadId: null,
+    transcriptCharCount: null,
+    images: [],
+    ...partial,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mockSelect.mockImplementation(() => ({ from: mockFrom }));
-  // Reads of image_uploads get their own chain: they end at `.where()` or
-  // `.orderBy()` rather than `.limit()`, and interleave with the message reads
-  // within one request, so sharing a mock would make either one's rows depend
-  // on the other's call order.
-  mockFrom.mockImplementation((table: unknown) =>
-    table === ImageUploads ? { where: mockImageWhere } : { where: mockWhere },
+  mockFindOwnedConversation.mockResolvedValue(ownedConversation);
+  mockFindRecentMessagesWithContext.mockResolvedValue([]);
+  mockResolveUnattachedImages.mockResolvedValue([]);
+  mockResolveMessageImages.mockResolvedValue(new Map());
+  mockResolveImageUploadUrls.mockResolvedValue(new Map());
+  mockFindTranscript.mockResolvedValue(null);
+  mockFindTranscriptContents.mockResolvedValue(new Map());
+  mockCreateMessage.mockImplementation(async (message: { role: string }) =>
+    message.role === "user" ? userRow : assistantRow,
   );
-  // The batched findOwnedTranscripts read terminates at `.where()` (no orderBy
-  // or limit), so `.where()` has to be awaitable — resolving to the history
-  // transcript rows — while still exposing the chain the other reads continue.
-  mockWhere.mockImplementation(() =>
-    Object.assign(Promise.resolve(mockTranscriptRows()), {
-      orderBy: mockOrderBy,
-      limit: mockLimit,
-    }),
-  );
-  mockOrderBy.mockImplementation(() => ({ limit: mockLimit }));
-  mockImageWhere.mockImplementation(() =>
-    Object.assign(Promise.resolve(mockImageRows()), {
-      orderBy: mockImageOrderBy,
-    }),
-  );
-  mockImageOrderBy.mockImplementation(async () => mockImageRows());
-  mockImageRows.mockReturnValue([]);
-  mockTranscriptRows.mockReturnValue([]);
-  mockReadTextFiles.mockResolvedValue({
-    texts: new Map(),
-    failedUploadIds: [],
-  });
-  mockInsert.mockImplementation(() => ({ values: mockValues }));
-  mockValues.mockImplementation(() => ({ returning: mockInsertReturning }));
-  mockUpdate.mockImplementation(() => ({ set: mockSet }));
-  mockSet.mockImplementation(() => ({ where: mockUpdateWhere }));
-  mockUpdateWhere.mockResolvedValue([]);
-  mockDelete.mockImplementation(() => ({ where: mockDeleteWhere }));
-  mockDeleteWhere.mockImplementation(() => ({
-    returning: mockDeleteReturning,
-  }));
+  mockAttachImagesToMessage.mockResolvedValue(undefined);
+  mockRecordConversationContext.mockResolvedValue(undefined);
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
   mockDeleteFilesFromBucket.mockResolvedValue([]);
@@ -190,12 +187,11 @@ describe("GET /conversations/:conversationId/messages", () => {
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}/messages`);
     expect(res.status).toBe(401);
-    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockFindOwnedConversation).not.toHaveBeenCalled();
   });
+
   it("lists the conversation's messages oldest-first", async () => {
-    // 1st select: ownership check; 2nd select: the messages themselves.
-    mockLimit.mockResolvedValueOnce([{ id: conversationId }]);
-    mockOrderBy.mockResolvedValueOnce([userRow, assistantRow]);
+    mockFindConversationMessages.mockResolvedValueOnce([userRow, assistantRow]);
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}/messages`, {
@@ -211,9 +207,10 @@ describe("GET /conversations/:conversationId/messages", () => {
   });
 
   it("returns each user turn's images as its attachments", async () => {
-    mockLimit.mockResolvedValueOnce([{ id: conversationId }]); // ownership
-    mockOrderBy.mockResolvedValueOnce([userRow, assistantRow]);
-    mockImageRows.mockReturnValue([imageRow]);
+    mockFindConversationMessages.mockResolvedValueOnce([userRow, assistantRow]);
+    mockResolveMessageImages.mockResolvedValueOnce(
+      new Map([[messageId, [resolvedImage]]]),
+    );
 
     const res = await (
       await createApp()
@@ -229,11 +226,10 @@ describe("GET /conversations/:conversationId/messages", () => {
         { ...assistantRow, attachments: [] },
       ],
     });
-    // The row's signature was still fresh, so nothing was re-signed.
-    expect(mockCreateSignedUrls).not.toHaveBeenCalled();
   });
+
   it("returns 404 when the conversation is not owned by the user", async () => {
-    mockLimit.mockResolvedValueOnce([]);
+    mockFindOwnedConversation.mockResolvedValueOnce(null);
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}/messages`, {
@@ -258,13 +254,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   }
 
-  it("streams deltas over SSE and persists both turns", async () => {
-    mockLimit
-      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
-      .mockResolvedValueOnce([]); // history
-    mockInsertReturning
-      .mockResolvedValueOnce([userRow])
-      .mockResolvedValueOnce([assistantRow]);
+  it("streams deltas then a hash, and persists the turn", async () => {
     mockChatAI.mockImplementation(
       async (
         _model: string,
@@ -285,45 +275,48 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(res.headers.get("content-type")).toContain("text/event-stream");
 
     const body = await res.text();
-    expect(body).toContain("event: user_message");
     expect(body).toContain("event: delta");
     expect(body).toContain(JSON.stringify({ delta: "Hello " }));
     expect(body).toContain(JSON.stringify({ delta: "world" }));
-    expect(body).toContain("event: done");
+    expect(body).toContain("event: hash");
     expect(body).not.toContain("event: error");
+    // The hash trails the tokens the client rendered.
+    expect(body.indexOf("event: delta")).toBeLessThan(
+      body.indexOf("event: hash"),
+    );
 
     expect(mockChatAI).toHaveBeenCalledWith(
       modelId,
       [{ role: "user", content: "Hi there" }],
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
-    // Both the user turn and the assistant reply were persisted.
-    expect(mockValues).toHaveBeenCalledWith({
-      role: "user",
-      content: "Hi there",
-      conversationId,
-      userId,
-    });
-    expect(mockValues).toHaveBeenCalledWith({
-      role: "assistant",
-      content: "Hello world",
-      chosenModelId: modelId,
-      conversationId,
-      userId,
+
+    // The writes are fire-and-forget, so they land after the response resolves.
+    await vi.waitFor(() => {
+      expect(mockCreateMessage).toHaveBeenCalledWith({
+        role: "user",
+        content: "Hi there",
+        conversationId,
+        userId,
+        audioUploadId: undefined,
+      });
+      expect(mockCreateMessage).toHaveBeenCalledWith({
+        role: "assistant",
+        content: "Hello world",
+        chosenModelId: modelId,
+        conversationId,
+        userId,
+      });
+      expect(mockRecordConversationContext).toHaveBeenCalledWith(
+        userId,
+        conversationId,
+        expect.any(String),
+      );
     });
   });
 
-  it("persists both turns when the client disconnects mid-stream", async () => {
-    mockLimit
-      .mockResolvedValueOnce([{ id: conversationId }])
-      .mockResolvedValueOnce([]);
-    mockInsertReturning
-      .mockResolvedValueOnce([userRow])
-      .mockResolvedValueOnce([assistantRow]);
-
+  it("persists the turn even when the client disconnects mid-stream", async () => {
     const client = new AbortController();
-    // Awaiting each delta mirrors chatAI: if emitting one could block on the
-    // dead connection, the run would stall here and never reach the insert.
     mockChatAI.mockImplementation(
       async (
         _model: string,
@@ -343,30 +336,39 @@ describe("POST /conversations/:conversationId/messages", () => {
       client.signal,
     );
     expect(res.status).toBe(200);
+    await res.text().catch(() => {}); // the aborted stream may reject here
 
-    // The run outlives the connection: the assistant turn still lands.
-    await vi.waitFor(() =>
-      expect(mockValues).toHaveBeenCalledWith({
+    // The run is decoupled from the response, so it completes and persists the
+    // whole turn regardless of the disconnect. Persistence is fire-and-forget.
+    await vi.waitFor(() => {
+      expect(mockCreateMessage).toHaveBeenCalledWith({
+        role: "user",
+        content: "Hi there",
+        conversationId,
+        userId,
+        audioUploadId: undefined,
+      });
+      expect(mockCreateMessage).toHaveBeenCalledWith({
         role: "assistant",
         content: "Hello world",
         chosenModelId: modelId,
         conversationId,
         userId,
-      }),
-    );
+      });
+      expect(mockRecordConversationContext).toHaveBeenCalledWith(
+        userId,
+        conversationId,
+        expect.any(String),
+      );
+    });
   });
 
   it("replays prior history to the model, oldest first", async () => {
-    mockLimit
-      .mockResolvedValueOnce([{ id: conversationId }])
+    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
       // History arrives newest-first from the query; the controller reverses it.
-      .mockResolvedValueOnce([
-        { id: assistantRow.id, role: "assistant", content: "Old answer" },
-        { id: messageId, role: "user", content: "Old question" },
-      ]);
-    mockInsertReturning
-      .mockResolvedValueOnce([userRow])
-      .mockResolvedValueOnce([assistantRow]);
+      contextMessage({ id: assistantRow.id, role: "assistant", content: "Old answer" }),
+      contextMessage({ id: messageId, role: "user", content: "Old question" }),
+    ]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
@@ -387,17 +389,55 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
+  it("reads only the transcripts of turns that fit the budget", async () => {
+    // Newest turn fits; the older one's transcript alone blows the budget.
+    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
+      contextMessage({
+        id: assistantRow.id,
+        content: "Newer",
+        audioUploadId: "audio-fits",
+        transcriptCharCount: 10,
+      }),
+      contextMessage({
+        id: messageId,
+        content: "Older",
+        audioUploadId: "audio-huge",
+        transcriptCharCount: MAX_CONTEXT_CHARS,
+      }),
+    ]);
+    mockFindTranscriptContents.mockResolvedValueOnce(
+      new Map([["audio-fits", "T"]]),
+    );
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+
+    // The dropped turn's body is never fetched — only the admitted one's.
+    expect(mockFindTranscriptContents).toHaveBeenCalledWith(userId, [
+      "audio-fits",
+    ]);
+    // The over-budget turn didn't make the prompt.
+    const [, turns] = mockChatAI.mock.calls[0];
+    expect(turns).toHaveLength(2);
+  });
+
   it("replays images a past turn was sent with", async () => {
-    mockLimit
-      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
-      .mockResolvedValueOnce([
-        { id: messageId, role: "user", content: "What is this?" },
-      ]);
-    // The image_uploads rows for that history turn.
-    mockImageRows.mockReturnValue([imageRow]);
-    mockInsertReturning
-      .mockResolvedValueOnce([userRow])
-      .mockResolvedValueOnce([assistantRow]);
+    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
+      contextMessage({
+        id: messageId,
+        role: "user",
+        content: "What is this?",
+        images: [{ uploadId, signedUrl: null, signedUrlExpiresAt: null }],
+      }),
+    ]);
+    mockResolveImageUploadUrls.mockResolvedValueOnce(
+      new Map([[uploadId, resolvedImage.url]]),
+    );
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
@@ -427,17 +467,11 @@ describe("POST /conversations/:conversationId/messages", () => {
   it("drops history beyond the character budget and caps the response", async () => {
     // Two of these fit in the budget; the third pushes it over.
     const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
-    mockLimit
-      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
-      .mockResolvedValueOnce([
-        // History, newest-first as the query returns it.
-        { role: "user", content: `newest ${long}` },
-        { role: "assistant", content: `middle ${long}` },
-        { role: "user", content: `oldest ${long}` },
-      ]);
-    mockInsertReturning
-      .mockResolvedValueOnce([userRow])
-      .mockResolvedValueOnce([assistantRow]);
+    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
+      contextMessage({ role: "user", content: `newest ${long}` }),
+      contextMessage({ role: "assistant", content: `middle ${long}` }),
+      contextMessage({ role: "user", content: `oldest ${long}` }),
+    ]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
@@ -456,23 +490,10 @@ describe("POST /conversations/:conversationId/messages", () => {
 
   describe("with a transcript attached", () => {
     const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
-    const transcriptUploadId = "a50e8400-e29b-41d4-a716-446655440555";
     const transcript = "and then the speaker said something important";
 
-    /** The transcription-job row `findOwnedTranscript` projects. */
-    function transcriptJob(overrides: Record<string, unknown> = {}) {
-      return { transcriptUploadId, status: "completed", ...overrides };
-    }
-
     it("splices the transcript into the turn and records the link", async () => {
-      mockLimit
-        .mockResolvedValueOnce([{ id: conversationId }]) // ownership
-        .mockResolvedValueOnce([transcriptJob()]) // findOwnedTranscript
-        .mockResolvedValueOnce([]); // history
-      mockReadTextFile.mockResolvedValueOnce(transcript);
-      mockInsertReturning
-        .mockResolvedValueOnce([userRow])
-        .mockResolvedValueOnce([assistantRow]);
+      mockFindTranscript.mockResolvedValueOnce({ content: transcript });
       mockChatAI.mockResolvedValueOnce("Hello world");
 
       const res = await postMessage({
@@ -489,41 +510,32 @@ describe("POST /conversations/:conversationId/messages", () => {
         [{ role: "user", content: `${transcript}\n\nSummarise this` }],
         expect.objectContaining({ onDelta: expect.any(Function) }),
       );
-      // ...but the row stores only what was typed, plus the link. The
-      // transcript stays in the bucket rather than being copied into the DB.
-      expect(mockValues).toHaveBeenCalledWith({
-        role: "user",
-        content: "Summarise this",
-        conversationId,
-        userId,
-        audioUploadId,
-      });
-      expect(mockReadTextFile).toHaveBeenCalledWith(userId, transcriptUploadId);
+      // ...but the row stores only what was typed, plus the link.
+      await vi.waitFor(() =>
+        expect(mockCreateMessage).toHaveBeenCalledWith({
+          role: "user",
+          content: "Summarise this",
+          conversationId,
+          userId,
+          audioUploadId,
+        }),
+      );
+      expect(mockFindTranscript).toHaveBeenCalledWith(userId, audioUploadId);
     });
 
     it("replays a past turn's transcript so follow-ups still see it", async () => {
-      mockLimit
-        .mockResolvedValueOnce([{ id: conversationId }]) // ownership
-        .mockResolvedValueOnce([
-          {
-            id: messageId,
-            role: "user",
-            content: "Summarise this",
-            audioUploadId,
-          },
-        ]); // history
-      // Its job row (resolves at `.where()`), then its object from the batched
-      // bucket read keyed by the transcript's own object id.
-      mockTranscriptRows.mockReturnValue([
-        transcriptJob({ uploadId: audioUploadId }),
+      mockFindRecentMessagesWithContext.mockResolvedValueOnce([
+        contextMessage({
+          id: messageId,
+          role: "user",
+          content: "Summarise this",
+          audioUploadId,
+          transcriptCharCount: transcript.length,
+        }),
       ]);
-      mockReadTextFiles.mockResolvedValueOnce({
-        texts: new Map([[transcriptUploadId, transcript]]),
-        failedUploadIds: [],
-      });
-      mockInsertReturning
-        .mockResolvedValueOnce([userRow])
-        .mockResolvedValueOnce([assistantRow]);
+      mockFindTranscriptContents.mockResolvedValueOnce(
+        new Map([[audioUploadId, transcript]]),
+      );
       mockChatAI.mockResolvedValueOnce("Hello world");
 
       const res = await postMessage({
@@ -537,10 +549,9 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(turns[0].content).toBe(`${transcript}\n\nSummarise this`);
     });
 
-    it("returns 404 when the job is not the caller's", async () => {
-      mockLimit
-        .mockResolvedValueOnce([{ id: conversationId }])
-        .mockResolvedValueOnce([]); // findOwnedTranscript finds nothing
+    it("returns 404 when the transcript isn't the caller's or isn't ready", async () => {
+      // A row exists only for a completed job the user owns; otherwise none.
+      mockFindTranscript.mockResolvedValueOnce(null);
       const res = await postMessage({
         messageContent: "Summarise this",
         chosenModelId: modelId,
@@ -549,30 +560,13 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(res.status).toBe(404);
       expect(await res.json()).toEqual({ message: "Transcript not found" });
       expect(mockChatAI).not.toHaveBeenCalled();
-      expect(mockInsert).not.toHaveBeenCalled();
-    });
-
-    it("returns 404 while transcription is still running", async () => {
-      mockLimit
-        .mockResolvedValueOnce([{ id: conversationId }])
-        .mockResolvedValueOnce([
-          transcriptJob({ status: "processing", transcriptUploadId: null }),
-        ]);
-      const res = await postMessage({
-        messageContent: "Summarise this",
-        chosenModelId: modelId,
-        audioUploadId,
-      });
-      expect(res.status).toBe(404);
-      // Never reached the bucket — there is nothing there yet to read.
-      expect(mockReadTextFile).not.toHaveBeenCalled();
+      expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
     it("refuses a transcript past the context budget rather than truncating it", async () => {
-      mockLimit
-        .mockResolvedValueOnce([{ id: conversationId }])
-        .mockResolvedValueOnce([transcriptJob()]);
-      mockReadTextFile.mockResolvedValueOnce("x".repeat(MAX_CONTEXT_CHARS + 1));
+      mockFindTranscript.mockResolvedValueOnce({
+        content: "x".repeat(MAX_CONTEXT_CHARS + 1),
+      });
 
       const res = await postMessage({
         messageContent: "Summarise this",
@@ -585,25 +579,19 @@ describe("POST /conversations/:conversationId/messages", () => {
         maxChars: MAX_CONTEXT_CHARS,
         chars: MAX_CONTEXT_CHARS + 1,
       });
-      // A half-transcript would produce a confident answer about half the
-      // recording, so nothing is sent at all.
       expect(mockChatAI).not.toHaveBeenCalled();
     });
 
     it("charges the transcript against the budget, dropping history to fit", async () => {
       const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
-      mockLimit
-        .mockResolvedValueOnce([{ id: conversationId }]) // ownership
-        .mockResolvedValueOnce([transcriptJob()]) // findOwnedTranscript
-        .mockResolvedValueOnce([
-          { role: "user", content: `newest ${long}` },
-          { role: "assistant", content: `middle ${long}` },
-        ]); // history
       // Half the budget: one ~third-budget history turn still fits, two don't.
-      mockReadTextFile.mockResolvedValueOnce("y".repeat(MAX_CONTEXT_CHARS / 2));
-      mockInsertReturning
-        .mockResolvedValueOnce([userRow])
-        .mockResolvedValueOnce([assistantRow]);
+      mockFindTranscript.mockResolvedValueOnce({
+        content: "y".repeat(MAX_CONTEXT_CHARS / 2),
+      });
+      mockFindRecentMessagesWithContext.mockResolvedValueOnce([
+        contextMessage({ role: "user", content: `newest ${long}` }),
+        contextMessage({ role: "assistant", content: `middle ${long}` }),
+      ]);
       mockChatAI.mockResolvedValueOnce("Hello world");
 
       const res = await postMessage({
@@ -620,11 +608,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
   });
 
-  it("emits an SSE error event and skips the assistant insert when the model fails", async () => {
-    mockLimit
-      .mockResolvedValueOnce([{ id: conversationId }])
-      .mockResolvedValueOnce([]);
-    mockInsertReturning.mockResolvedValueOnce([userRow]);
+  it("emits an SSE error event and persists nothing when the model fails", async () => {
     mockChatAI.mockRejectedValueOnce(new Error("provider exploded"));
 
     const res = await postMessage({
@@ -633,22 +617,16 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain("event: user_message");
     expect(body).toContain("event: error");
-    expect(body).not.toContain("event: done");
-    // Only the user turn was persisted.
-    expect(mockInsert).toHaveBeenCalledTimes(1);
+    expect(body).not.toContain("event: hash");
+
+    // The writes only run once a reply is known, so a failed turn saves nothing.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
   it("sends attachments as vision input and binds them to the user turn", async () => {
-    mockLimit
-      .mockResolvedValueOnce([{ id: conversationId }]) // ownership
-      .mockResolvedValueOnce([]); // history
-    // Not yet claimed by a message — what the send path is allowed to attach.
-    mockImageRows.mockReturnValue([{ ...imageRow, messageId: null }]);
-    mockInsertReturning
-      .mockResolvedValueOnce([userRow])
-      .mockResolvedValueOnce([assistantRow]);
+    mockResolveUnattachedImages.mockResolvedValueOnce([resolvedImage]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
@@ -657,7 +635,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       attachmentUploadIds: [uploadId],
     });
     expect(res.status).toBe(200);
-    const body = await res.text();
+    await res.text();
 
     // The turn the model sees carries the text and the signed image url.
     expect(mockChatAI).toHaveBeenCalledWith(
@@ -674,13 +652,15 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
     // The upload is claimed by the message that was just inserted.
-    expect(mockSet).toHaveBeenCalledWith({ messageId });
-    expect(body).toContain(JSON.stringify(resolvedImage));
+    await vi.waitFor(() =>
+      expect(mockAttachImagesToMessage).toHaveBeenCalledWith(userId, messageId, [
+        uploadId,
+      ]),
+    );
   });
 
   it("rejects an attachment that is not the user's, or already sent", async () => {
-    mockLimit.mockResolvedValueOnce([{ id: conversationId }]); // ownership
-    mockImageRows.mockReturnValue([]); // no unattached row matches
+    mockResolveUnattachedImages.mockResolvedValueOnce([]); // no unattached match
 
     const res = await postMessage({
       messageContent: "Hi there",
@@ -690,7 +670,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Attachment not found" });
-    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
   it("rejects attachments on a model that can't read images with 400", async () => {
@@ -703,23 +683,22 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(res.status).toBe(400);
-    expect(mockSelect).not.toHaveBeenCalled();
-    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockFindOwnedConversation).not.toHaveBeenCalled();
+    expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the conversation is not owned by the user", async () => {
-    // Ownership and the (discarded) history fetch both run; resolve both empty.
-    mockLimit.mockResolvedValue([]);
+    mockFindOwnedConversation.mockResolvedValueOnce(null);
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: modelId,
     });
     expect(res.status).toBe(404);
-    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid model with 400 before touching the db", async () => {
-    // Model validation now runs in the body-schema middleware, ahead of the
+    // Model validation runs in the body-schema middleware, ahead of the
     // handler's ownership check.
     mockValidateModel.mockResolvedValueOnce(false);
     const res = await postMessage({
@@ -727,8 +706,8 @@ describe("POST /conversations/:conversationId/messages", () => {
       chosenModelId: "nope",
     });
     expect(res.status).toBe(400);
-    expect(mockSelect).not.toHaveBeenCalled();
-    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockFindOwnedConversation).not.toHaveBeenCalled();
+    expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
   it("rejects an empty message with 400", async () => {
@@ -737,13 +716,14 @@ describe("POST /conversations/:conversationId/messages", () => {
       chosenModelId: modelId,
     });
     expect(res.status).toBe(400);
-    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockFindOwnedConversation).not.toHaveBeenCalled();
   });
 });
 
 describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
   it("deletes the message", async () => {
-    mockDeleteReturning.mockResolvedValueOnce([{ id: messageId }]);
+    mockFindMessageImageUploadIds.mockResolvedValueOnce([]);
+    mockDeleteOwnedMessage.mockResolvedValueOnce({ id: messageId });
     const res = await (
       await createApp()
     ).request(
@@ -756,13 +736,13 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ message: "Message deleted" });
   });
+
   it("removes the message's images from the bucket", async () => {
-    // Read before the delete, while the rows still exist.
-    mockImageRows.mockReturnValue([
-      { uploadId },
-      { uploadId: "another-upload" },
+    mockFindMessageImageUploadIds.mockResolvedValueOnce([
+      uploadId,
+      "another-upload",
     ]);
-    mockDeleteReturning.mockResolvedValueOnce([{ id: messageId }]);
+    mockDeleteOwnedMessage.mockResolvedValueOnce({ id: messageId });
 
     const res = await (
       await createApp()
@@ -782,7 +762,8 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
   });
 
   it("returns 404 when the message does not exist for the user", async () => {
-    mockDeleteReturning.mockResolvedValueOnce([]);
+    mockFindMessageImageUploadIds.mockResolvedValueOnce([]);
+    mockDeleteOwnedMessage.mockResolvedValueOnce(null);
     const res = await (
       await createApp()
     ).request(
@@ -794,6 +775,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
     );
     expect(res.status).toBe(404);
   });
+
   it("rejects a non-uuid message id with 400", async () => {
     const res = await (
       await createApp()
@@ -805,6 +787,6 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       },
     );
     expect(res.status).toBe(400);
-    expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
   });
 });

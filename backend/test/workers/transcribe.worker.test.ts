@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const uploadId = "550e8400-e29b-41d4-a716-446655440000";
-const generatedTranscriptId = "660e8400-e29b-41d4-a716-446655440001";
-const existingTranscriptId = "770e8400-e29b-41d4-a716-446655440002";
 
 const {
   mockSendEvent,
@@ -12,7 +10,7 @@ const {
   mockUpdate,
   mockCreateSignedUrl,
   mockTranscribeUrl,
-  mockUploadTextToBucket,
+  mockUpsertTranscript,
 } = vi.hoisted(() => ({
   mockSendEvent: vi.fn(),
   mockReturning: vi.fn(),
@@ -21,7 +19,7 @@ const {
   mockUpdate: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
   mockTranscribeUrl: vi.fn(),
-  mockUploadTextToBucket: vi.fn(),
+  mockUpsertTranscript: vi.fn(),
 }));
 
 // Shape a Deepgram transcribeUrl response carrying a single transcript string.
@@ -29,14 +27,14 @@ function deepgramResponse(transcript: string) {
   return { results: { channels: [{ alternatives: [{ paragraphs: { transcript } }] }] } };
 }
 
-vi.mock("crypto", () => ({
-  randomUUID: () => generatedTranscriptId,
-}));
-
 vi.mock("../../shared/bucket", () => ({
   createSignedUrl: mockCreateSignedUrl,
   AUDIO_URL_TTL_SECONDS: 3600,
-  uploadTextToBucket: mockUploadTextToBucket,
+}));
+
+vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
+  ...(await importActual<typeof import("../../shared/data/transcripts.data")>()),
+  upsertTranscript: mockUpsertTranscript,
 }));
 
 // transcribe() lives in the same module as handleTranscribeJob, so it can't be
@@ -65,7 +63,7 @@ import { handleTranscribeJob } from "../../shared/ai/ai_transcribe_client";
 
 /**
  * The worker issues two updates: claim (which returns the row), then complete
- * — which carries the transcript key. Only the first returns anything.
+ * (or fail). Only the first returns anything.
  */
 function setupUpdateChain(claimedJobs: unknown[]) {
   let updateCall = 0;
@@ -84,7 +82,6 @@ const claimedJob = {
   userId: "user_01",
   fileName: "clip.mp3",
   status: "queued",
-  transcriptUploadId: null,
 };
 
 describe("handleTranscribeJob", () => {
@@ -92,7 +89,7 @@ describe("handleTranscribeJob", () => {
     vi.clearAllMocks();
     mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
-    mockUploadTextToBucket.mockResolvedValue(undefined);
+    mockUpsertTranscript.mockResolvedValue(undefined);
     mockSendEvent.mockResolvedValue(undefined);
     setupUpdateChain([claimedJob]);
   });
@@ -106,39 +103,19 @@ describe("handleTranscribeJob", () => {
       expect.any(Number),
     );
     expect(mockTranscribeUrl).toHaveBeenCalled();
-    expect(mockUploadTextToBucket).toHaveBeenCalledWith(
+    // Stored keyed by the job's own uploadId, before the job is marked done.
+    expect(mockUpsertTranscript).toHaveBeenCalledWith(
       "user_01",
-      generatedTranscriptId,
+      uploadId,
       "sample transcript",
-      { upsert: true },
     );
-    // claim + complete (which carries the transcript key)
+    // claim + complete
     expect(mockUpdate).toHaveBeenCalledTimes(2);
-    expect(mockSet).toHaveBeenLastCalledWith({
-      status: "completed",
-      transcriptUploadId: generatedTranscriptId,
-    });
+    expect(mockSet).toHaveBeenLastCalledWith({ status: "completed" });
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
       uploadId,
       userId: "user_01",
     });
-  });
-
-  it("reuses the existing transcript key on a re-run", async () => {
-    setupUpdateChain([
-      { ...claimedJob, transcriptUploadId: existingTranscriptId },
-    ]);
-
-    await handleTranscribeJob(uploadId);
-
-    // Overwrites the object it wrote last time rather than minting a new key,
-    // which would strand the previous transcript in the bucket.
-    expect(mockUploadTextToBucket).toHaveBeenCalledWith(
-      "user_01",
-      existingTranscriptId,
-      "sample transcript",
-      { upsert: true },
-    );
   });
 
   it("no-ops when no queued job is claimed", async () => {
@@ -154,7 +131,7 @@ describe("handleTranscribeJob", () => {
     await expect(handleTranscribeJob(uploadId)).rejects.toThrow(
       "Transcription produced no text",
     );
-    expect(mockUploadTextToBucket).not.toHaveBeenCalled();
+    expect(mockUpsertTranscript).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
