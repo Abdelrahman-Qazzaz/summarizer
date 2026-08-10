@@ -41,8 +41,3 @@ export const FORM_KEYS = {
 export const COOKIE_KEYS = {
   session: "session",
 } as const;
-
-export const CACHE_KEYS = {
-  openRouterModels: "models:v7",
-  deepgramTranscribeModels: "transcribe-models:v1",
-};

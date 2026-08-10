@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockModelsList, mockCheckCache, mockSetCache } = vi.hoisted(() => ({
+const { mockModelsList, mockGetCache, mockSetCache } = vi.hoisted(() => ({
   mockModelsList: vi.fn(),
-  mockCheckCache: vi.fn(),
+  mockGetCache: vi.fn(),
   mockSetCache: vi.fn(),
 }));
 
@@ -14,8 +14,8 @@ vi.mock("@deepgram/sdk", () => ({
   },
 }));
 
-vi.mock("../../shared/redis", () => ({
-  checkCache: mockCheckCache,
+vi.mock("../../shared/cache/cache", () => ({
+  getCache: mockGetCache,
   setCache: mockSetCache,
 }));
 
@@ -48,13 +48,13 @@ describe("getTranscribeModelData", () => {
 
   it("returns the cached catalog without calling Deepgram", async () => {
     const cached = { "nova-3-general": { name: "nova-3" } };
-    mockCheckCache.mockResolvedValue(cached);
+    mockGetCache.mockResolvedValue(cached);
     expect(await getTranscribeModelData()).toBe(cached);
     expect(mockModelsList).not.toHaveBeenCalled();
   });
 
   it("fetches from Deepgram on a miss, shapes the stt models, and caches", async () => {
-    mockCheckCache.mockResolvedValue(null);
+    mockGetCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue(sttResponse);
 
     const data = await getTranscribeModelData();
@@ -67,18 +67,14 @@ describe("getTranscribeModelData", () => {
       canonicalName: "nova-3-general",
       formattedOutput: true,
     });
-    expect(mockSetCache).toHaveBeenCalledWith(
-      "transcribe-models:v1",
-      data,
-      expect.any(Number),
-    );
+    expect(mockSetCache).toHaveBeenCalledWith("deepgramTranscribeModels", data);
   });
 });
 
 describe("isValidTranscribeModel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCheckCache.mockResolvedValue(null);
+    mockGetCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue(sttResponse);
   });
 

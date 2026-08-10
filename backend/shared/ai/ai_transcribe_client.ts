@@ -6,8 +6,7 @@ import { AUDIO_URL_TTL_SECONDS, createSignedUrl } from "../bucket";
 import type { UploadId } from "../types/mq.types";
 import { logger } from "../logger";
 import { mq } from "../message-queue/messageQueue";
-import { CACHE_KEYS } from "../keys";
-import { checkCache, setCache } from "../redis";
+import { getCache, setCache } from "../cache/cache";
 
 const log = logger.child({ ai_transcribe_client: "transcribe" });
 
@@ -73,13 +72,8 @@ type TranscribeModelData = {
   [modelId: string]: TranscribeModel;
 };
 
-/** Deepgram's model list changes rarely; a day-long entry keeps a newly listed
- * model from waiting on a hand-bumped CACHE_KEYS version. */
-const TRANSCRIBE_MODEL_CATALOG_TTL_SECONDS = 24 * 60 * 60;
-
 export async function getTranscribeModelData(): Promise<TranscribeModelData> {
-  const cacheKey = CACHE_KEYS.deepgramTranscribeModels;
-  const hit = (await checkCache(cacheKey)) as TranscribeModelData | null;
+  const hit = await getCache<TranscribeModelData>("deepgramTranscribeModels");
   if (hit != null) return hit;
 
   const response = await deepgram.manage.v1.models.list();
@@ -106,7 +100,7 @@ export async function getTranscribeModelData(): Promise<TranscribeModelData> {
     }),
   );
 
-  await setCache(cacheKey, modelData, TRANSCRIBE_MODEL_CATALOG_TTL_SECONDS);
+  await setCache("deepgramTranscribeModels", modelData);
   return modelData;
 }
 
@@ -118,10 +112,7 @@ export async function getTranscribeModelData(): Promise<TranscribeModelData> {
  * matched.
  */
 export async function isValidTranscribeModel(modelId: string): Promise<boolean> {
-  const hit = (await checkCache(
-    CACHE_KEYS.deepgramTranscribeModels,
-  )) as TranscribeModelData | null;
-  const modelData = hit ?? (await getTranscribeModelData());
+  const modelData = await getTranscribeModelData();
 
   if (modelData[modelId]) return true;
   return Object.values(modelData).some(

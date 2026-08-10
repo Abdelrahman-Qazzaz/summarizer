@@ -1,10 +1,10 @@
-// TODO: add cache where the key is (kind,modelid), where kind is transcribe/text/etc. Because even when cached, the result of openRouterModelsCacheKey is too large to justify being ran every req
+// TODO: cache per (kind, modelId) — kind is transcribe/text/etc. Even cached,
+// the full model catalog is too large to justify validating against on every req.
 
 import { getBaseEnv } from "../env";
 import { OpenRouter } from "@openrouter/sdk";
 
-import { CACHE_KEYS } from "../keys";
-import { checkCache, setCache } from "../redis";
+import { getCache, setCache } from "../cache/cache";
 import type {
   ChatContentItems,
   InputModality,
@@ -127,18 +127,11 @@ type ChatModelData = {
   };
 };
 
-/**
- * The catalog changes rarely, but it does change — a day-long entry keeps a
- * newly listed model from waiting on a hand-bumped CACHE_KEYS version.
- */
-const CHAT_MODEL_CATALOG_TTL_SECONDS = 24 * 60 * 60;
-
-export async function getChatModelData() {
-  const openRouterModelsCacheKey = CACHE_KEYS.openRouterModels;
-  const hit = (await checkCache(
-    openRouterModelsCacheKey,
-  )) as ChatModelData | null;
-
+// Every send validates the chosen model against this catalog, so the cache
+// keeps that check off the network. The in-memory tier of getCache also spares
+// each process the Redis round-trip once warm.
+export async function getChatModelData(): Promise<ChatModelData> {
+  const hit = await getCache<ChatModelData>("openRouterModels");
   if (hit != null) return hit;
 
   // Only text-output models are ever chosen here (summary/chat); transcription
@@ -163,11 +156,7 @@ export async function getChatModelData() {
     ]),
   );
 
-  await setCache(
-    openRouterModelsCacheKey,
-    modelData,
-    CHAT_MODEL_CATALOG_TTL_SECONDS,
-  );
+  await setCache("openRouterModels", modelData);
   return modelData;
 }
 
@@ -179,11 +168,7 @@ export async function getChatModelData() {
  * worker when the provider rejects the chat-completion request.
  */
 async function findChatModel(modelId: string) {
-  const hit = (await checkCache(
-    CACHE_KEYS.openRouterModels,
-  )) as ChatModelData | null;
-
-  const modelData: ChatModelData = hit ?? (await getChatModelData());
+  const modelData = await getChatModelData();
   return modelData[modelId];
 }
 

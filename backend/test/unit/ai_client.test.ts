@@ -1,16 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { CACHE_KEYS } from "../../shared/keys";
 
-const { mockCheckCache, mockSetCache, mockModelsList, mockChatSend } =
+const { mockGetCache, mockSetCache, mockModelsList, mockChatSend } =
   vi.hoisted(() => ({
-    mockCheckCache: vi.fn(),
+    mockGetCache: vi.fn(),
     mockSetCache: vi.fn(),
     mockModelsList: vi.fn(),
     mockChatSend: vi.fn(),
   }));
 
-vi.mock("../../shared/redis", () => ({
-  checkCache: mockCheckCache,
+vi.mock("../../shared/cache/cache", () => ({
+  getCache: mockGetCache,
   setCache: mockSetCache,
 }));
 
@@ -66,18 +65,18 @@ describe("getChatModelData", () => {
   });
 
   it("returns cached data on cache hit without calling OpenRouter", async () => {
-    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+    mockGetCache.mockResolvedValueOnce(sampleModelData);
 
     const result = await getChatModelData();
 
     expect(result).toEqual(sampleModelData);
-    expect(mockCheckCache).toHaveBeenCalledWith(CACHE_KEYS.openRouterModels);
+    expect(mockGetCache).toHaveBeenCalledWith("openRouterModels");
     expect(mockModelsList).not.toHaveBeenCalled();
     expect(mockSetCache).not.toHaveBeenCalled();
   });
 
   it("fetches, normalizes, and caches on cache miss", async () => {
-    mockCheckCache.mockResolvedValueOnce(null);
+    mockGetCache.mockResolvedValueOnce(null);
     mockModelsList.mockResolvedValueOnce({ data: [openRouterListModel] });
 
     const result = await getChatModelData();
@@ -87,9 +86,8 @@ describe("getChatModelData", () => {
     // Only text-output models are relevant here; transcription is Deepgram's.
     expect(mockModelsList).toHaveBeenCalledWith({ outputModalities: "text" });
     expect(mockSetCache).toHaveBeenCalledWith(
-      CACHE_KEYS.openRouterModels,
+      "openRouterModels",
       sampleModelData,
-      expect.any(Number), // the catalog's ttl
     );
   });
 });
@@ -101,7 +99,7 @@ describe("validateChatModelInput", () => {
   });
 
   it("returns true for a modality the model accepts", async () => {
-    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+    mockGetCache.mockResolvedValueOnce(sampleModelData);
 
     expect(await validateChatModelInput(DEFAULT_CHAT_MODEL, "image")).toBe(
       true,
@@ -109,7 +107,7 @@ describe("validateChatModelInput", () => {
   });
 
   it("returns false for a modality the model does not accept", async () => {
-    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+    mockGetCache.mockResolvedValueOnce(sampleModelData);
 
     expect(await validateChatModelInput(DEFAULT_CHAT_MODEL, "audio")).toBe(
       false,
@@ -117,7 +115,7 @@ describe("validateChatModelInput", () => {
   });
 
   it("returns false for an unknown model id", async () => {
-    mockCheckCache.mockResolvedValue(null);
+    mockGetCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
     expect(await validateChatModelInput("unknown/model", "image")).toBe(false);
@@ -155,7 +153,7 @@ describe("validateChatModelOutput", () => {
   });
 
   it("returns true for a known model id from cache", async () => {
-    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+    mockGetCache.mockResolvedValueOnce(sampleModelData);
 
     const result = await validateChatModelOutput(DEFAULT_CHAT_MODEL, "text");
 
@@ -164,7 +162,7 @@ describe("validateChatModelOutput", () => {
   });
 
   it("returns false for an unknown model id after fetch", async () => {
-    mockCheckCache.mockResolvedValue(null);
+    mockGetCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
     const result = await validateChatModelOutput("unknown/model", "text");
@@ -174,7 +172,7 @@ describe("validateChatModelOutput", () => {
   });
 
   it("returns true for a known model id after fetch", async () => {
-    mockCheckCache.mockResolvedValue(null);
+    mockGetCache.mockResolvedValue(null);
     mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
 
     const result = await validateChatModelOutput(DEFAULT_CHAT_MODEL, "text");
@@ -184,7 +182,7 @@ describe("validateChatModelOutput", () => {
   });
 
   it("returns false for a modality the model does not produce", async () => {
-    mockCheckCache.mockResolvedValueOnce(sampleModelData);
+    mockGetCache.mockResolvedValueOnce(sampleModelData);
 
     expect(
       await validateChatModelOutput(DEFAULT_CHAT_MODEL, "transcription"),

@@ -1,6 +1,6 @@
 import { RedisStore } from "hono-rate-limiter";
 import { RateLimitStoreUnavailableError } from "./errors";
-import { getRedisClient } from "../../../shared/redis";
+import { getRedisClient } from "../../../shared/cache/redis";
 
 async function wrapStoreMethod<T>(fn: () => Promise<T>): Promise<T> {
   try {
