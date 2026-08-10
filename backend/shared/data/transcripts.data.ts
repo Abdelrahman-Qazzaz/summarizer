@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { TranscriptContents, db } from "../db";
+import { TranscriptContents, db, type Executor } from "../db";
 import type { UploadId } from "../types/mq.types";
+import { completeAudioJob } from "./jobs.data";
 
 /**
  * The transcript text a completed job produced. Lives here, not in the job row
@@ -14,14 +15,31 @@ export async function upsertTranscript(
   userId: string,
   uploadId: UploadId,
   content: string,
+  executor: Executor = db,
 ) {
-  await db
+  await executor
     .insert(TranscriptContents)
     .values({ uploadId, userId, content, charCount: content.length })
     .onConflictDoUpdate({
       target: TranscriptContents.uploadId,
       set: { content, charCount: content.length },
     });
+}
+
+/**
+ * Stores the transcript and marks the job completed in one transaction, so a
+ * crash can't leave a job stuck `processing` with a transcript already written
+ * (or a completed job with none).
+ */
+export async function saveCompletedTranscript(
+  userId: string,
+  uploadId: UploadId,
+  content: string,
+) {
+  await db.transaction(async (tx) => {
+    await upsertTranscript(userId, uploadId, content, tx);
+    await completeAudioJob(uploadId, tx);
+  });
 }
 
 /** The transcript a chat turn wants to carry, or null when there isn't one yet. */

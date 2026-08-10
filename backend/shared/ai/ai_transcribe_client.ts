@@ -1,17 +1,9 @@
 import { DeepgramClient } from "@deepgram/sdk";
 import { getBaseEnv } from "../env";
-import {
-  claimAudioJob,
-  completeAudioJob,
-  failAudioJob,
-} from "../data/jobs.data";
-import {
-  AUDIO_URL_TTL_SECONDS,
-  createSignedUrl,
-  uploadTextToBucket,
-} from "../bucket";
+import { claimAudioJob, failAudioJob } from "../data/jobs.data";
+import { saveCompletedTranscript } from "../data/transcripts.data";
+import { AUDIO_URL_TTL_SECONDS, createSignedUrl } from "../bucket";
 import type { UploadId } from "../types/mq.types";
-import { randomUUID } from "crypto";
 import { logger } from "../logger";
 import { mq } from "../message-queue/messageQueue";
 import { CACHE_KEYS } from "../keys";
@@ -160,17 +152,10 @@ export async function handleTranscribeJob(uploadId: UploadId) {
       length: transcript.length,
     });
 
-    // The audio occupies this job's own uploadId, so the transcript needs a key
-    // of its own. A re-run reuses the key it already has and overwrites the
-    // object — hence the upsert. Minting a fresh id per run would instead leave
-    // the previous transcript orphaned in the bucket.
-    const transcriptUploadId: UploadId =
-      (job.transcriptUploadId as UploadId | null) ?? randomUUID();
-    await uploadTextToBucket(job.userId, transcriptUploadId, transcript, {
-      upsert: true,
-    });
-
-    await completeAudioJob(uploadId, transcriptUploadId);
+    // Store the transcript (keyed by this job's uploadId; a re-run overwrites
+    // it) and mark the job done in one transaction, so a completed job always
+    // has a readable transcript and vice versa.
+    await saveCompletedTranscript(job.userId, uploadId, transcript);
     await mq.sendEvent(mq.queues.TRANSCRIBE_DONE, {
       uploadId,
       userId: job.userId,

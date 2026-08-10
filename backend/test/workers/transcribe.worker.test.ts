@@ -10,7 +10,7 @@ const {
   mockUpdate,
   mockCreateSignedUrl,
   mockTranscribeUrl,
-  mockUpsertTranscript,
+  mockSaveCompletedTranscript,
 } = vi.hoisted(() => ({
   mockSendEvent: vi.fn(),
   mockReturning: vi.fn(),
@@ -19,7 +19,7 @@ const {
   mockUpdate: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
   mockTranscribeUrl: vi.fn(),
-  mockUpsertTranscript: vi.fn(),
+  mockSaveCompletedTranscript: vi.fn(),
 }));
 
 // Shape a Deepgram transcribeUrl response carrying a single transcript string.
@@ -34,7 +34,7 @@ vi.mock("../../shared/bucket", () => ({
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   ...(await importActual<typeof import("../../shared/data/transcripts.data")>()),
-  upsertTranscript: mockUpsertTranscript,
+  saveCompletedTranscript: mockSaveCompletedTranscript,
 }));
 
 // transcribe() lives in the same module as handleTranscribeJob, so it can't be
@@ -89,7 +89,7 @@ describe("handleTranscribeJob", () => {
     vi.clearAllMocks();
     mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
-    mockUpsertTranscript.mockResolvedValue(undefined);
+    mockSaveCompletedTranscript.mockResolvedValue(undefined);
     mockSendEvent.mockResolvedValue(undefined);
     setupUpdateChain([claimedJob]);
   });
@@ -103,15 +103,13 @@ describe("handleTranscribeJob", () => {
       expect.any(Number),
     );
     expect(mockTranscribeUrl).toHaveBeenCalled();
-    // Stored keyed by the job's own uploadId, before the job is marked done.
-    expect(mockUpsertTranscript).toHaveBeenCalledWith(
+    // Transcript store + job-completion happen together (one transaction),
+    // keyed by the job's own uploadId.
+    expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
       uploadId,
       "sample transcript",
     );
-    // claim + complete
-    expect(mockUpdate).toHaveBeenCalledTimes(2);
-    expect(mockSet).toHaveBeenLastCalledWith({ status: "completed" });
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
       uploadId,
       userId: "user_01",
@@ -131,7 +129,7 @@ describe("handleTranscribeJob", () => {
     await expect(handleTranscribeJob(uploadId)).rejects.toThrow(
       "Transcription produced no text",
     );
-    expect(mockUpsertTranscript).not.toHaveBeenCalled();
+    expect(mockSaveCompletedTranscript).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 

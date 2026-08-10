@@ -1,6 +1,6 @@
 import { and, desc, eq, ilike, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import { AudioTranscriptionJobs, db } from "../db";
+import { AudioTranscriptionJobs, db, type Executor } from "../db";
 import type { jobStatusEnum } from "../db";
 import type { UploadId } from "../types/mq.types";
 
@@ -205,8 +205,11 @@ export async function claimAudioJob(uploadId: UploadId) {
  * by the previous run finishing late. The transcript body is written separately
  * (upsertTranscript) before this marks the job done.
  */
-export async function completeAudioJob(uploadId: UploadId) {
-  await db
+export async function completeAudioJob(
+  uploadId: UploadId,
+  executor: Executor = db,
+) {
+  await executor
     .update(AudioTranscriptionJobs)
     .set({ status: "completed" })
     .where(
