@@ -339,6 +339,8 @@ export async function handleCreateMessage(c: Context) {
       const assistantContent = await chatAI(chosenModelId, turns, {
         onDelta: async (delta) => events.push("delta", { delta }),
         maxOutputTokens: MAX_RESPONSE_TOKENS,
+        // Keeps this conversation's turns on one provider for prompt-cache hits.
+        sessionId: conversationId,
       });
       events.push("hash", { contextHash });
       // End the queue before persisting so the response can drain and close —

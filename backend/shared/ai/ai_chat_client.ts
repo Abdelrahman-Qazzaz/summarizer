@@ -58,9 +58,22 @@ export async function chatAI(
     onDelta?: (delta: string) => void | Promise<void>;
     /** Ceiling on the completion, so one call can't run up an unbounded bill. */
     maxOutputTokens?: number;
+    /**
+     * Groups a conversation's turns so OpenRouter routes them all to the same
+     * provider (sticky), keeping that provider's prompt cache warm across the
+     * turn's stable history prefix — the biggest lever on time-to-first-token.
+     */
+    sessionId?: string;
   } = {},
 ): Promise<string> {
   const maxCompletionTokens = opts.maxOutputTokens;
+  // `sort: "latency"` routes to the lowest time-to-first-token endpoint (no load
+  // balancing); paired with the sticky sessionId, turns stay on one fast, warm
+  // provider.
+  const routing = {
+    provider: { sort: "latency" },
+    sessionId: opts.sessionId,
+  } as const;
 
   // Non-streaming
   if (!opts.onDelta) {
@@ -69,6 +82,7 @@ export async function chatAI(
         model,
         messages,
         maxCompletionTokens,
+        ...routing,
       },
     });
 
@@ -82,6 +96,7 @@ export async function chatAI(
       messages,
       maxCompletionTokens,
       stream: true,
+      ...routing,
     },
   });
 

@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CACHE_KEYS } from "../../shared/keys";
 
-const { mockCheckCache, mockSetCache, mockModelsList } = vi.hoisted(() => ({
-  mockCheckCache: vi.fn(),
-  mockSetCache: vi.fn(),
-  mockModelsList: vi.fn(),
-}));
+const { mockCheckCache, mockSetCache, mockModelsList, mockChatSend } =
+  vi.hoisted(() => ({
+    mockCheckCache: vi.fn(),
+    mockSetCache: vi.fn(),
+    mockModelsList: vi.fn(),
+    mockChatSend: vi.fn(),
+  }));
 
 vi.mock("../../shared/redis", () => ({
   checkCache: mockCheckCache,
@@ -15,11 +17,13 @@ vi.mock("../../shared/redis", () => ({
 vi.mock("@openrouter/sdk", () => ({
   OpenRouter: class {
     models = { list: mockModelsList };
+    chat = { send: mockChatSend };
   },
 }));
 
 import {
   buildUserTurn,
+  chatAI,
   DEFAULT_CHAT_MODEL,
   getChatModelData,
   validateChatModelInput,
@@ -185,5 +189,33 @@ describe("validateChatModelOutput", () => {
     expect(
       await validateChatModelOutput(DEFAULT_CHAT_MODEL, "transcription"),
     ).toBe(false);
+  });
+});
+
+describe("chatAI", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("routes for low latency and pins the session for prompt-cache hits", async () => {
+    mockChatSend.mockResolvedValueOnce({
+      choices: [{ message: { content: "hi" } }],
+    });
+
+    const result = await chatAI(
+      DEFAULT_CHAT_MODEL,
+      [{ role: "user", content: "yo" }],
+      { maxOutputTokens: 100, sessionId: "conversation-1" },
+    );
+
+    expect(result).toBe("hi");
+    expect(mockChatSend).toHaveBeenCalledWith({
+      chatRequest: expect.objectContaining({
+        model: DEFAULT_CHAT_MODEL,
+        maxCompletionTokens: 100,
+        provider: { sort: "latency" },
+        sessionId: "conversation-1",
+      }),
+    });
   });
 });
