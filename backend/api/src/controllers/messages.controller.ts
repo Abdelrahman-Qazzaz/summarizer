@@ -1,39 +1,36 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
+import { createHash } from "node:crypto";
+import { SSEEventQueue } from "../utils/sse";
 import {
   createMessage,
   deleteOwnedMessage,
   findConversationMessages,
-  findRecentMessages,
+  findRecentMessagesWithContext,
+  type ContextMessage,
   type MessageRow,
 } from "../data/messages.data";
 import { CTX_KEYS } from "../../../shared/keys";
 import { buildUserTurn, chatAI } from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
-import { SSEEventQueue } from "../utils/sse";
 import { logger } from "../../../shared/logger";
 import {
   findOwnedConversation,
-  touchConversation,
+  recordConversationContext,
 } from "../data/conversations.data";
 import {
   attachImagesToMessage,
   findMessageImageUploadIds,
+  resolveImageUploadUrls,
   resolveMessageImages,
   resolveUnattachedImages,
   type ResolvedImage,
 } from "../data/images.data";
+import { deleteFilesFromBucket } from "../../../shared/bucket";
 import {
-  deleteFilesFromBucket,
-  readTextFile,
-  readTextFiles,
-} from "../../../shared/bucket";
-import {
-  findOwnedTranscript,
-  findOwnedTranscripts,
-} from "../../../shared/data/jobs.data";
-import { tryCatch } from "../../../shared/try-catch";
-import type { UploadId } from "../../../shared/types/mq.types";
+  findTranscript,
+  findTranscriptContents,
+} from "../../../shared/data/transcripts.data";
 
 const log = logger.child({ controller: "messages" });
 
@@ -42,8 +39,6 @@ const log = logger.child({ controller: "messages" });
  * of the 50k chars the schema allows is a ~2.5M-char prompt, so the character
  * budget is what actually holds the line. Older turns simply fall off.
  */
-
-// TODO: (not rn): add col on conversations that shows which msg context cut off at, that way we solve the unncessary transcripts prefetch
 
 const MAX_CONTEXT_MESSAGES = 50;
 export const MAX_CONTEXT_CHARS = 100_000;
@@ -73,84 +68,20 @@ function toMessageJson(row: MessageRow, attachments: ResolvedImage[] = []) {
 /**
  * A turn that carried a transcript, as the model sees it: the transcript body
  * followed by what the user actually typed. The stored `content` is only ever
- * the typed part — the transcript lives in the bucket and is spliced in here,
- * which is what lets one prompt carry a body far past the 50k message cap.
+ * the typed part — the transcript is spliced in here, which is what lets one
+ * prompt carry a body far past the 50k message cap.
  */
 function withTranscript(content: string, transcript: string) {
   return `${transcript}\n\n${content}`;
 }
 
 /**
- * The transcript for a turn that names a transcription job, or null when the
- * job isn't the caller's, hasn't finished, or its object can't be read. A
- * bucket failure is logged rather than thrown: the turn is still worth replaying
- * without it.
+ * The transcript for a turn that names a transcription job, or null when the job
+ * isn't the caller's or hasn't finished — a row exists only for a completed one.
  */
 async function readTurnTranscript(userId: string, audioUploadId: string) {
-  const job = await findOwnedTranscript(userId, audioUploadId);
-  if (!job || job.status !== "completed" || !job.transcriptUploadId) {
-    return null;
-  }
-
-  const { data, error } = await tryCatch(
-    readTextFile(userId, job.transcriptUploadId as UploadId),
-  );
-  if (error)
-    log.error("Failed to read transcript from bucket", error, {
-      audioUploadId,
-      transcriptUploadId: job.transcriptUploadId,
-    });
-  return data;
-}
-
-/**
- * Every history turn's transcript, keyed by audioUploadId: one job query, then
- * the objects read in a single batched bucket fetch — so replaying a
- * conversation of audio turns no longer awaits a DB+bucket round-trip per turn
- * inside the assembly loop. A job that isn't completed is skipped; one whose
- * object can't be read is logged and simply absent, the same posture
- * readTurnTranscript takes for the single-turn path.
- */
-async function loadHistoryTranscripts(
-  userId: string,
-  history: readonly { audioUploadId: string | null }[],
-): Promise<Map<string, string>> {
-  const audioUploadIds = [
-    ...new Set(
-      history
-        .map((message) => message.audioUploadId)
-        .filter((id): id is string => id !== null),
-    ),
-  ];
-
-  const transcriptsByUploadId = new Map<string, string>();
-  if (audioUploadIds.length === 0) return transcriptsByUploadId;
-
-  const jobs = await findOwnedTranscripts(userId, audioUploadIds);
-  const readable = jobs.filter(
-    (job): job is typeof job & { transcriptUploadId: string } =>
-      job.status === "completed" && job.transcriptUploadId !== null,
-  );
-  if (readable.length === 0) return transcriptsByUploadId;
-
-  const { texts, failedUploadIds } = await readTextFiles(
-    readable.map((job) => ({ userId, uploadId: job.transcriptUploadId })),
-  );
-  if (failedUploadIds.length > 0)
-    log.error("Failed to read transcripts from bucket", undefined, {
-      transcriptUploadIds: failedUploadIds,
-    });
-
-  // The map the loop reads is keyed by audioUploadId — the id a turn is replayed
-  // under — while the bucket read is keyed by the transcript's own object id.
-  for (const job of readable) {
-    const transcript = texts.get(job.transcriptUploadId);
-    if (transcript !== undefined) {
-      transcriptsByUploadId.set(job.uploadId, transcript);
-    }
-  }
-
-  return transcriptsByUploadId;
+  const row = await findTranscript(userId, audioUploadId);
+  return row?.content ?? null;
 }
 
 /** Assistant turns never carry images, so they're not worth looking up. */
@@ -161,68 +92,95 @@ function userMessageIds(
 }
 
 /**
+ * A stable fingerprint of the context a reply is generated against: each turn's
+ * role and its text. Image URLs are re-signed over time, so they're excluded —
+ * the same conversation state must always hash the same. Advisory: it's stored
+ * on the conversation and echoed by the client to make drift visible.
+ */
+function hashContext(turns: ChatTurn[]): string {
+  const stable = turns.map((turn) => ({
+    role: turn.role,
+    text:
+      typeof turn.content === "string"
+        ? turn.content
+        : turn.content
+            .map((part) => (part.type === "text" ? part.text : "[image]"))
+            .join(""),
+  }));
+  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+/**
  * The model context for a new user turn: the conversation's most recent
- * history (fetched newest-first so LIMIT keeps the latest turns, then reversed
- * into the oldest-first order the model expects) plus the new turn itself.
- * Must run before the new turn is inserted, so it can't appear twice.
+ * `history` (fetched newest-first by the caller, then reversed here into the
+ * oldest-first order the model expects) plus the new turn itself.
  *
  * The new turn is always included, however long it is; history is admitted
  * newest-first until MAX_CONTEXT_CHARS is spent and truncated at the first turn
- * that doesn't fit — dropping that one but keeping older ones would splice the
- * conversation into something the model reads as a non-sequitur. Images each
- * past turn was sent with ride along under their own MAX_CONTEXT_IMAGES cap.
+ * that doesn't fit. A turn's cost is its content length plus its transcript's
+ * `charCount` — so the budget is decided without reading any bodies, and only
+ * the transcripts that actually fit are then fetched. Images each past turn was
+ * sent with ride along under their own MAX_CONTEXT_IMAGES cap.
  */
 async function assembleConversationContext(
   userId: string,
-  conversationId: string,
+  history: ContextMessage[],
   newTurn: ChatTurn,
   spentChars: number,
 ): Promise<ChatTurn[]> {
-  const history = await findRecentMessages(
-    conversationId,
-    MAX_CONTEXT_MESSAGES - 1,
-  );
+  // First decide which turns fit, spending only content lengths and transcript
+  // char counts — no transcript body is read for a turn the budget will drop.
+  let charBudget = MAX_CONTEXT_CHARS - spentChars;
+  let imageBudget = MAX_CONTEXT_IMAGES;
+  const admitted: {
+    message: ContextMessage;
+    imageSlots: ContextMessage["images"];
+  }[] = [];
 
-  // Both depend only on the history and the owner, so they run together; the
-  // transcripts are prefetched here rather than read one-per-turn in the loop.
-  const [imagesByMessageId, transcriptsByUploadId] = await Promise.all([
-    resolveMessageImages(userId, userMessageIds(history)),
-    loadHistoryTranscripts(userId, history),
+  for (const message of history) {
+    const cost = message.content.length + (message.transcriptCharCount ?? 0);
+    if (charBudget - cost < 0) break;
+    charBudget -= cost;
+
+    // Slots, not resolved urls, spend the budget — an image that failed to sign
+    // is dropped, the same as it would be on the turn it was first sent.
+    const imageSlots = message.images.slice(0, imageBudget);
+    imageBudget -= imageSlots.length;
+    admitted.push({ message, imageSlots });
+  }
+
+  // Only now read the bodies and sign the images — for the admitted turns only.
+  const transcriptUploadIds = admitted.flatMap(({ message }) =>
+    message.transcriptCharCount !== null && message.audioUploadId
+      ? [message.audioUploadId]
+      : [],
+  );
+  const [transcripts, urlByUploadId] = await Promise.all([
+    findTranscriptContents(userId, transcriptUploadIds),
+    resolveImageUploadUrls(
+      userId,
+      admitted.flatMap((entry) => entry.imageSlots),
+    ),
   ]);
 
   const turns: ChatTurn[] = [newTurn];
-  let charBudget = MAX_CONTEXT_CHARS - spentChars;
-  let imageBudget = MAX_CONTEXT_IMAGES;
-
-  for (const message of history) {
-    charBudget -= message.content.length;
-    if (charBudget < 0) break;
-
-    // A past turn's transcript is replayed too — a follow-up question about a
-    // transcript sent three turns ago has to still see it, same as images.
-    // Prefetched above, so this is a map lookup, not a per-turn bucket read.
+  for (const { message, imageSlots } of admitted) {
+    // A past turn's transcript is replayed too — a follow-up about a transcript
+    // sent three turns ago has to still see it, same as images.
     let content = message.content;
     if (message.audioUploadId) {
-      const transcript = transcriptsByUploadId.get(message.audioUploadId);
-      if (transcript) {
-        charBudget -= transcript.length;
-        if (charBudget < 0) break;
-        content = withTranscript(content, transcript);
-      }
+      const transcript = transcripts.get(message.audioUploadId);
+      if (transcript) content = withTranscript(content, transcript);
     }
 
-    const images = (imagesByMessageId.get(message.id) ?? []).slice(
-      0,
-      imageBudget,
-    );
-    imageBudget -= images.length;
+    const imageUrls = imageSlots.flatMap((image) => {
+      const url = urlByUploadId.get(image.uploadId);
+      return url ? [url] : [];
+    });
 
     turns.unshift(
-      images.length > 0
-        ? buildUserTurn(
-            content,
-            images.map((image) => image.url),
-          )
+      imageUrls.length > 0
+        ? buildUserTurn(content, imageUrls)
         : { role: message.role, content },
     );
   }
@@ -257,97 +215,21 @@ export async function handleListMessages(c: Context) {
 }
 
 /**
- * Persists the user turn, runs the model, and persists the reply, reporting
- * progress into `events`. Never rejects: failures become an `error` event.
+ * POST /conversations/:conversationId/messages — build the model context, stream
+ * the reply over SSE, and persist the turn without the client waiting on it.
  *
- * Deliberately takes a queue rather than the response stream — the run has to
- * finish (and both rows have to land) whether or not a client is still reading.
- */
-async function runChatTurn(
-  args: {
-    userId: string;
-    conversationId: string;
-    content: string;
-    chosenModelId: string;
-    turns: ChatTurn[];
-    attachments: ResolvedImage[];
-    audioUploadId?: string;
-  },
-  events: SSEEventQueue,
-) {
-  const {
-    userId,
-    conversationId,
-    content,
-    chosenModelId,
-    turns,
-    attachments,
-    audioUploadId,
-  } = args;
-  try {
-    // The user turn must be durable (and its id known for the event) before the
-    // model call; touching the conversation surfaces it in the list's ordering.
-    // Only the typed content is stored — the transcript stays in the bucket and
-    // is spliced back in whenever this turn is replayed.
-    const [userMessage] = await Promise.all([
-      createMessage({
-        role: "user",
-        content,
-        conversationId,
-        userId,
-        audioUploadId,
-      }),
-      touchConversation(userId, conversationId),
-    ]);
-
-    // Only now does the message id these uploads hang off exist.
-    await attachImagesToMessage(
-      userId,
-      userMessage.id,
-      attachments.map((attachment) => attachment.uploadId),
-    );
-    events.push("user_message", toMessageJson(userMessage, attachments));
-
-    const full = await chatAI(chosenModelId, turns, {
-      onDelta: (delta) => events.push("delta", { delta }),
-      maxOutputTokens: MAX_RESPONSE_TOKENS,
-    });
-
-    const assistantMessage = await createMessage({
-      role: "assistant",
-      content: full,
-      chosenModelId,
-      conversationId,
-      userId,
-    });
-
-    events.push("done", toMessageJson(assistantMessage));
-  } catch (err) {
-    log.error("Chat completion run failed", err, {
-      conversationId,
-      chosenModelId,
-    });
-    // Reported in-band: the response is a 200 stream by the time this can fail,
-    // so an SSE "error" event is the only channel left to the client.
-    events.push("error", { message: "Model response failed" });
-  } finally {
-    events.end();
-  }
-}
-
-/**
- * POST /conversations/:conversationId/messages — persist the user turn, then
- * stream the model's reply over SSE and persist it once complete.
- *
- * The run is detached from the response: a client that disconnects the moment
- * it posts (or never reads the body at all) still comes back to a conversation
- * holding both its message and the full reply. Streaming is only for watching
- * the answer arrive; `GET .../messages` is the source of truth.
- *
- * Events: `user_message` (the saved user row), `delta` ({ delta }) per model
- * chunk, `done` (the saved assistant row), `error` ({ message }). The client
+ * Events: `delta` ({ delta }) per model chunk, then `hash` ({ contextHash }) — a
+ * fingerprint of the context this reply was built on, which the client echoes on
+ * its next turn — then `error` ({ message }) if the model call fails. The client
  * consumes this with fetch + response.body.getReader() (EventSource can't POST).
+ *
+ * The DB writes fire after the reply and are never awaited by the response. The
+ * run that produces the reply is decoupled from the response stream, so a client
+ * that disconnects mid-stream still has its turn run to completion and saved; GET
+ * .../messages is the source of truth.
  */
+
+// look for optimizations after recent rewrite.
 export async function handleCreateMessage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const conversationId = c.get(CTX_KEYS.conversationId);
@@ -355,13 +237,22 @@ export async function handleCreateMessage(c: Context) {
   const chosenModelId: string = c.get(CTX_KEYS.chosenModelId);
   const uploadIds: string[] = c.get(CTX_KEYS.attachmentUploadIds);
   const audioUploadId: string | undefined = c.get(CTX_KEYS.audioUploadId);
+  const clientContextHash: string | undefined = c.get(CTX_KEYS.contextHash);
 
-  // Ownership check, attachment resolution and the transcript read are
-  // independent; all are simply discarded on the 404 paths.
-  const [owned, attachments, transcript] = await Promise.all([
+  // Ownership check, attachment resolution, the transcript read and the history
+  // fetch are all independent, so they run in one wave; each is simply discarded
+  // on the 404 paths, the posture handleListMessages takes for its rows too. The
+  // history fetch is bounded by the message cap alone — the stored cutoff only
+  // narrows the bucket reads later, not this query.
+  const [owned, attachments, transcript, history] = await Promise.all([
     findOwnedConversation(userId, conversationId),
     resolveUnattachedImages(userId, uploadIds),
     audioUploadId ? readTurnTranscript(userId, audioUploadId) : null,
+    findRecentMessagesWithContext(
+      userId,
+      conversationId,
+      MAX_CONTEXT_MESSAGES - 1,
+    ),
   ]);
   if (!owned) return c.json({ message: "Conversation not found" }, 404);
   // An id that resolved to nothing was never this user's, or was already sent
@@ -390,9 +281,19 @@ export async function handleCreateMessage(c: Context) {
       413,
     );
 
+  // Advisory only: a client building on a context we no longer have stored is
+  // worth noting, but not worth blocking the turn over yet.
+  // TODO: find resolution method.
+  if (
+    clientContextHash &&
+    owned.contextHash &&
+    clientContextHash !== owned.contextHash
+  )
+    log.warn("Client context hash does not match stored", { conversationId });
+
   const turns = await assembleConversationContext(
     userId,
-    conversationId,
+    history,
     buildUserTurn(
       transcript ? withTranscript(content, transcript) : content,
       attachments.map((attachment) => attachment.url),
@@ -402,21 +303,73 @@ export async function handleCreateMessage(c: Context) {
     (transcript?.length ?? 0) + content.length,
   );
 
-  const events = new SSEEventQueue();
-  void runChatTurn(
-    {
-      userId,
-      conversationId,
-      content,
-      chosenModelId,
-      turns,
-      attachments,
-      audioUploadId,
-    },
-    events,
-  );
+  const contextHash = hashContext(turns);
 
-  return streamSSE(c, (stream) => events.pipeTo(stream, c.req.raw.signal));
+  // Run once the reply is known; the client never waits on these. The run that
+  // produces the reply is decoupled from the response stream (see below), so
+  // this still fires even when the client has disconnected mid-stream — an
+  // abandoned turn is persisted in full and shows up on GET .../messages.
+  const persistTurn = async (assistantContent: string) => {
+    try {
+      const userMessage = await createMessage({
+        role: "user",
+        content,
+        conversationId,
+        userId,
+        audioUploadId,
+      });
+      await attachImagesToMessage(
+        userId,
+        userMessage.id,
+        attachments.map((attachment) => attachment.uploadId),
+      );
+      await createMessage({
+        role: "assistant",
+        content: assistantContent,
+        chosenModelId,
+        conversationId,
+        userId,
+      });
+      await recordConversationContext(userId, conversationId, contextHash);
+    } catch (err) {
+      // TODO: implement solution
+      log.error("Failed to persist chat turn", err, { conversationId });
+    }
+  };
+
+  // The model run pushes into a queue rather than writing the response stream
+  // directly, so it is never coupled to the client's connection. Node doesn't
+  // cancel the response when the socket closes — a straight write would resolve
+  // until its buffer filled and then block forever, stranding the run. Here the
+  // run always completes and persists; only the forwarder below is unblocked by
+  // the disconnect signal.
+  const events = new SSEEventQueue();
+  const disconnectSignal = c.req.raw.signal;
+
+  void (async () => {
+    try {
+      const assistantContent = await chatAI(chosenModelId, turns, {
+        onDelta: async (delta) => events.push("delta", { delta }),
+        maxOutputTokens: MAX_RESPONSE_TOKENS,
+      });
+      events.push("hash", { contextHash });
+      // End the queue before persisting so the response can drain and close —
+      // the client waits on the reply, never on the write-back.
+      events.end();
+      await persistTurn(assistantContent);
+    } catch (err) {
+      log.error("Chat completion run failed", err, {
+        conversationId,
+        chosenModelId,
+      });
+      // Reported in-band: the response is a 200 stream by the time this can
+      // fail, so an SSE "error" event is the only channel left to the client.
+      events.push("error", { message: "Model response failed" });
+      events.end();
+    }
+  })();
+
+  return streamSSE(c, (stream) => events.pipeTo(stream, disconnectSignal));
 }
 
 /** DELETE /conversations/:conversationId/messages/:messageId */

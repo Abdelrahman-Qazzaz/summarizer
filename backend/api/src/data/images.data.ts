@@ -65,7 +65,13 @@ export async function createImageUpload(upload: {
   });
 }
 
-function hasFreshSignedUrl(row: ImageUploadRow) {
+/** The subset of an image row needed to decide whether its url must be re-signed. */
+type SignableImageRow = Pick<
+  ImageUploadRow,
+  "uploadId" | "signedUrl" | "signedUrlExpiresAt"
+>;
+
+function hasFreshSignedUrl(row: SignableImageRow) {
   if (!row.signedUrl || !row.signedUrlExpiresAt) return false;
   return (
     row.signedUrlExpiresAt.getTime() - Date.now() > SIGNED_URL_REFRESH_MARGIN_MS
@@ -87,12 +93,17 @@ async function findImageUploads(
     .orderBy(asc(ImageUploads.createdAt), asc(ImageUploads.uploadId));
 }
 
-async function resolveImageUploadUrls(
+/**
+ * uploadId → usable url for a set of image rows, signing (and persisting the
+ * signature on) only those whose stored url has expired. Takes just the fields
+ * it reads, so a projection from a join can be passed straight in.
+ */
+export async function resolveImageUploadUrls(
   userId: string,
-  rows: readonly ImageUploadRow[],
+  rows: readonly SignableImageRow[],
 ): Promise<Map<string, string>> {
   const urlByUploadId = new Map<string, string>();
-  const needsSigning: ImageUploadRow[] = [];
+  const needsSigning: SignableImageRow[] = [];
 
   for (const row of rows) {
     if (hasFreshSignedUrl(row))

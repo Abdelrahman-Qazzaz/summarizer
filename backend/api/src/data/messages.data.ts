@@ -1,5 +1,10 @@
 import { and, asc, desc, eq } from "drizzle-orm";
-import { ChatMessages, db } from "../../../shared/db";
+import {
+  ChatMessages,
+  ImageUploads,
+  TranscriptContents,
+  db,
+} from "../../../shared/db";
 
 /**
  * The columns a message is exposed through — every read feeding `toMessageJson`
@@ -29,25 +34,109 @@ export async function findConversationMessages(conversationId: string) {
     .orderBy(asc(ChatMessages.createdAt), asc(ChatMessages.id));
 }
 
+/** One history turn with everything the prompt is rebuilt from, grouped. */
+export type ContextMessage = {
+  id: string;
+  role: MessageRow["role"];
+  content: string;
+  createdAt: Date;
+  audioUploadId: string | null;
+  // Length of the turn's transcript, or null when it carried none — enough to
+  // budget the turn without reading the body (fetched later, only if it fits).
+  transcriptCharCount: number | null;
+  images: {
+    uploadId: string;
+    signedUrl: string | null;
+    signedUrlExpiresAt: Date | null;
+  }[];
+};
+
 /**
  * The tail of a conversation for model context, newest first so LIMIT keeps the
- * latest turns. Only the fields a prompt is built from.
+ * latest turns — in one query. The messages are limited first (a subquery), then
+ * left-joined to their image uploads and their transcript's length, so replaying
+ * a page costs a single round-trip. Image signatures and the transcript bodies
+ * are I/O the caller still resolves — this gathers only what's needed to decide
+ * which turns fit. Rows fan out per image and are regrouped by message id.
  */
-export async function findRecentMessages(
+export async function findRecentMessagesWithContext(
+  userId: string,
   conversationId: string,
   limit: number,
-) {
-  return db
+): Promise<ContextMessage[]> {
+  // TODO: check if its possible to use Promise.all
+  const recent = db
     .select({
       id: ChatMessages.id,
       role: ChatMessages.role,
       content: ChatMessages.content,
       audioUploadId: ChatMessages.audioUploadId,
+      createdAt: ChatMessages.createdAt,
     })
     .from(ChatMessages)
     .where(eq(ChatMessages.conversationId, conversationId))
     .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
-    .limit(limit);
+    .limit(limit)
+    .as("recent");
+
+  const rows = await db
+    .select({
+      id: recent.id,
+      role: recent.role,
+      content: recent.content,
+      createdAt: recent.createdAt,
+      audioUploadId: recent.audioUploadId,
+      transcriptCharCount: TranscriptContents.charCount,
+      imageUploadId: ImageUploads.uploadId,
+      imageSignedUrl: ImageUploads.signedUrl,
+      imageSignedUrlExpiresAt: ImageUploads.signedUrlExpiresAt,
+    })
+    .from(recent)
+    .leftJoin(
+      ImageUploads,
+      and(
+        eq(ImageUploads.messageId, recent.id),
+        eq(ImageUploads.userId, userId),
+      ),
+    )
+    .leftJoin(
+      TranscriptContents,
+      and(
+        eq(TranscriptContents.uploadId, recent.audioUploadId),
+        eq(TranscriptContents.userId, userId),
+      ),
+    )
+    .orderBy(
+      desc(recent.createdAt),
+      desc(recent.id),
+      asc(ImageUploads.createdAt),
+    );
+
+  const byId = new Map<string, ContextMessage>();
+  for (const row of rows) {
+    let message = byId.get(row.id);
+    if (!message) {
+      message = {
+        id: row.id,
+        role: row.role,
+        content: row.content,
+        createdAt: row.createdAt,
+        audioUploadId: row.audioUploadId,
+        transcriptCharCount: row.transcriptCharCount,
+        images: [],
+      };
+      byId.set(row.id, message);
+    }
+    if (row.imageUploadId) {
+      message.images.push({
+        uploadId: row.imageUploadId,
+        signedUrl: row.imageSignedUrl,
+        signedUrlExpiresAt: row.imageSignedUrlExpiresAt,
+      });
+    }
+  }
+
+  return [...byId.values()];
 }
 
 export async function createMessage(message: {

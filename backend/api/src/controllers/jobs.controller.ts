@@ -2,17 +2,20 @@ import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
 import { jobCursorSchema, type JobStatus } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
-import { deleteFilesFromBucket, readTextFile } from "../../../shared/bucket";
+import { deleteFilesFromBucket } from "../../../shared/bucket";
 import { mq } from "../../../shared/message-queue/messageQueue";
-import type { UploadId } from "../../../shared/types/mq.types";
-import { logger } from "../../../shared/logger";
-import { tryCatch } from "../../../shared/try-catch";
 import {
   deleteAudioJob,
   findAudioJob,
   findUserJobsPage,
   requeueAudioJob,
 } from "../../../shared/data/jobs.data";
+import {
+  deleteTranscript,
+  findTranscript,
+} from "../../../shared/data/transcripts.data";
+import { tryCatch } from "../../../shared/try-catch";
+import { logger } from "../../../shared/logger";
 
 const log = logger.child({ controller: "jobs" });
 
@@ -20,35 +23,26 @@ export async function handleGetTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const uploadId = c.get(CTX_KEYS.uploadId);
 
-  const audioJob = await findAudioJob(userId, uploadId);
+  // A transcript row exists only for a completed job (a re-run drops it), so its
+  // presence is enough — no status gate, and it's the user's own by the scope.
+  // A transcript-read failure degrades to null rather than failing the job view.
+  const [audioJob, transcriptResult] = await Promise.all([
+    findAudioJob(userId, uploadId),
+    tryCatch(findTranscript(userId, uploadId)),
+  ]);
 
   if (!audioJob) return c.json({ message: "Job not found" }, 404);
 
-  // The transcript isn't stored on the row — it lives in the bucket under its
-  // own key. Only read once transcription has completed: during a re-run the
-  // row is reset to "queued" while the previous transcript is still in storage,
-  // so an ungated read would return a stale one (and download it needlessly).
-  let transcript: string | null = null;
-  if (audioJob.transcriptUploadId && audioJob.status === "completed") {
-    const { data, error } = await tryCatch(
-      readTextFile(userId, audioJob.transcriptUploadId as UploadId),
-    );
-    // Fall back to no transcript (data is null on failure), but log it —
-    // otherwise a real bucket failure is indistinguishable from "transcript
-    // not ready yet".
-    if (error)
-      log.error("Failed to read transcript from bucket", error, {
-        uploadId,
-        transcriptUploadId: audioJob.transcriptUploadId,
-      });
-    transcript = data;
-  }
+  if (transcriptResult.error)
+    log.error("Failed to read transcript for job view", transcriptResult.error, {
+      uploadId,
+    });
 
   return c.json({
     uploadId: audioJob.uploadId,
     fileName: audioJob.fileName,
     status: audioJob.status,
-    transcript,
+    transcript: transcriptResult.data?.content ?? null,
     error: audioJob.error,
   });
 }
@@ -89,27 +83,20 @@ export async function handleDeleteTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const uploadId = c.get(CTX_KEYS.uploadId);
 
-  // Read the transcript key before the row goes: it is keyed independently of
-  // the audio, so deleting the row alone would orphan it in storage.
-  const job = await findAudioJob(userId, uploadId);
-
-  // Row delete and bucket deletes are independent: the bucket keys are
-  // user-scoped (<userId>/<uploadId>), so a non-owner's request no-ops on
-  // storage structurally — no ownership gate needed between them.
+  // The transcript row cascades with the job; only the audio object is left in
+  // the bucket to remove. The key is user-scoped (<userId>/<uploadId>), so a
+  // non-owner's request no-ops on storage structurally.
   await Promise.all([
     deleteAudioJob(userId, uploadId),
-    deleteFilesFromBucket(userId, [
-      uploadId,
-      ...(job?.transcriptUploadId ? [job.transcriptUploadId] : []),
-    ]),
+    deleteFilesFromBucket(userId, [uploadId]),
   ]);
   return c.json({ message: "Job Deleted" }, 200);
 }
 
 /**
  * Re-run an audio job: transcribe again with a new transcription model. Resets
- * the row to `queued` and re-enqueues TRANSCRIBE; the worker overwrites the
- * transcript already in the bucket.
+ * the row to `queued`, drops the old transcript so it isn't read mid-run, and
+ * re-enqueues TRANSCRIBE; the worker writes the fresh transcript on completion.
  */
 export async function handleRerunTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -120,6 +107,7 @@ export async function handleRerunTranscribeJob(c: Context) {
 
   if (!job) return c.json({ message: "Job not found" }, 404);
 
+  await deleteTranscript(uploadId);
   await mq.sendEvent(mq.queues.TRANSCRIBE, uploadId);
   return c.json({ uploadId });
 }

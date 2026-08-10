@@ -1,4 +1,12 @@
-import { bigint, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
 
 export const jobStatusEnum = pgEnum("job_status", [
@@ -34,11 +42,6 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
 
   // Model used to transcribe the audio. Null falls back to the default
   transcriptionModelId: text("transcription_model_id"),
-
-  // Bucket key of the transcript, written once transcription completes. The
-  // audio itself lives at this row's own uploadId, so the transcript needs a
-  // key of its own. Null until then, and on a job that never got that far.
-  transcriptUploadId: text("transcript_upload_id"),
 }, (table) => [
   // Matches findUserJobsPage: owner filter + the (created_at, upload_id) keyset
   // ordering, so a page is served from the index without a scan-and-sort.
@@ -48,6 +51,24 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
     table.uploadId,
   ),
 ]);
+
+/**
+ * The transcript text a completed job produced, out of the job row so it isn't
+ * pulled by the job list. A row exists only while a valid transcript does — the
+ * worker upserts it on completion, a re-run deletes it — so its presence means
+ * "ready". `charCount` lets a chat turn be budgeted without reading the body.
+ */
+export const TranscriptContents = pgTable("transcript_contents", {
+  // The audio job this transcript belongs to (1:1).
+  uploadId: text("upload_id")
+    .primaryKey()
+    .references(() => AudioTranscriptionJobs.uploadId, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  charCount: integer("char_count").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+});
 
 export const ImageUploads = pgTable("image_uploads", {
   uploadId: text("upload_id").notNull().primaryKey(),
@@ -92,6 +113,11 @@ export const Conversations = pgTable("conversations", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+
+  // Fingerprint of the context the last reply was generated against. Written
+  // with the (non-blocking) turn writes and echoed by the client on its next
+  // turn, so a drift between the two is visible. Null until the first turn.
+  contextHash: text("context_hash"),
 
   userId: text("user_id")
     .notNull()
@@ -144,8 +170,8 @@ export const ChatMessages = pgTable("chat_messages", {
     .references(() => users.id, { onDelete: "cascade" }),
 }, (table) => [
   // The busiest read in the app: findConversationMessages (asc) and
-  // findRecentMessages (desc) both filter by conversation and order by
-  // (created_at, id), fully covered here so neither scans nor sorts.
+  // findRecentMessagesWithContext (desc) both filter by conversation and order
+  // by (created_at, id), fully covered here so neither scans nor sorts.
   index("chat_messages_conversation_created_idx").on(
     table.conversationId,
     table.createdAt,

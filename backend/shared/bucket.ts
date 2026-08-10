@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { UploadId } from "./types/mq.types";
 import { getBaseEnv } from "./env";
-import { tryCatch } from "./try-catch";
 
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = getBaseEnv();
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -75,28 +74,6 @@ async function uploadObject(
   return data.path;
 }
 
-/**
- * Upload a text string as a UTF-8 text object. `upsert` is for writes that can
- * legitimately repeat at the same key — a transcribe re-run overwrites the
- * transcript it produced last time, and without this the storage API rejects
- * the second write as a duplicate.
- */
-export async function uploadTextToBucket(
-  userId: string,
-  uploadId: UploadId,
-  text: string,
-  { upsert = false }: { upsert?: boolean } = {},
-) {
-  const contentType = "text/plain; charset=utf-8";
-  return uploadObject(
-    userId,
-    uploadId,
-    new Blob([text], { type: contentType }),
-    contentType,
-    upsert,
-  );
-}
-
 /** Upload speech audio. Rejects anything not declaring an `audio/*` type. */
 export async function uploadAudioToBucket(
   userId: string,
@@ -131,38 +108,6 @@ async function downloadObject(userId: string, uploadId: UploadId) {
   return data; // Blob
 }
 
-export async function readTextFile(userId: string, uploadId: UploadId) {
-  return (await downloadObject(userId, uploadId)).text();
-}
-
-/**
- * The batch form of readTextFile: many text objects at once, uploadId →
- * contents. Storage has no multi-object GET, so the downloads fan out
- * concurrently rather than in one request — the same ceiling Promise.all hits,
- * kept here alongside the other batch object ops. The ids that failed to read
- * come back separately so the caller can log them with its own context, the way
- * createSignedUrls omits what it couldn't sign. Entries may span owners; the
- * path carries the owner.
- */
-export async function readTextFiles(
-  entries: readonly { userId: string; uploadId: string }[],
-): Promise<{ texts: Map<string, string>; failedUploadIds: string[] }> {
-  const texts = new Map<string, string>();
-  const failedUploadIds: string[] = [];
-  if (entries.length === 0) return { texts, failedUploadIds };
-
-  await Promise.all(
-    entries.map(async ({ userId, uploadId }) => {
-      const { data, error } = await tryCatch(
-        readTextFile(userId, uploadId as UploadId),
-      );
-      if (error) failedUploadIds.push(uploadId);
-      else texts.set(uploadId, data);
-    }),
-  );
-
-  return { texts, failedUploadIds };
-}
 export async function getAudioFile(userId: string, uploadId: UploadId) {
   return downloadObject(userId, uploadId);
 }

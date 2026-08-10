@@ -6,6 +6,7 @@ const conversationColumns = {
   title: Conversations.title,
   createdAt: Conversations.createdAt,
   updatedAt: Conversations.updatedAt,
+  contextHash: Conversations.contextHash,
 };
 
 export type ConversationRow = Pick<
@@ -84,13 +85,18 @@ export async function deleteOwnedConversation(
   return row ?? null;
 }
 
-/** Bumps a conversation to the top of the list when a message lands on it. */
-export async function touchConversation(
+/**
+ * Records the turn just completed: bumps the conversation to the top of the list
+ * and stores the fingerprint of the context its reply was generated against,
+ * checked against the client's next turn.
+ */
+export async function recordConversationContext(
   userId: string,
   conversationId: string,
+  contextHash: string,
 ) {
   await db
     .update(Conversations)
-    .set({ updatedAt: new Date() })
+    .set({ updatedAt: new Date(), contextHash })
     .where(ownedBy(userId, conversationId));
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { AudioTranscriptionJobs, db } from "../db";
 import type { jobStatusEnum } from "../db";
@@ -32,7 +32,6 @@ export async function findAudioJob(userId: string, uploadId: string) {
       uploadId: AudioTranscriptionJobs.uploadId,
       fileName: AudioTranscriptionJobs.fileName,
       status: AudioTranscriptionJobs.status,
-      transcriptUploadId: AudioTranscriptionJobs.transcriptUploadId,
       error: AudioTranscriptionJobs.error,
     })
     .from(AudioTranscriptionJobs)
@@ -40,51 +39,6 @@ export async function findAudioJob(userId: string, uploadId: string) {
     .limit(1);
 
   return row ?? null;
-}
-
-/**
- * The transcript a chat turn wants to carry. Returns the bucket key and the
- * job's status so the caller can refuse a job that has no transcript yet —
- * `transcriptUploadId` is only written once transcription completes.
- */
-export async function findOwnedTranscript(userId: string, uploadId: string) {
-  const [row] = await db
-    .select({
-      transcriptUploadId: AudioTranscriptionJobs.transcriptUploadId,
-      status: AudioTranscriptionJobs.status,
-    })
-    .from(AudioTranscriptionJobs)
-    .where(ownedBy(userId, uploadId))
-    .limit(1);
-
-  return row ?? null;
-}
-
-/**
- * The batch form of findOwnedTranscript: every named job the user owns, in one
- * query, so replaying a history of audio turns costs a single round-trip rather
- * than one per turn. Same projection; the uploadId rides along so a caller can
- * key the results back to the message that named it.
- */
-export async function findOwnedTranscripts(
-  userId: string,
-  uploadIds: readonly string[],
-) {
-  if (uploadIds.length === 0) return [];
-
-  return db
-    .select({
-      uploadId: AudioTranscriptionJobs.uploadId,
-      transcriptUploadId: AudioTranscriptionJobs.transcriptUploadId,
-      status: AudioTranscriptionJobs.status,
-    })
-    .from(AudioTranscriptionJobs)
-    .where(
-      and(
-        eq(AudioTranscriptionJobs.userId, userId),
-        inArray(AudioTranscriptionJobs.uploadId, [...uploadIds]),
-      ),
-    );
 }
 
 /* --------------------------------------------------------- API job listing */
@@ -194,11 +148,8 @@ export async function deleteAudioJob(userId: string, uploadId: string) {
 
 /**
  * Reset to `queued` for a re-run, clearing the previous error. Null when the
- * user doesn't own it, which the caller reports as a 404.
- *
- * `transcriptUploadId` is deliberately kept rather than cleared: the worker
- * overwrites that same object, so holding the key is what stops a re-run from
- * orphaning the previous transcript in storage.
+ * user doesn't own it, which the caller reports as a 404. The caller drops the
+ * previous transcript row separately, so it isn't read while the re-run is queued.
  */
 export async function requeueAudioJob(
   userId: string,
@@ -250,18 +201,14 @@ export async function claimAudioJob(uploadId: UploadId) {
 
 /**
  * Terminal transitions are gated on `processing` for the same reason the claim
- * is gated on `queued`: a job re-queued mid-run must not be overwritten by the
- * previous run finishing late. The transcript key rides along in the same
- * statement rather than a second one — one round-trip, and it falls under the
- * same gate, so a stale run can't stamp its key onto a job someone re-queued.
+ * is gated on `queued`: a job re-queued mid-run must not be flipped to completed
+ * by the previous run finishing late. The transcript body is written separately
+ * (upsertTranscript) before this marks the job done.
  */
-export async function completeAudioJob(
-  uploadId: UploadId,
-  transcriptUploadId: UploadId,
-) {
+export async function completeAudioJob(uploadId: UploadId) {
   await db
     .update(AudioTranscriptionJobs)
-    .set({ status: "completed", transcriptUploadId })
+    .set({ status: "completed" })
     .where(
       and(
         eq(AudioTranscriptionJobs.uploadId, uploadId),

@@ -21,6 +21,9 @@ export const CTX_KEYS = {
   attachmentUploadIds: "attachmentUploadIds",
   // Transcription job whose transcript rides along with a chat turn.
   audioUploadId: "audioUploadId",
+  // Fingerprint of the context the client's last turn was built on; echoed back
+  // so the server can spot drift between the two.
+  contextHash: "contextHash",
 
   uploadFile,
   chosenModelId,

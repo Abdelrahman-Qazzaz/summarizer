@@ -40,6 +40,9 @@ export const messageCreateBodySchema = z
     // turn. One per turn: transcripts are large, and the character budget in
     // the controller would drop a second one anyway.
     [CTX_KEYS.audioUploadId]: z.string().uuid().optional(),
+    // The hash the client received on its previous turn, echoed back so the
+    // server can spot a drift from the context it last stored. Advisory.
+    [CTX_KEYS.contextHash]: z.string().optional(),
   })
   .superRefine(async (data, ctx) => {
     const modelId = data[CTX_KEYS.chosenModelId];
