@@ -1,6 +1,12 @@
 import tseslint from "typescript-eslint";
 import { defineConfig, globalIgnores } from "eslint/config";
+import { fileURLToPath } from "node:url";
 import helperImportOwner from "./eslint-rules/helperImportOwner.js";
+import publicModuleEntry from "./eslint-rules/publicModuleEntry.js";
+
+const messageQueueDirectory = fileURLToPath(
+  new URL("./shared/message-queue", import.meta.url),
+);
 
 /**
  * Deliberately narrow: this lints module boundaries only, and does not extend
@@ -22,7 +28,14 @@ export default defineConfig([
   {
     files: ["**/*.ts"],
     languageOptions: { parser: tseslint.parser },
-    plugins: { local: { rules: { "helper-import-owner": helperImportOwner } } },
+    plugins: {
+      local: {
+        rules: {
+          "helper-import-owner": helperImportOwner,
+          "public-module-entry": publicModuleEntry,
+        },
+      },
+    },
     linterOptions: {
       // Migrating a file means deleting its disable comment; this is what
       // fails the ones left behind.
@@ -31,6 +44,13 @@ export default defineConfig([
     rules: {
       "no-restricted-imports": ["error", dbClientRestriction],
       "local/helper-import-owner": "error",
+      "local/public-module-entry": [
+        "error",
+        {
+          directory: messageQueueDirectory,
+          entry: "messageQueue",
+        },
+      ],
     },
   },
   {
