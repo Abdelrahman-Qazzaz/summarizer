@@ -2,7 +2,7 @@ import { and, desc, eq, ilike, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { AudioTranscriptionJobs, db, type Executor } from "../db";
 import type { jobStatusEnum } from "../db";
-import type { UploadId } from "../types/mq.types";
+import type { UploadId } from "../message-queue/messageQueue";
 
 /**
  * Both process types read and write this table — the API on the request path,

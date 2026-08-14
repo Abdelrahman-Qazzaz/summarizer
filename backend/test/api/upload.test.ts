@@ -65,7 +65,7 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
       TRANSCRIBE: "transcribe",
       YT_FETCH: "yt_fetch",
     },
-    sendEvent: mockSendEvent,
+    publish: mockSendEvent,
   },
 }));
 
@@ -176,7 +176,9 @@ describe("POST /upload/audio", () => {
     expect(typeof body.uploadId).toBe("string");
     expect(mockUploadAudioToBucket).toHaveBeenCalledTimes(1);
     expect(mockInsert).toHaveBeenCalledTimes(1);
-    expect(mockSendEvent).toHaveBeenCalledWith("transcribe", body.uploadId);
+    expect(mockSendEvent).toHaveBeenCalledWith("transcribe", {
+      uploadId: body.uploadId,
+    });
   });
 });
 

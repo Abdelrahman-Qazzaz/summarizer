@@ -3,9 +3,8 @@ import { getBaseEnv } from "../env";
 import { claimAudioJob, failAudioJob } from "../data/jobs.data";
 import { saveCompletedTranscript } from "../data/transcripts.data";
 import { AUDIO_URL_TTL_SECONDS, createSignedUrl } from "../bucket";
-import type { UploadId } from "../types/mq.types";
 import { logger } from "../logger";
-import { mq } from "../message-queue/messageQueue";
+import { mq, type UploadId } from "../message-queue/messageQueue";
 import { getCache, setCache } from "../cache/cache";
 
 const log = logger.child({ ai_transcribe_client: "transcribe" });
@@ -111,7 +110,9 @@ export async function getTranscribeModelData(): Promise<TranscribeModelData> {
  * arrive as either the display `name` or the `canonical_name`, so both are
  * matched.
  */
-export async function isValidTranscribeModel(modelId: string): Promise<boolean> {
+export async function isValidTranscribeModel(
+  modelId: string,
+): Promise<boolean> {
   const modelData = await getTranscribeModelData();
 
   if (modelData[modelId]) return true;
@@ -120,7 +121,11 @@ export async function isValidTranscribeModel(modelId: string): Promise<boolean> 
   );
 }
 
-export async function handleTranscribeJob(uploadId: UploadId) {
+export async function handleTranscribeJob({
+  uploadId,
+}: {
+  uploadId: UploadId;
+}) {
   try {
     const job = await claimAudioJob(uploadId);
 
@@ -147,7 +152,7 @@ export async function handleTranscribeJob(uploadId: UploadId) {
     // it) and mark the job done in one transaction, so a completed job always
     // has a readable transcript and vice versa.
     await saveCompletedTranscript(job.userId, uploadId, transcript);
-    await mq.sendEvent(mq.queues.TRANSCRIBE_DONE, {
+    await mq.publish(mq.queues.TRANSCRIBE_DONE, {
       uploadId,
       userId: job.userId,
     });

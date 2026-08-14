@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { createAudioJob } from "../../../shared/data/jobs.data";
 import { uploadAudioToBucket } from "../../../shared/bucket";
-import { mq } from "../../../shared/message-queue/messageQueue";
-import type { UploadId } from "../../../shared/types/mq.types";
+import {
+  mq,
+  type UploadId,
+} from "../../../shared/message-queue/messageQueue";
 import { CTX_KEYS } from "../../../shared/keys";
 
 /** POST /upload/audio — speech audio (from direct upload or client-extracted from video). */
@@ -27,7 +29,7 @@ export async function handleAudioUpload(c: Context) {
     transcriptionModelId,
   });
 
-  await mq.sendEvent(mq.queues.TRANSCRIBE, uploadId);
+  await mq.publish(mq.queues.TRANSCRIBE, { uploadId });
   return c.json({
     message: "File uploaded",
     uploadId,
@@ -61,7 +63,7 @@ export async function handleYoutubeUpload(c: Context) {
     transcriptionModelId,
   });
 
-  await mq.sendEvent(mq.queues.YT_FETCH, { uploadId, url, userId });
+  await mq.publish(mq.queues.YT_FETCH, { uploadId, url, userId });
   return c.json({
     message: "Queued",
     uploadId,

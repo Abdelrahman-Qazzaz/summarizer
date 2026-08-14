@@ -108,6 +108,6 @@ export async function handleRerunTranscribeJob(c: Context) {
   if (!job) return c.json({ message: "Job not found" }, 404);
 
   await deleteTranscript(uploadId);
-  await mq.sendEvent(mq.queues.TRANSCRIBE, uploadId);
+  await mq.publish(mq.queues.TRANSCRIBE, { uploadId });
   return c.json({ uploadId });
 }

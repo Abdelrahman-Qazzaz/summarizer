@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { TranscriptContents, db, type Executor } from "../db";
-import type { UploadId } from "../types/mq.types";
+import type { UploadId } from "../message-queue/messageQueue";
 import { completeAudioJob } from "./jobs.data";
 
 /**

@@ -24,7 +24,9 @@ const {
 
 // Shape a Deepgram transcribeUrl response carrying a single transcript string.
 function deepgramResponse(transcript: string) {
-  return { results: { channels: [{ alternatives: [{ paragraphs: { transcript } }] }] } };
+  return {
+    results: { channels: [{ alternatives: [{ paragraphs: { transcript } }] }] },
+  };
 }
 
 vi.mock("../../shared/bucket", () => ({
@@ -33,7 +35,9 @@ vi.mock("../../shared/bucket", () => ({
 }));
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../shared/data/transcripts.data")>()),
+  ...(await importActual<
+    typeof import("../../shared/data/transcripts.data")
+  >()),
   saveCompletedTranscript: mockSaveCompletedTranscript,
 }));
 
@@ -50,7 +54,7 @@ vi.mock("@deepgram/sdk", () => ({
 vi.mock("../../shared/message-queue/messageQueue", () => ({
   mq: {
     queues: { TRANSCRIBE_DONE: "transcribe_done" },
-    sendEvent: mockSendEvent,
+    publish: mockSendEvent,
   },
 }));
 
@@ -95,7 +99,7 @@ describe("handleTranscribeJob", () => {
   });
 
   it("transcribes audio, stores the transcript, and announces completion", async () => {
-    await handleTranscribeJob(uploadId);
+    await handleTranscribeJob({ uploadId });
 
     expect(mockCreateSignedUrl).toHaveBeenCalledWith(
       "user_01",
@@ -118,7 +122,7 @@ describe("handleTranscribeJob", () => {
 
   it("no-ops when no queued job is claimed", async () => {
     setupUpdateChain([]);
-    await handleTranscribeJob(uploadId);
+    await handleTranscribeJob({ uploadId });
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
@@ -126,7 +130,7 @@ describe("handleTranscribeJob", () => {
 
   it("rejects an empty transcript", async () => {
     mockTranscribeUrl.mockResolvedValueOnce(deepgramResponse("   "));
-    await expect(handleTranscribeJob(uploadId)).rejects.toThrow(
+    await expect(handleTranscribeJob({ uploadId })).rejects.toThrow(
       "Transcription produced no text",
     );
     expect(mockSaveCompletedTranscript).not.toHaveBeenCalled();
@@ -135,7 +139,7 @@ describe("handleTranscribeJob", () => {
 
   it("marks the job failed and rethrows when transcription fails", async () => {
     mockTranscribeUrl.mockRejectedValueOnce(new Error("transcription failed"));
-    await expect(handleTranscribeJob(uploadId)).rejects.toThrow(
+    await expect(handleTranscribeJob({ uploadId })).rejects.toThrow(
       "transcription failed",
     );
     expect(mockUpdate).toHaveBeenCalledTimes(2); // claim + fail

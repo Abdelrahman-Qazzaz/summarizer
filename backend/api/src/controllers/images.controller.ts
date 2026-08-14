@@ -6,7 +6,7 @@ import {
   uploadImageToBucket,
 } from "../../../shared/bucket";
 import { createImageUpload, resolveImages } from "../data/images.data";
-import type { UploadId } from "../../../shared/types/mq.types";
+import type { UploadId } from "../../../shared/message-queue/messageQueue";
 import { CTX_KEYS } from "../../../shared/keys";
 
 /**
