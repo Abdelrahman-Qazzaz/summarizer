@@ -1,4 +1,4 @@
-alias sandcc='sbx run --name summarizer'
+alias sanda='sbx run --name summarizer'
 alias sand='sbx exec -it summarizer bash'
 
 
