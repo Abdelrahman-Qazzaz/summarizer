@@ -1,9 +1,10 @@
 import tseslint from "typescript-eslint";
 import { defineConfig, globalIgnores } from "eslint/config";
+import helperImportOwner from "./eslint-rules/helperImportOwner.js";
 
 /**
- * Deliberately narrow: this lints the data-access boundary only, and does not
- * extend the recommended rulesets. Adding those is a separate decision.
+ * Deliberately narrow: this lints module boundaries only, and does not extend
+ * the recommended rulesets. Adding those is a separate decision.
  */
 const dbClientRestriction = {
   patterns: [
@@ -21,12 +22,16 @@ export default defineConfig([
   {
     files: ["**/*.ts"],
     languageOptions: { parser: tseslint.parser },
+    plugins: { local: { rules: { "helper-import-owner": helperImportOwner } } },
     linterOptions: {
       // Migrating a file means deleting its disable comment; this is what
       // fails the ones left behind.
       reportUnusedDisableDirectives: "error",
     },
-    rules: { "no-restricted-imports": ["error", dbClientRestriction] },
+    rules: {
+      "no-restricted-imports": ["error", dbClientRestriction],
+      "local/helper-import-owner": "error",
+    },
   },
   {
     files: ["**/*.data.ts"],
