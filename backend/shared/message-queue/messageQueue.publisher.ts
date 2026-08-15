@@ -6,11 +6,20 @@ export function createPublisher(channel: ConfirmChannel, exchange: string) {
     queue: Q,
     payload: QueuePayloads[Q],
   ): Promise<void> {
-    channel.publish(exchange, queue, Buffer.from(JSON.stringify(payload)), {
-      contentType: "application/json",
-      persistent: true,
+    await new Promise<void>((resolve, reject) => {
+      channel.publish(
+        exchange,
+        queue,
+        Buffer.from(JSON.stringify(payload)),
+        {
+          contentType: "application/json",
+          persistent: true,
+        },
+        (error) => {
+          if (error) reject(error);
+          else resolve();
+        },
+      );
     });
-
-    await channel.waitForConfirms();
   };
 }
