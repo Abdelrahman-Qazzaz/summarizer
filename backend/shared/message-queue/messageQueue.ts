@@ -2,11 +2,16 @@ import amqplib from "amqplib";
 import type { ChannelModel } from "amqplib";
 import { createPublisher } from "./messageQueue.publisher";
 import { QUEUES } from "./messageQueue.contract";
-import type { Queue, QueuePayloads } from "./messageQueue.contract";
+import type {
+  DeliveryMetadata,
+  Queue,
+  QueuePayloads,
+} from "./messageQueue.contract";
 import { setupTopology } from "./messageQueue.topology";
 import { createConsumer } from "./messageQueue.consumer";
 import { getBaseEnv } from "../env";
 export { QUEUES } from "./messageQueue.contract";
+export type { DeliveryMetadata } from "./messageQueue.contract";
 
 const EXCHANGES = {
   MAIN: "main",
@@ -53,7 +58,10 @@ export const mq = {
   },
   async consume<Q extends Queue>(
     queue: Q,
-    handler: (payload: QueuePayloads[Q]) => Promise<void> | void,
+    handler: (
+      payload: QueuePayloads[Q],
+      delivery: DeliveryMetadata,
+    ) => Promise<void> | void,
   ) {
     return (await getMessageQueue()).consume(queue, handler);
   },
