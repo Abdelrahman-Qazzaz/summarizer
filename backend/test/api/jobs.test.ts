@@ -4,14 +4,22 @@ const {
   mockFindAudioJob,
   mockFindUserJobsPage,
   mockDeleteAudioJob,
+  mockRequeueAudioJob,
   mockFindTranscript,
+  mockDeleteTranscript,
   mockDeleteFilesFromBucket,
+  mockPublish,
+  mockIsValidTranscribeModel,
 } = vi.hoisted(() => ({
   mockFindAudioJob: vi.fn(),
   mockFindUserJobsPage: vi.fn(),
   mockDeleteAudioJob: vi.fn(),
+  mockRequeueAudioJob: vi.fn(),
   mockFindTranscript: vi.fn(),
+  mockDeleteTranscript: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
+  mockPublish: vi.fn(),
+  mockIsValidTranscribeModel: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -24,12 +32,34 @@ vi.mock("../../shared/data/jobs.data", async (importActual) => ({
   findAudioJob: mockFindAudioJob,
   findUserJobsPage: mockFindUserJobsPage,
   deleteAudioJob: mockDeleteAudioJob,
+  requeueAudioJob: mockRequeueAudioJob,
 }));
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   ...(await importActual<typeof import("../../shared/data/transcripts.data")>()),
   findTranscript: mockFindTranscript,
+  deleteTranscript: mockDeleteTranscript,
 }));
+
+vi.mock("../../shared/ai/ai_transcribe_client", () => ({
+  DEFAULT_TRANSCRIBE_MODEL: "nova-3",
+  getTranscribeModelData: vi.fn(),
+  isValidTranscribeModel: mockIsValidTranscribeModel,
+}));
+
+vi.mock("../../shared/message-queue/messageQueue", () => {
+  const queues = {
+    TRANSCRIBE: "transcribe",
+    TRANSCRIBE_DONE: "transcribe_done",
+    YT_FETCH: "yt_fetch",
+    YT_FETCH_FAILED: "yt_fetch_failed",
+  } as const;
+
+  return {
+    QUEUES: queues,
+    mq: { queues, publish: mockPublish },
+  };
+});
 
 vi.mock("../../shared/bucket", () => ({
   deleteFilesFromBucket: mockDeleteFilesFromBucket,
@@ -53,7 +83,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFindTranscript.mockResolvedValue(null);
   mockDeleteAudioJob.mockResolvedValue(undefined);
+  mockRequeueAudioJob.mockResolvedValue({ uploadId });
+  mockDeleteTranscript.mockResolvedValue(undefined);
   mockDeleteFilesFromBucket.mockResolvedValue(undefined);
+  mockPublish.mockResolvedValue(undefined);
+  mockIsValidTranscribeModel.mockResolvedValue(true);
 });
 
 describe("GET /jobs/summarize/:uploadId", () => {
@@ -187,6 +221,47 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
     expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith("user_01INTRUDER", [
       uploadId,
     ]);
+  });
+});
+
+describe("POST /jobs/transcribe/:uploadId/rerun", () => {
+  const request = async () =>
+    (await createApp()).request(
+      `http://localhost/jobs/transcribe/${uploadId}/rerun`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: await sessionCookieHeader("user_01OWNER"),
+        },
+        body: JSON.stringify({ transcriptionModelId: "nova-3" }),
+      },
+    );
+
+  it("requeues a terminal job and publishes a new delivery", async () => {
+    const res = await request();
+
+    expect(res.status).toBe(200);
+    expect(mockRequeueAudioJob).toHaveBeenCalled();
+    expect(mockDeleteTranscript).toHaveBeenCalledWith(uploadId);
+    expect(mockPublish).toHaveBeenCalledWith("transcribe", { uploadId });
+  });
+
+  it("rejects rerunning a queued or processing job", async () => {
+    mockRequeueAudioJob.mockResolvedValueOnce(null);
+    mockFindAudioJob.mockResolvedValueOnce({
+      ...audioJob,
+      status: "processing",
+    });
+
+    const res = await request();
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      message: "Job is already queued or processing",
+    });
+    expect(mockDeleteTranscript).not.toHaveBeenCalled();
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 });
 

@@ -109,7 +109,11 @@ export async function handleRerunTranscribeJob(c: Context) {
 
   const job = await requeueAudioJob(userId, uploadId, transcriptionModelId);
 
-  if (!job) return c.json({ message: "Job not found" }, 404);
+  if (!job) {
+    const existingJob = await findAudioJob(userId, uploadId);
+    if (!existingJob) return c.json({ message: "Job not found" }, 404);
+    return c.json({ message: "Job is already queued or processing" }, 409);
+  }
 
   await deleteTranscript(uploadId);
   await mq.publish(mq.queues.TRANSCRIBE, { uploadId });

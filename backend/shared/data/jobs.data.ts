@@ -148,9 +148,9 @@ export async function deleteAudioJob(userId: string, uploadId: string) {
 }
 
 /**
- * Reset to `queued` for a re-run, clearing the previous error. Null when the
- * user doesn't own it, which the caller reports as a 404. The caller drops the
- * previous transcript row separately, so it isn't read while the re-run is queued.
+ * Reset a terminal job to `queued`, clearing the previous claim and error. An
+ * active job cannot be rerun underneath its worker; broker redelivery owns the
+ * separate `processing` recovery path in claimAudioJob.
  */
 export async function requeueAudioJob(
   userId: string,
@@ -159,8 +159,18 @@ export async function requeueAudioJob(
 ) {
   const [row] = await db
     .update(AudioTranscriptionJobs)
-    .set({ status: "queued", error: null, transcriptionModelId })
-    .where(ownedBy(userId, uploadId))
+    .set({
+      status: "queued",
+      error: null,
+      claimToken: null,
+      transcriptionModelId,
+    })
+    .where(
+      and(
+        ownedBy(userId, uploadId),
+        inArray(AudioTranscriptionJobs.status, ["completed", "failed"]),
+      ),
+    )
     // Only whether a row matched; the response echoes the request's uploadId.
     .returning({ uploadId: AudioTranscriptionJobs.uploadId });
 
