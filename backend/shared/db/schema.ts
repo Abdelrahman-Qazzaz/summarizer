@@ -29,6 +29,11 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   status: jobStatusEnum("status").notNull().default("queued"),
   // queued | processing | completed | failed
   error: text("error"),
+  // RabbitMQ redelivers an unACKed message after its consumer connection closes,
+  // but that worker may still finish its AI call after a network split. Every
+  // claim replaces this fencing token, and terminal writes must still own it so
+  // a disconnected worker cannot commit after its replacement has taken over.
+  claimToken: uuid("claim_token"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

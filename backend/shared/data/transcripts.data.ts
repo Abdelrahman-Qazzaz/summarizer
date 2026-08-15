@@ -36,10 +36,14 @@ export async function saveCompletedTranscript(
   userId: string,
   uploadId: UploadId,
   content: string,
+  claimToken: string,
 ) {
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
+    const ownsJob = await completeAudioJob(uploadId, claimToken, tx);
+    if (!ownsJob) return false;
+
     await upsertTranscript(userId, uploadId, content, tx);
-    await completeAudioJob(uploadId, tx);
+    return true;
   });
 }
 

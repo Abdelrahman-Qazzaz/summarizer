@@ -1,4 +1,5 @@
-import { and, desc, eq, ilike, lt, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { AudioTranscriptionJobs, db, type Executor } from "../db";
 import type { jobStatusEnum } from "../db";
@@ -180,47 +181,57 @@ export async function failAudioJobById(uploadId: string, error: string) {
 /* ------------------------------------------------------------ worker writes */
 
 /**
- * Claim a queued job atomically. Combined with RabbitMQ delivering each message
- * to one consumer, this is what makes running many worker replicas safe: the
- * `queued` predicate means a second claimant gets no row back and bails.
+ * Claim a queued job atomically. A broker-redelivered message may also reclaim
+ * `processing`: losing the old consumer connection requeues its unACKed message,
+ * but does not prove the old process stopped. Replacing claimToken fences that
+ * worker out of every terminal write if it later finishes.
  */
-export async function claimAudioJob(uploadId: UploadId) {
+export async function claimAudioJob(
+  uploadId: UploadId,
+  allowProcessingRecovery = false,
+) {
+  const claimToken = randomUUID();
   const [row] = await db
     .update(AudioTranscriptionJobs)
-    .set({ status: "processing" })
+    .set({ status: "processing", claimToken })
     .where(
       and(
         eq(AudioTranscriptionJobs.uploadId, uploadId),
-        eq(AudioTranscriptionJobs.status, "queued"),
+        allowProcessingRecovery
+          ? inArray(AudioTranscriptionJobs.status, ["queued", "processing"])
+          : eq(AudioTranscriptionJobs.status, "queued"),
       ),
     )
     .returning();
 
-  return row ?? null;
+  return row ? { ...row, claimToken } : null;
 }
 
 /**
- * Terminal transitions are gated on `processing` for the same reason the claim
- * is gated on `queued`: a job re-queued mid-run must not be flipped to completed
- * by the previous run finishing late. The transcript body is written separately
- * (upsertTranscript) before this marks the job done.
+ * A terminal transition belongs only to the latest claimant. Returns false when
+ * this worker lost ownership, so its caller can discard the stale result.
  */
 export async function completeAudioJob(
   uploadId: UploadId,
+  claimToken: string,
   executor: Executor = db,
 ) {
-  await executor
+  const [row] = await executor
     .update(AudioTranscriptionJobs)
     .set({ status: "completed" })
     .where(
       and(
         eq(AudioTranscriptionJobs.uploadId, uploadId),
         eq(AudioTranscriptionJobs.status, "processing"),
+        eq(AudioTranscriptionJobs.claimToken, claimToken),
       ),
-    );
+    )
+    .returning({ uploadId: AudioTranscriptionJobs.uploadId });
+
+  return Boolean(row);
 }
 
-export async function failAudioJob(uploadId: UploadId) {
+export async function failAudioJob(uploadId: UploadId, claimToken: string) {
   await db
     .update(AudioTranscriptionJobs)
     .set({ status: "failed" })
@@ -228,6 +239,7 @@ export async function failAudioJob(uploadId: UploadId) {
       and(
         eq(AudioTranscriptionJobs.uploadId, uploadId),
         eq(AudioTranscriptionJobs.status, "processing"),
+        eq(AudioTranscriptionJobs.claimToken, claimToken),
       ),
     );
 }

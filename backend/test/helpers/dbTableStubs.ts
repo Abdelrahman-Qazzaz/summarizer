@@ -14,6 +14,7 @@ export const tableStubs = {
     fileName: "file_name",
     status: "status",
     error: "error",
+    claimToken: "claim_token",
     createdAt: "created_at",
     transcriptionModelId: "transcription_model_id",
     transcriptUploadId: "transcript_upload_id",

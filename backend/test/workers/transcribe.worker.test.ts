@@ -93,7 +93,7 @@ describe("handleTranscribeJob", () => {
     vi.clearAllMocks();
     mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
-    mockSaveCompletedTranscript.mockResolvedValue(undefined);
+    mockSaveCompletedTranscript.mockResolvedValue(true);
     mockSendEvent.mockResolvedValue(undefined);
     setupUpdateChain([claimedJob]);
   });
@@ -113,6 +113,7 @@ describe("handleTranscribeJob", () => {
       "user_01",
       uploadId,
       "sample transcript",
+      expect.any(String),
     );
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
       uploadId,
@@ -126,6 +127,29 @@ describe("handleTranscribeJob", () => {
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not announce a result after the worker loses its claim", async () => {
+    mockSaveCompletedTranscript.mockResolvedValueOnce(false);
+
+    await handleTranscribeJob({ uploadId });
+
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("processes a broker-redelivered job under a fresh claim token", async () => {
+    await handleTranscribeJob({ uploadId }, { redelivered: true });
+
+    expect(mockSet).toHaveBeenNthCalledWith(1, {
+      status: "processing",
+      claimToken: expect.any(String),
+    });
+    expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
+      "user_01",
+      uploadId,
+      "sample transcript",
+      expect.any(String),
+    );
   });
 
   it("rejects an empty transcript", async () => {
