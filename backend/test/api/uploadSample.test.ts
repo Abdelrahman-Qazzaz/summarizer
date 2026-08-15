@@ -43,7 +43,7 @@ vi.mock("../../shared/bucket", () => ({
 vi.mock("../../shared/message-queue/messageQueue", () => ({
   mq: {
     queues: { TRANSCRIBE: "transcribe" },
-    sendEvent: mockSendEvent,
+    publish: mockSendEvent,
   },
 }));
 
@@ -100,6 +100,8 @@ describe("POST /upload/audio with sample file", () => {
     expect(fileArg).toBeInstanceOf(File);
     expect(fileArg.size).toBe(file.size);
     expect(mockInsert).toHaveBeenCalledTimes(1);
-    expect(mockSendEvent).toHaveBeenCalledWith("transcribe", body.uploadId);
+    expect(mockSendEvent).toHaveBeenCalledWith("transcribe", {
+      uploadId: body.uploadId,
+    });
   });
 });

@@ -9,7 +9,7 @@ import {
   IMAGE_URL_TTL_SECONDS,
   createSignedUrls,
 } from "../../../shared/bucket";
-import type { UploadId } from "../../../shared/types/mq.types";
+import type { UploadId } from "../../../shared/types";
 
 /**
  * What resolving an image needs: the signature cache to decide whether to

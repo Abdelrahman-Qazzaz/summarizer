@@ -6,8 +6,8 @@ import {
   uploadImageToBucket,
 } from "../../../shared/bucket";
 import { createImageUpload, resolveImages } from "../data/images.data";
-import type { UploadId } from "../../../shared/types/mq.types";
 import { CTX_KEYS } from "../../../shared/keys";
+import type { UploadId } from "../../../shared/types";
 
 /**
  * POST /upload/image — stores an image (dropped into the chat, or uploaded

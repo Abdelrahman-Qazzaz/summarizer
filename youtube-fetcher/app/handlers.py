@@ -46,7 +46,10 @@ def handle_yt_fetch(event: dict) -> None:
             )
         raise
 
-    mq.publish_threadsafe(contract.queues.TRANSCRIBE, upload_id)
+    mq.publish_threadsafe(
+        contract.queues.TRANSCRIBE,
+        {"uploadId": upload_id},
+    )
     log.info("Fetched %s, queued transcribe", upload_id)
 
 

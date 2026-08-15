@@ -151,18 +151,17 @@ class TestFetchAndUpload:
 
 
 class TestHandleYtFetch:
-    def test_success_queues_transcribe_with_bare_upload_id(
-        self, publish, monkeypatch
-    ):
-        # The transcribe consumer receives a bare uploadId, matching what
-        # the API publishes for direct uploads (upload.controller.ts).
+    def test_success_queues_transcribe(self, publish, monkeypatch):
         monkeypatch.setattr(handlers, "_fetch_and_upload", MagicMock())
 
         handlers.handle_yt_fetch(
             {"uploadId": "u1", "url": "https://youtu.be/x", "userId": "usr"}
         )
 
-        publish.assert_called_once_with(QueueName("transcribe"), "u1")
+        publish.assert_called_once_with(
+            QueueName("transcribe"),
+            {"uploadId": "u1"},
+        )
 
     def test_failure_notifies_api_and_reraises(self, publish, monkeypatch):
         monkeypatch.setattr(

@@ -1,5 +1,5 @@
 import { verifyServices } from "../shared/preflight";
-import { startMQ } from "../shared/message-queue/messageQueue";
+import { pingMQ } from "../shared/message-queue/messageQueue";
 import { pingDb } from "../shared/db";
 import { pingBucket } from "../shared/bucket";
 import { pingRedis } from "../shared/cache/redis";
@@ -12,7 +12,7 @@ import { pingWorkos } from "./src/auth/auth";
  */
 export function verifyApiServices(): Promise<void> {
   return verifyServices([
-    { name: "RabbitMQ", check: startMQ },
+    { name: "RabbitMQ", check: pingMQ },
     { name: "Postgres", check: pingDb },
     { name: "Supabase Storage", check: pingBucket },
     { name: "Upstash Redis", check: pingRedis },

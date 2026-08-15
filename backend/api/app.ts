@@ -6,9 +6,10 @@ import { uploadRouter } from "./src/routes/upload.router";
 import { authRouter } from "./src/routes/auth.router";
 import { modelsRouter } from "./src/routes/models.router";
 import { conversationsRouter } from "./src/routes/conversations.router";
-import { mq } from "../shared/message-queue/messageQueue";
+
 import { BUCKET, MAX_AUDIO_BYTES } from "../shared/bucket";
 import { verifyApiServices } from "./startup";
+import { QUEUES } from "../shared/message-queue/messageQueue";
 
 export async function createApp() {
   const env = getApiEnv();
@@ -25,7 +26,7 @@ export async function createApp() {
   // served here — those belong in a secrets manager / platform env.
   app.get("/contract", (c) =>
     c.json({
-      queues: mq.queues,
+      queues: QUEUES,
       bucket: BUCKET,
       maxAudioBytes: MAX_AUDIO_BYTES,
     }),

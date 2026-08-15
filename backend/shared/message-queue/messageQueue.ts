@@ -1,11 +1,12 @@
 import amqplib from "amqplib";
-import type { Channel, ChannelModel } from "amqplib";
+import type { ChannelModel } from "amqplib";
+import { createPublisher } from "./messageQueue.publisher";
+import { QUEUES } from "./messageQueue.contract";
+import type { Queue, QueuePayloads } from "./messageQueue.contract";
+import { setupTopology } from "./messageQueue.topology";
+import { createConsumer } from "./messageQueue.consumer";
 import { getBaseEnv } from "../env";
-import {
-  assertDirectDurableExchanges,
-  assertDurableQueues,
-  bindQueues,
-} from "./messageQueue.helper";
+export { QUEUES } from "./messageQueue.contract";
 
 const EXCHANGES = {
   MAIN: "main",
@@ -13,26 +14,54 @@ const EXCHANGES = {
   DLX: "dead_letter",
 } as const;
 
-const QUEUES = {
-  TRANSCRIBE: "transcribe",
-  TRANSCRIBE_DONE: "transcribe_done",
-  YT_FETCH: "yt_fetch",
-  YT_FETCH_FAILED: "yt_fetch_failed",
-} as const;
+export async function pingMQ() {
+  const messageQueue = await createMessageQueue(getBaseEnv().MQ_URL);
+  await messageQueue.close();
+}
+async function createMessageQueue(url: string) {
+  const connection: ChannelModel = await amqplib.connect(url);
 
-async function createMQ() {
-  const connection: ChannelModel = await amqplib.connect(getBaseEnv().MQ_URL);
+  const publisherChannel = await connection.createConfirmChannel();
+  await setupTopology(publisherChannel, {
+    exchanges: Object.values(EXCHANGES),
+    queues: Object.values(QUEUES),
+    mainExchange: EXCHANGES.MAIN,
+  });
 
-  const channel: Channel = await connection.createChannel();
-
-  await assertDirectDurableExchanges(channel, Object.values(EXCHANGES));
-
-  await assertDurableQueues(channel, Object.values(QUEUES));
-
-  await bindQueues(channel, EXCHANGES.MAIN, Object.values(QUEUES));
+  const consumerChannel = await connection.createChannel();
+  await consumerChannel.prefetch(1);
 
   return {
-    connection,
-    channel,
+    queues: QUEUES,
+    publish: createPublisher(publisherChannel, EXCHANGES.MAIN),
+    consume: createConsumer(consumerChannel),
+    close: () => connection.close(),
   };
 }
+
+let messageQueuePromise: ReturnType<typeof createMessageQueue> | undefined;
+
+function getMessageQueue() {
+  messageQueuePromise ??= createMessageQueue(getBaseEnv().MQ_URL);
+  return messageQueuePromise;
+}
+
+export const mq = {
+  queues: QUEUES,
+  async publish<Q extends Queue>(queue: Q, payload: QueuePayloads[Q]) {
+    await (await getMessageQueue()).publish(queue, payload);
+  },
+  async consume<Q extends Queue>(
+    queue: Q,
+    handler: (payload: QueuePayloads[Q]) => Promise<void> | void,
+  ) {
+    return (await getMessageQueue()).consume(queue, handler);
+  },
+  async close() {
+    if (!messageQueuePromise) return;
+
+    const messageQueue = await messageQueuePromise;
+    messageQueuePromise = undefined;
+    await messageQueue.close();
+  },
+};

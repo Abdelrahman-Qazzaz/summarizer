@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import type { UploadId } from "./types/mq.types";
 import { getBaseEnv } from "./env";
+import type { UploadId } from "./types";
 
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = getBaseEnv();
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);

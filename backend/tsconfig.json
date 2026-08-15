@@ -17,6 +17,7 @@
     "shared/**/*.ts",
     "drizzle.config.ts",
     "test/**/*.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "types.ts"
   ]
 }

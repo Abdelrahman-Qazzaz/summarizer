@@ -1,7 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { TranscriptContents, db, type Executor } from "../db";
-import type { UploadId } from "../types/mq.types";
+
 import { completeAudioJob } from "./jobs.data";
+import type { UploadId } from "../types";
 
 /**
  * The transcript text a completed job produced. Lives here, not in the job row

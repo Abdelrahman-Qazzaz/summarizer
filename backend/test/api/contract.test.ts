@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createApp } from "../../api/app";
-import { mq } from "../../shared/message-queue/messageQueue";
+import { QUEUES } from "../../shared/message-queue/messageQueue";
 import { BUCKET, MAX_AUDIO_BYTES } from "../../shared/bucket";
 
 describe("GET /contract", () => {
@@ -8,7 +8,7 @@ describe("GET /contract", () => {
     const res = await (await createApp()).request("http://localhost/contract");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      queues: mq.queues,
+      queues: QUEUES,
       bucket: BUCKET,
       maxAudioBytes: MAX_AUDIO_BYTES,
     });
