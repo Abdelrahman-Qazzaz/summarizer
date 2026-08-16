@@ -38,6 +38,18 @@ export function transcriptionModelsEndpoint(): string {
   return `${apiBase}/models/transcription`;
 }
 
+export function conversationsEndpoint(): string {
+  return `${apiBase}/conversations`;
+}
+
+export function conversationMessagesEndpoint(conversationId: string): string {
+  return `${apiBase}/conversations/${conversationId}/messages`;
+}
+
+export function uploadImageEndpoint(): string {
+  return `${apiBase}/upload/image`;
+}
+
 /** WebSocket URL for job notifications (forward WS_PORT in dev containers). */
 export function wsUrl(): string {
   const fromEnv = import.meta.env.VITE_WS_URL;

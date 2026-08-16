@@ -27,6 +27,8 @@ export type ModelTopProvider = {
 };
 
 export type ModelInfo = {
+  id?: string;
+  name?: string;
   description?: string;
   knowledgeCutoff?: string | null;
   topProvider?: ModelTopProvider;

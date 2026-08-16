@@ -103,6 +103,14 @@ export function JobDetailPage() {
 
           <JobStatus status={job.status} />
           <JobResult job={job} />
+          {job.status === "completed" && job.transcript && (
+            <Link
+              to={`/chat?audioUploadId=${encodeURIComponent(job.uploadId)}`}
+              className="inline-flex px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+            >
+              Chat about transcript
+            </Link>
+          )}
         </>
       )}
 

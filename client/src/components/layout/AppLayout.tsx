@@ -38,6 +38,9 @@ export function AppLayout() {
                 <NavLink to="/history" className={navLinkClass}>
                   History
                 </NavLink>
+                <NavLink to="/chat" className={navLinkClass}>
+                  Chat
+                </NavLink>
               </nav>
             </div>
             <div className="flex items-center gap-2">

@@ -16,4 +16,7 @@ export const queryKeys = {
   transcriptionModels: ["models", "transcription"] as const,
   jobs: ["jobs"] as const,
   job: (uploadId: string) => ["job", uploadId] as const,
+  conversations: ["conversations"] as const,
+  messages: (conversationId: string) =>
+    ["conversations", conversationId, "messages"] as const,
 };

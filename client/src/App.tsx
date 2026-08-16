@@ -7,6 +7,7 @@ import { LandingPage } from "./components/pages/LandingPage";
 import { NewUploadPage } from "./components/pages/NewUploadPage";
 import { HistoryPage } from "./components/pages/HistoryPage";
 import { JobDetailPage } from "./components/pages/JobDetailPage";
+import { ChatPage } from "./components/pages/ChatPage";
 
 /** Landing route: send authenticated users straight to the app. */
 function LandingRoute() {
@@ -25,6 +26,8 @@ function App() {
           <Route path="/app" element={<NewUploadPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/jobs/:uploadId" element={<JobDetailPage />} />
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/chat/:conversationId" element={<ChatPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
