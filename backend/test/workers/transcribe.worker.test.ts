@@ -41,9 +41,7 @@ vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   saveCompletedTranscript: mockSaveCompletedTranscript,
 }));
 
-// transcribe() lives in the same module as handleTranscribeJob, so it can't be
-// mocked as an export — an intra-module call binds directly. Mock the Deepgram
-// SDK it calls through instead.
+// Mock the Deepgram SDK called by transcribe().
 vi.mock("@deepgram/sdk", () => ({
   DeepgramClient: class {
     listen = { v1: { media: { transcribeUrl: mockTranscribeUrl } } };
@@ -63,7 +61,7 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-import { handleTranscribeJob } from "../../shared/ai/ai_transcribe_client";
+import { handleTranscribeJob } from "../../transcribe-worker/transcribeJob";
 
 /**
  * The worker issues two updates: claim (which returns the row), then complete

@@ -1,17 +1,6 @@
 import { DeepgramClient } from "@deepgram/sdk";
 import { getBaseEnv } from "../env";
-import { claimAudioJob, failAudioJob } from "../data/jobs.data";
-import { saveCompletedTranscript } from "../data/transcripts.data";
-import { AUDIO_URL_TTL_SECONDS, createSignedUrl } from "../bucket";
-import { logger } from "../logger";
 import { getCache, setCache } from "../cache/cache";
-import type { UploadId } from "../types";
-import {
-  mq,
-  type DeliveryMetadata,
-} from "../message-queue/messageQueue";
-
-const log = logger.child({ ai_transcribe_client: "transcribe" });
 
 const deepgram = new DeepgramClient({ apiKey: getBaseEnv().DEEPGRAM_API_KEY });
 
@@ -123,62 +112,6 @@ export async function isValidTranscribeModel(
   return Object.values(modelData).some(
     (model) => model.name === modelId || model.canonicalName === modelId,
   );
-}
-
-export async function handleTranscribeJob({
-  uploadId,
-}: {
-  uploadId: UploadId;
-}, delivery: DeliveryMetadata = { redelivered: false }) {
-  let claimToken: string | null = null;
-
-  try {
-    const job = await claimAudioJob(uploadId, delivery.redelivered);
-
-    if (!job) return;
-    claimToken = job.claimToken;
-
-    // A signed URL rather than the bytes: the provider fetches the object
-    // itself, so audio length never becomes this process's memory problem.
-    const audioUrl = await createSignedUrl(
-      job.userId,
-      uploadId,
-      AUDIO_URL_TTL_SECONDS,
-    );
-    const model = job.transcriptionModelId ?? DEFAULT_TRANSCRIBE_MODEL;
-    const transcript = await transcribe(model, audioUrl);
-    if (!transcript.trim()) {
-      throw new Error("Transcription produced no text");
-    }
-    log.debug("Transcription produced", {
-      uploadId,
-      length: transcript.length,
-    });
-
-    // Store the transcript (keyed by this job's uploadId; a re-run overwrites
-    // it) and mark the job done in one transaction, so a completed job always
-    // has a readable transcript and vice versa.
-    const saved = await saveCompletedTranscript(
-      job.userId,
-      uploadId,
-      transcript,
-      claimToken,
-    );
-    if (!saved) {
-      log.debug("Discarded result from superseded claim", { uploadId });
-      return;
-    }
-
-    await mq.publish(mq.queues.TRANSCRIBE_DONE, {
-      uploadId,
-      userId: job.userId,
-    });
-  } catch (err) {
-    log.error("Transcription job failed", err, { uploadId });
-    if (claimToken) await failAudioJob(uploadId, claimToken);
-
-    throw err;
-  }
 }
 
 export const DEFAULT_TRANSCRIBE_MODEL = "nova-3";

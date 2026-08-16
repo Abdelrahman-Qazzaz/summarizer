@@ -8,7 +8,7 @@ import { failAudioJobById } from "../shared/data/jobs.data";
 
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
-import { handleTranscribeJob } from "../shared/ai/ai_transcribe_client";
+import { handleTranscribeJob } from "../transcribe-worker/transcribeJob";
 
 // createApp() runs the fail-fast preflight: if any third-party dependency is
 // down (incl. RabbitMQ, which it also connects), the API never starts.
