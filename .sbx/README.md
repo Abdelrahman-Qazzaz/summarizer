@@ -16,4 +16,4 @@ sand_browser
 sand_browser_ports
 ```
 
-The template contains Chromium, `@playwright/cli@0.1.18`, and the official OpenAI Playwright skill pinned at commit `49f948faa9258a0c61caceaf225e179651397431`. Docker Sandbox caches the template across sandbox recreation.
+The template takes Chromium from Microsoft's multi-architecture `playwright:v1.62.0-resolute` image, then adds `@playwright/cli@0.1.18` and the official OpenAI Playwright skill pinned at commit `49f948faa9258a0c61caceaf225e179651397431`. Docker Sandbox caches the result across sandbox recreation.

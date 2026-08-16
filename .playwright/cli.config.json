@@ -1,7 +1,11 @@
 {
   "browser": {
     "browserName": "chromium",
-    "isolated": true
+    "isolated": true,
+    "launchOptions": {
+      "chromiumSandbox": false,
+      "executablePath": "/ms-playwright/chromium-1234/chrome-linux/chrome"
+    }
   },
   "outputDir": "output/playwright",
   "outputMode": "stdout"
