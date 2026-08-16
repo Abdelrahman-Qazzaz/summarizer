@@ -38,6 +38,8 @@ export const tableStubs = {
     title: "title",
     createdAt: "created_at",
     updatedAt: "updated_at",
+    lastMessageId: "last_message_id",
+    activeTurnClaimToken: "active_turn_claim_token",
     userId: "user_id",
   },
 

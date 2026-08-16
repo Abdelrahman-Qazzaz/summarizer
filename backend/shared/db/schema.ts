@@ -119,10 +119,8 @@ export const Conversations = pgTable("conversations", {
     .defaultNow()
     .notNull(),
 
-  // Fingerprint of the context the last reply was generated against. Written
-  // with the (non-blocking) turn writes and echoed by the client on its next
-  // turn, so a drift between the two is visible. Null until the first turn.
-  contextHash: text("context_hash"),
+  lastMessageId: uuid("last_message_id"),
+  activeTurnClaimToken: uuid("active_turn_claim_token"),
 
   userId: text("user_id")
     .notNull()

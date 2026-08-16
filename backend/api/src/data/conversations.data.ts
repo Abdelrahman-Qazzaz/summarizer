@@ -1,4 +1,5 @@
-import { and, desc, eq, type SQL } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 import { Conversations, db, type Executor } from "../../../shared/db";
 
 const conversationColumns = {
@@ -6,7 +7,8 @@ const conversationColumns = {
   title: Conversations.title,
   createdAt: Conversations.createdAt,
   updatedAt: Conversations.updatedAt,
-  contextHash: Conversations.contextHash,
+  lastMessageId: Conversations.lastMessageId,
+  activeTurnClaimToken: Conversations.activeTurnClaimToken,
 };
 
 export type ConversationRow = Pick<
@@ -48,6 +50,71 @@ export async function findOwnedConversation(
   return row ?? null;
 }
 
+export async function claimConversationTurn(
+  userId: string,
+  conversationId: string,
+  expectedLastMessageId: string | null,
+) {
+  const claimToken = randomUUID();
+  const [row] = await db
+    .update(Conversations)
+    .set({ activeTurnClaimToken: claimToken })
+    .where(
+      and(
+        ownedBy(userId, conversationId),
+        isNull(Conversations.activeTurnClaimToken),
+        expectedLastMessageId === null
+          ? isNull(Conversations.lastMessageId)
+          : eq(Conversations.lastMessageId, expectedLastMessageId),
+      ),
+    )
+    .returning({ id: Conversations.id });
+
+  return row ? claimToken : null;
+}
+
+export async function releaseConversationTurn(
+  userId: string,
+  conversationId: string,
+  claimToken: string,
+  executor: Executor = db,
+) {
+  await executor
+    .update(Conversations)
+    .set({ activeTurnClaimToken: null })
+    .where(
+      and(
+        ownedBy(userId, conversationId),
+        eq(Conversations.activeTurnClaimToken, claimToken),
+      ),
+    );
+}
+
+export async function completeConversationTurn(
+  userId: string,
+  conversationId: string,
+  claimToken: string,
+  lastMessageId: string,
+  executor: Executor = db,
+) {
+  const [row] = await executor
+    .update(Conversations)
+    .set({
+      lastMessageId,
+      activeTurnClaimToken: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        ownedBy(userId, conversationId),
+        eq(Conversations.activeTurnClaimToken, claimToken),
+      ),
+    )
+    .returning({ id: Conversations.id });
+
+  return Boolean(row);
+}
+
 /** Omitting `title` leaves the column to its DB default. */
 export async function createConversation(userId: string, title?: string) {
   const [row] = await db
@@ -79,25 +146,13 @@ export async function deleteOwnedConversation(
 ) {
   const [row] = await db
     .delete(Conversations)
-    .where(ownedBy(userId, conversationId))
+    .where(
+      and(
+        ownedBy(userId, conversationId),
+        isNull(Conversations.activeTurnClaimToken),
+      ),
+    )
     .returning({ id: Conversations.id });
 
   return row ?? null;
-}
-
-/**
- * Records the turn just completed: bumps the conversation to the top of the list
- * and stores the fingerprint of the context its reply was generated against,
- * checked against the client's next turn.
- */
-export async function recordConversationContext(
-  userId: string,
-  conversationId: string,
-  contextHash: string,
-  executor: Executor = db,
-) {
-  await executor
-    .update(Conversations)
-    .set({ updatedAt: new Date(), contextHash })
-    .where(ownedBy(userId, conversationId));
 }

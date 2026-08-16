@@ -263,6 +263,7 @@ describe("DELETE /conversations/:conversationId", () => {
   });
   it("returns 404 when the conversation does not exist for the user", async () => {
     mockDeleteReturning.mockResolvedValueOnce([]);
+    mockLimit.mockResolvedValueOnce([]);
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}`, {
@@ -270,5 +271,25 @@ describe("DELETE /conversations/:conversationId", () => {
       headers: { Cookie: await sessionCookieHeader(userId) },
     });
     expect(res.status).toBe(404);
+  });
+
+  it("returns 409 while the conversation has an active response", async () => {
+    mockDeleteReturning.mockResolvedValueOnce([]);
+    mockLimit.mockResolvedValueOnce([
+      { ...row, activeTurnClaimToken: "claim-token" },
+    ]);
+
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/conversations/${conversationId}`, {
+      method: "DELETE",
+      headers: { Cookie: await sessionCookieHeader(userId) },
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      message: "A response is already in progress",
+    });
+    expect(mockDeleteFilesFromBucket).not.toHaveBeenCalled();
   });
 });

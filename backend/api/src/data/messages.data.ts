@@ -1,13 +1,14 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import {
   ChatMessages,
+  Conversations,
   ImageUploads,
   TranscriptContents,
   db,
   type Executor,
 } from "../../../shared/db";
 import { attachImagesToMessage } from "./images.data";
-import { recordConversationContext } from "./conversations.data";
+import { completeConversationTurn } from "./conversations.data";
 
 /**
  * The columns a message is exposed through — every read feeding `toMessageJson`
@@ -171,23 +172,69 @@ export async function deleteOwnedMessage(
   conversationId: string,
   messageId: string,
 ) {
-  const [row] = await db
-    .delete(ChatMessages)
-    .where(
-      and(
-        eq(ChatMessages.id, messageId),
-        eq(ChatMessages.conversationId, conversationId),
-        eq(ChatMessages.userId, userId),
-      ),
-    )
-    .returning({ id: ChatMessages.id });
+  return db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .select({
+        activeTurnClaimToken: Conversations.activeTurnClaimToken,
+        lastMessageId: Conversations.lastMessageId,
+      })
+      .from(Conversations)
+      .where(
+        and(
+          eq(Conversations.id, conversationId),
+          eq(Conversations.userId, userId),
+        ),
+      )
+      .limit(1)
+      .for("update");
 
-  return row ?? null;
+    if (!conversation) return null;
+    if (conversation.activeTurnClaimToken) return { status: "active" } as const;
+
+    const [deletedMessage] = await tx
+      .delete(ChatMessages)
+      .where(
+        and(
+          eq(ChatMessages.id, messageId),
+          eq(ChatMessages.conversationId, conversationId),
+          eq(ChatMessages.userId, userId),
+        ),
+      )
+      .returning({ id: ChatMessages.id });
+
+    if (!deletedMessage) return null;
+
+    if (conversation.lastMessageId === messageId) {
+      const [newHead] = await tx
+        .select({ id: ChatMessages.id })
+        .from(ChatMessages)
+        .where(
+          and(
+            eq(ChatMessages.conversationId, conversationId),
+            eq(ChatMessages.userId, userId),
+          ),
+        )
+        .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
+        .limit(1);
+
+      await tx
+        .update(Conversations)
+        .set({ lastMessageId: newHead?.id ?? null })
+        .where(
+          and(
+            eq(Conversations.id, conversationId),
+            eq(Conversations.userId, userId),
+          ),
+        );
+    }
+
+    return { status: "deleted", id: deletedMessage.id } as const;
+  });
 }
 
 /**
  * Persists a completed turn as one transaction: the user message, the images it
- * claimed, the assistant reply, and the conversation's new context fingerprint.
+ * claimed, the assistant reply, and the conversation's new head.
  * All-or-nothing, so a mid-write failure can't leave a turn half-recorded — a
  * user message with no reply, or a reply the conversation never points at.
  */
@@ -199,9 +246,9 @@ export async function persistChatTurn(turn: {
   attachmentUploadIds: readonly string[];
   chosenModelId: string;
   assistantContent: string;
-  contextHash: string;
+  claimToken: string;
 }) {
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const userMessage = await createMessage(
       {
         role: "user",
@@ -218,7 +265,7 @@ export async function persistChatTurn(turn: {
       turn.attachmentUploadIds,
       tx,
     );
-    await createMessage(
+    const assistantMessage = await createMessage(
       {
         role: "assistant",
         content: turn.assistantContent,
@@ -228,11 +275,15 @@ export async function persistChatTurn(turn: {
       },
       tx,
     );
-    await recordConversationContext(
+    const completed = await completeConversationTurn(
       turn.userId,
       turn.conversationId,
-      turn.contextHash,
+      turn.claimToken,
+      assistantMessage.id,
       tx,
     );
+    if (!completed) throw new Error("Conversation turn claim was lost");
+
+    return assistantMessage.id;
   });
 }

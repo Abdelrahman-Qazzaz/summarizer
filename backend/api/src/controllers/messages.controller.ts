@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { createHash } from "node:crypto";
 import { SSEEventQueue } from "../utils/sse";
 import {
   deleteOwnedMessage,
@@ -14,7 +13,11 @@ import { CTX_KEYS } from "../../../shared/keys";
 import { buildUserTurn, chatAI } from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
-import { findOwnedConversation } from "../data/conversations.data";
+import {
+  claimConversationTurn,
+  findOwnedConversation,
+  releaseConversationTurn,
+} from "../data/conversations.data";
 import {
   findMessageImageUploadIds,
   resolveImageUploadUrls,
@@ -85,25 +88,6 @@ function userMessageIds(
   rows: readonly { id: string; role: MessageRow["role"] }[],
 ) {
   return rows.filter((row) => row.role === "user").map((row) => row.id);
-}
-
-/**
- * A stable fingerprint of the context a reply is generated against: each turn's
- * role and its text. Image URLs are re-signed over time, so they're excluded —
- * the same conversation state must always hash the same. Advisory: it's stored
- * on the conversation and echoed by the client to make drift visible.
- */
-function hashContext(turns: ChatTurn[]): string {
-  const stable = turns.map((turn) => ({
-    role: turn.role,
-    text:
-      typeof turn.content === "string"
-        ? turn.content
-        : turn.content
-            .map((part) => (part.type === "text" ? part.text : "[image]"))
-            .join(""),
-  }));
-  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 }
 
 /**
@@ -191,12 +175,13 @@ export async function handleListMessages(c: Context) {
 
   // Ownership check and the rows themselves are independent reads; the rows
   // are simply discarded on the 404 path.
-  const [owned, rows] = await Promise.all([
+  const [ownedConversation, rows] = await Promise.all([
     findOwnedConversation(userId, conversationId),
     findConversationMessages(conversationId),
   ]);
 
-  if (!owned) return c.json({ message: "Conversation not found" }, 404);
+  if (!ownedConversation)
+    return c.json({ message: "Conversation not found" }, 404);
 
   const imagesByMessageId = await resolveMessageImages(
     userId,
@@ -204,6 +189,7 @@ export async function handleListMessages(c: Context) {
   );
 
   return c.json({
+    lastMessageId: ownedConversation.lastMessageId,
     messages: rows.map((row) =>
       toMessageJson(row, imagesByMessageId.get(row.id)),
     ),
@@ -214,15 +200,14 @@ export async function handleListMessages(c: Context) {
  * POST /conversations/:conversationId/messages — build the model context, stream
  * the reply over SSE, and persist the turn without the client waiting on it.
  *
- * Events: `delta` ({ delta }) per model chunk, then `hash` ({ contextHash }) — a
- * fingerprint of the context this reply was built on, which the client echoes on
- * its next turn — then `error` ({ message }) if the model call fails. The client
- * consumes this with fetch + response.body.getReader() (EventSource can't POST).
+ * Events: `delta` ({ delta }) per model chunk, then `done` ({ lastMessageId })
+ * after the completed turn is stored, or `error` ({ message }) if the model call
+ * fails. The client consumes this with fetch + response.body.getReader()
+ * (EventSource can't POST).
  *
- * The DB writes fire after the reply and are never awaited by the response. The
- * run that produces the reply is decoupled from the response stream, so a client
- * that disconnects mid-stream still has its turn run to completion and saved; GET
- * .../messages is the source of truth.
+ * The run that produces the reply is decoupled from the response stream, so a
+ * client that disconnects mid-stream still has its turn run to completion and
+ * saved; GET .../messages is the source of truth.
  */
 
 // look for optimizations after recent rewrite.
@@ -233,133 +218,114 @@ export async function handleCreateMessage(c: Context) {
   const chosenModelId: string = c.get(CTX_KEYS.chosenModelId);
   const uploadIds: string[] = c.get(CTX_KEYS.attachmentUploadIds);
   const audioUploadId: string | undefined = c.get(CTX_KEYS.audioUploadId);
-  const clientContextHash: string | undefined = c.get(CTX_KEYS.contextHash);
+  const expectedLastMessageId: string | null = c.get(CTX_KEYS.lastMessageId);
 
-  // Ownership check, attachment resolution, the transcript read and the history
-  // fetch are all independent, so they run in one wave; each is simply discarded
-  // on the 404 paths, the posture handleListMessages takes for its rows too. The
-  // history fetch is bounded by the message cap alone — the stored cutoff only
-  // narrows the bucket reads later, not this query.
-  const [owned, attachments, transcript, history] = await Promise.all([
-    findOwnedConversation(userId, conversationId),
-    resolveUnattachedImages(userId, uploadIds),
-    audioUploadId ? readTurnTranscript(userId, audioUploadId) : null,
-    findRecentMessagesWithContext(
-      userId,
-      conversationId,
-      MAX_CONTEXT_MESSAGES - 1,
-    ),
-  ]);
-  if (!owned) return c.json({ message: "Conversation not found" }, 404);
-  // An id that resolved to nothing was never this user's, or was already sent
-  // on an earlier message — either way the turn the client asked for can't be
-  // built, and silently dropping the image would be worse than saying so.
-  if (attachments.length !== uploadIds.length)
-    return c.json({ message: "Attachment not found" }, 404);
-  // Same posture for the transcript: an id that resolves to nothing is not the
-  // user's, hasn't finished transcribing, or its object is unreadable. Sending
-  // the prompt without the body it was written about would answer the wrong
-  // question.
-  if (audioUploadId && !transcript)
-    return c.json({ message: "Transcript not found" }, 404);
-
-  // The transcript is the one part of a turn that has no cap of its own —
-  // `content` is schema-capped at 50k, images at MAX_CONTEXT_IMAGES, but a
-  // transcript is as long as the recording was. Refuse rather than truncate: a
-  // silently halved transcript yields a confident answer about the first half.
-  if (transcript && transcript.length >= MAX_CONTEXT_CHARS)
-    return c.json(
-      {
-        message: "Transcript is too long for one message",
-        maxChars: MAX_CONTEXT_CHARS,
-        chars: transcript.length,
-      },
-      413,
-    );
-
-  // Advisory only: a client building on a context we no longer have stored is
-  // worth noting, but not worth blocking the turn over yet.
-  // TODO: find resolution method.
-  if (
-    clientContextHash &&
-    owned.contextHash &&
-    clientContextHash !== owned.contextHash
-  )
-    log.warn("Client context hash does not match stored", { conversationId });
-
-  const turns = await assembleConversationContext(
+  const claimToken = await claimConversationTurn(
     userId,
-    history,
-    buildUserTurn(
-      transcript ? withTranscript(content, transcript) : content,
-      attachments.map((attachment) => attachment.url),
-    ),
-    // Charged up front so history is what falls off to make room for it,
-    // rather than the two together silently blowing past the budget.
-    (transcript?.length ?? 0) + content.length,
+    conversationId,
+    expectedLastMessageId,
   );
+  if (!claimToken) {
+    const ownedConversation = await findOwnedConversation(userId, conversationId);
+    if (!ownedConversation)
+      return c.json({ message: "Conversation not found" }, 404);
+    return c.json(
+      { message: "Conversation changed or a response is already in progress" },
+      409,
+    );
+  }
 
-  const contextHash = hashContext(turns);
-
-  // Run once the reply is known; the client never waits on these. The run that
-  // produces the reply is decoupled from the response stream (see below), so
-  // this still fires even when the client has disconnected mid-stream — an
-  // abandoned turn is persisted in full and shows up on GET .../messages.
-  const persistTurn = async (assistantContent: string) => {
+  const releaseClaim = async () => {
     try {
-      // One transaction, so a mid-write failure rolls the whole turn back rather
-      // than leaving a user message with no reply (or vice versa).
-      await persistChatTurn({
-        userId,
+      await releaseConversationTurn(userId, conversationId, claimToken);
+    } catch (error) {
+      log.error("Failed to release conversation turn claim", error, {
         conversationId,
-        content,
-        audioUploadId,
-        attachmentUploadIds: attachments.map((attachment) => attachment.uploadId),
-        chosenModelId,
-        assistantContent,
-        contextHash,
       });
-    } catch (err) {
-      // TODO: implement solution
-      log.error("Failed to persist chat turn", err, { conversationId });
     }
   };
 
-  // The model run pushes into a queue rather than writing the response stream
-  // directly, so it is never coupled to the client's connection. Node doesn't
-  // cancel the response when the socket closes — a straight write would resolve
-  // until its buffer filled and then block forever, stranding the run. Here the
-  // run always completes and persists; only the forwarder below is unblocked by
-  // the disconnect signal.
-  const events = new SSEEventQueue();
-  const disconnectSignal = c.req.raw.signal;
-
-  void (async () => {
-    try {
-      const assistantContent = await chatAI(chosenModelId, turns, {
-        onDelta: async (delta) => events.push("delta", { delta }),
-        maxOutputTokens: MAX_RESPONSE_TOKENS,
-        // Keeps this conversation's turns on one provider for prompt-cache hits.
-        sessionId: conversationId,
-      });
-      events.push("hash", { contextHash });
-      // End the queue before persisting so the response can drain and close —
-      // the client waits on the reply, never on the write-back.
-      events.end();
-      await persistTurn(assistantContent);
-    } catch (err) {
-      log.error("Chat completion run failed", err, {
+  try {
+    const [attachments, transcript, history] = await Promise.all([
+      resolveUnattachedImages(userId, uploadIds),
+      audioUploadId ? readTurnTranscript(userId, audioUploadId) : null,
+      findRecentMessagesWithContext(
+        userId,
         conversationId,
-        chosenModelId,
-      });
-      // Reported in-band: the response is a 200 stream by the time this can
-      // fail, so an SSE "error" event is the only channel left to the client.
-      events.push("error", { message: "Model response failed" });
-      events.end();
-    }
-  })();
+        MAX_CONTEXT_MESSAGES - 1,
+      ),
+    ]);
 
-  return streamSSE(c, (stream) => events.pipeTo(stream, disconnectSignal));
+    if (attachments.length !== uploadIds.length) {
+      await releaseClaim();
+      return c.json({ message: "Attachment not found" }, 404);
+    }
+    if (audioUploadId && !transcript) {
+      await releaseClaim();
+      return c.json({ message: "Transcript not found" }, 404);
+    }
+    if (transcript && transcript.length >= MAX_CONTEXT_CHARS) {
+      await releaseClaim();
+      return c.json(
+        {
+          message: "Transcript is too long for one message",
+          maxChars: MAX_CONTEXT_CHARS,
+          chars: transcript.length,
+        },
+        413,
+      );
+    }
+
+    const turns = await assembleConversationContext(
+      userId,
+      history,
+      buildUserTurn(
+        transcript ? withTranscript(content, transcript) : content,
+        attachments.map((attachment) => attachment.url),
+      ),
+      (transcript?.length ?? 0) + content.length,
+    );
+
+    const events = new SSEEventQueue();
+    const disconnectSignal = c.req.raw.signal;
+
+    void (async () => {
+      try {
+        const assistantContent = await chatAI(chosenModelId, turns, {
+          onDelta: async (delta) => events.push("delta", { delta }),
+          maxOutputTokens: MAX_RESPONSE_TOKENS,
+          sessionId: conversationId,
+        });
+        const lastMessageId = await persistChatTurn({
+          userId,
+          conversationId,
+          content,
+          audioUploadId,
+          attachmentUploadIds: attachments.map(
+            (attachment) => attachment.uploadId,
+          ),
+          chosenModelId,
+          assistantContent,
+          claimToken,
+        });
+        events.push("done", { lastMessageId });
+        events.end();
+      } catch (error) {
+        await releaseClaim();
+        log.error("Chat completion run failed", error, {
+          conversationId,
+          chosenModelId,
+        });
+        events.push("error", { message: "Model response failed" });
+        events.end();
+      }
+    })();
+
+    return streamSSE(c, (stream) => events.pipeTo(stream, disconnectSignal));
+  } catch (error) {
+    await releaseClaim();
+    throw error;
+  }
 }
 
 /** DELETE /conversations/:conversationId/messages/:messageId */
@@ -372,9 +338,11 @@ export async function handleDeleteMessage(c: Context) {
   // message. Scoped to this user, so a message they don't own yields nothing.
   const imageUploadIds = await findMessageImageUploadIds(userId, messageId);
 
-  const row = await deleteOwnedMessage(userId, conversationId, messageId);
+  const result = await deleteOwnedMessage(userId, conversationId, messageId);
 
-  if (!row) return c.json({ message: "Message not found" }, 404);
+  if (!result) return c.json({ message: "Message not found" }, 404);
+  if (result.status === "active")
+    return c.json({ message: "A response is already in progress" }, 409);
 
   await deleteFilesFromBucket(userId, imageUploadIds);
   //TODO: move deleteFilesFromBucket to a promise.all with deleteOwnedMessage?

@@ -1,0 +1,84 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const {
+  mockUpdate,
+  mockSet,
+  mockWhere,
+  mockReturning,
+} = vi.hoisted(() => ({
+  mockUpdate: vi.fn(),
+  mockSet: vi.fn(),
+  mockWhere: vi.fn(),
+  mockReturning: vi.fn(),
+}));
+
+vi.mock("../../shared/db", async () => ({
+  db: { update: mockUpdate },
+  ...(await import("../helpers/dbTableStubs")).tableStubs,
+}));
+
+import {
+  claimConversationTurn,
+  completeConversationTurn,
+  releaseConversationTurn,
+} from "../../api/src/data/conversations.data";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockUpdate.mockReturnValue({ set: mockSet });
+  mockSet.mockReturnValue({ where: mockWhere });
+  mockWhere.mockReturnValue({ returning: mockReturning });
+});
+
+describe("conversation turn claims", () => {
+  it("returns the token written by a successful claim", async () => {
+    mockReturning.mockResolvedValueOnce([{ id: "conversation-1" }]);
+
+    const claimToken = await claimConversationTurn(
+      "user-1",
+      "conversation-1",
+      null,
+    );
+
+    expect(claimToken).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(mockSet).toHaveBeenCalledWith({
+      activeTurnClaimToken: claimToken,
+    });
+  });
+
+  it("returns null when the expected conversation head cannot be claimed", async () => {
+    mockReturning.mockResolvedValueOnce([]);
+
+    await expect(
+      claimConversationTurn("user-1", "conversation-1", "message-1"),
+    ).resolves.toBeNull();
+  });
+
+  it("releases only the caller's claim token", async () => {
+    await releaseConversationTurn("user-1", "conversation-1", "claim-1");
+
+    expect(mockSet).toHaveBeenCalledWith({ activeTurnClaimToken: null });
+    expect(mockWhere).toHaveBeenCalledOnce();
+  });
+
+  it("advances the head only for the active claimant", async () => {
+    mockReturning.mockResolvedValueOnce([{ id: "conversation-1" }]);
+
+    await expect(
+      completeConversationTurn(
+        "user-1",
+        "conversation-1",
+        "claim-1",
+        "assistant-message-1",
+      ),
+    ).resolves.toBe(true);
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeTurnClaimToken: null,
+        lastMessageId: "assistant-message-1",
+      }),
+    );
+  });
+});

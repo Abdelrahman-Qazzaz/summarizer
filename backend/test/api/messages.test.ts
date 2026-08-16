@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const {
   mockFindOwnedConversation,
+  mockClaimConversationTurn,
+  mockReleaseConversationTurn,
   mockFindRecentMessagesWithContext,
   mockPersistChatTurn,
   mockFindConversationMessages,
@@ -18,6 +20,8 @@ const {
   mockChatAI,
 } = vi.hoisted(() => ({
   mockFindOwnedConversation: vi.fn(),
+  mockClaimConversationTurn: vi.fn(),
+  mockReleaseConversationTurn: vi.fn(),
   mockFindRecentMessagesWithContext: vi.fn(),
   mockPersistChatTurn: vi.fn(),
   mockFindConversationMessages: vi.fn(),
@@ -49,6 +53,8 @@ vi.mock("../../api/src/data/conversations.data", async (importActual) => ({
     typeof import("../../api/src/data/conversations.data")
   >()),
   findOwnedConversation: mockFindOwnedConversation,
+  claimConversationTurn: mockClaimConversationTurn,
+  releaseConversationTurn: mockReleaseConversationTurn,
 }));
 
 vi.mock("../../api/src/data/messages.data", async (importActual) => ({
@@ -114,7 +120,8 @@ const ownedConversation = {
   title: "A chat",
   createdAt,
   updatedAt: createdAt,
-  contextHash: null,
+  lastMessageId: null,
+  activeTurnClaimToken: null,
 };
 
 const userRow = {
@@ -159,13 +166,15 @@ function contextMessage(partial: Partial<ContextMessage> = {}): ContextMessage {
 beforeEach(() => {
   vi.clearAllMocks();
   mockFindOwnedConversation.mockResolvedValue(ownedConversation);
+  mockClaimConversationTurn.mockResolvedValue("claim-token");
+  mockReleaseConversationTurn.mockResolvedValue(undefined);
   mockFindRecentMessagesWithContext.mockResolvedValue([]);
   mockResolveUnattachedImages.mockResolvedValue([]);
   mockResolveMessageImages.mockResolvedValue(new Map());
   mockResolveImageUploadUrls.mockResolvedValue(new Map());
   mockFindTranscript.mockResolvedValue(null);
   mockFindTranscriptContents.mockResolvedValue(new Map());
-  mockPersistChatTurn.mockResolvedValue(undefined);
+  mockPersistChatTurn.mockResolvedValue(assistantRow.id);
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
   mockDeleteFilesFromBucket.mockResolvedValue([]);
@@ -189,6 +198,7 @@ describe("GET /conversations/:conversationId/messages", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
+      lastMessageId: null,
       messages: [
         { ...userRow, attachments: [] },
         { ...assistantRow, attachments: [] },
@@ -210,6 +220,7 @@ describe("GET /conversations/:conversationId/messages", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
+      lastMessageId: null,
       messages: [
         { ...userRow, attachments: [resolvedImage] },
         // The image hangs off the user turn only.
@@ -231,20 +242,76 @@ describe("GET /conversations/:conversationId/messages", () => {
 
 describe("POST /conversations/:conversationId/messages", () => {
   function postMessage(body: unknown, signal?: AbortSignal) {
+    const requestBody =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? { lastMessageId: null, ...body }
+        : body;
     return sessionCookieHeader(userId).then(async (cookie) =>
       (await createApp()).request(
         `http://localhost/conversations/${conversationId}/messages`,
         {
           method: "POST",
           headers: { Cookie: cookie, "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
           signal,
         },
       ),
     );
   }
 
-  it("streams deltas then a hash, and persists the turn", async () => {
+  it("requires the client to identify the conversation head", async () => {
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/conversations/${conversationId}/messages`, {
+      method: "POST",
+      headers: {
+        Cookie: await sessionCookieHeader(userId),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messageContent: "Hi there",
+        chosenModelId: modelId,
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockClaimConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("claims the exact head submitted by the client", async () => {
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+      lastMessageId: messageId,
+    });
+    await res.text();
+
+    expect(mockClaimConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      messageId,
+    );
+  });
+
+  it("returns 409 without starting the model when the head cannot be claimed", async () => {
+    mockClaimConversationTurn.mockResolvedValueOnce(null);
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      message: "Conversation changed or a response is already in progress",
+    });
+    expect(mockChatAI).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+  });
+
+  it("streams deltas then the persisted conversation head", async () => {
     mockChatAI.mockImplementation(
       async (
         _model: string,
@@ -268,11 +335,14 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(body).toContain("event: delta");
     expect(body).toContain(JSON.stringify({ delta: "Hello " }));
     expect(body).toContain(JSON.stringify({ delta: "world" }));
-    expect(body).toContain("event: hash");
+    expect(body).toContain("event: done");
+    expect(body).toContain(
+      JSON.stringify({ lastMessageId: assistantRow.id }),
+    );
     expect(body).not.toContain("event: error");
-    // The hash trails the tokens the client rendered.
+    // The persisted head trails the tokens the client rendered.
     expect(body.indexOf("event: delta")).toBeLessThan(
-      body.indexOf("event: hash"),
+      body.indexOf("event: done"),
     );
 
     expect(mockChatAI).toHaveBeenCalledWith(
@@ -281,20 +351,16 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
 
-    // The write is fire-and-forget, so it lands after the response resolves —
-    // one transactional call carrying the whole turn.
-    await vi.waitFor(() =>
-      expect(mockPersistChatTurn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId,
-          conversationId,
-          content: "Hi there",
-          assistantContent: "Hello world",
-          chosenModelId: modelId,
-          attachmentUploadIds: [],
-          contextHash: expect.any(String),
-        }),
-      ),
+    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        conversationId,
+        content: "Hi there",
+        assistantContent: "Hello world",
+        chosenModelId: modelId,
+        attachmentUploadIds: [],
+        claimToken: "claim-token",
+      }),
     );
   });
 
@@ -589,11 +655,16 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("event: error");
-    expect(body).not.toContain("event: hash");
+    expect(body).not.toContain("event: done");
 
     // The writes only run once a reply is known, so a failed turn saves nothing.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
   });
 
   it("sends attachments as vision input and binds them to the user turn", async () => {
@@ -660,6 +731,7 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("returns 404 when the conversation is not owned by the user", async () => {
+    mockClaimConversationTurn.mockResolvedValueOnce(null);
     mockFindOwnedConversation.mockResolvedValueOnce(null);
     const res = await postMessage({
       messageContent: "Hi there",
@@ -695,7 +767,10 @@ describe("POST /conversations/:conversationId/messages", () => {
 describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
   it("deletes the message", async () => {
     mockFindMessageImageUploadIds.mockResolvedValueOnce([]);
-    mockDeleteOwnedMessage.mockResolvedValueOnce({ id: messageId });
+    mockDeleteOwnedMessage.mockResolvedValueOnce({
+      status: "deleted",
+      id: messageId,
+    });
     const res = await (
       await createApp()
     ).request(
@@ -714,7 +789,10 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       uploadId,
       "another-upload",
     ]);
-    mockDeleteOwnedMessage.mockResolvedValueOnce({ id: messageId });
+    mockDeleteOwnedMessage.mockResolvedValueOnce({
+      status: "deleted",
+      id: messageId,
+    });
 
     const res = await (
       await createApp()
@@ -746,6 +824,27 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       },
     );
     expect(res.status).toBe(404);
+  });
+
+  it("returns 409 without deleting files while a response is active", async () => {
+    mockFindMessageImageUploadIds.mockResolvedValueOnce([uploadId]);
+    mockDeleteOwnedMessage.mockResolvedValueOnce({ status: "active" });
+
+    const res = await (
+      await createApp()
+    ).request(
+      `http://localhost/conversations/${conversationId}/messages/${messageId}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: await sessionCookieHeader(userId) },
+      },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      message: "A response is already in progress",
+    });
+    expect(mockDeleteFilesFromBucket).not.toHaveBeenCalled();
   });
 
   it("rejects a non-uuid message id with 400", async () => {
