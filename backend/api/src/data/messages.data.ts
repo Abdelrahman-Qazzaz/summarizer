@@ -167,6 +167,8 @@ export async function createMessage(
  * user's conversations doesn't delete through this route. Null when nothing
  * matched, which the caller reports as a 404.
  */
+
+//TODO: current logic is correct, but needs to stop allowing the deletion of a message from the middle of the chat. Instead, if a user deletes a message, it should delete all the ones that come after it (and are a part of the same branch (in case we want to implement a chat-forking message in the furure)).
 export async function deleteOwnedMessage(
   userId: string,
   conversationId: string,
