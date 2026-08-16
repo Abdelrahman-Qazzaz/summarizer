@@ -1,65 +1,51 @@
 import { useState } from "react";
 import { useAuth } from "../../hooks/auth/useAuth";
-import { useModelsQuery } from "../../hooks/queries/useModelsQuery";
+import { useTranscriptionModelsQuery } from "../../hooks/queries/useModelsQuery";
 import { ModelSelector } from "../models/ModelSelector";
 import {
-  filterModelsForMode,
-  modelLabelForMode,
+  DEFAULT_TRANSCRIPTION_MODEL,
   resolveDefaultModel,
 } from "../../lib/modelFilters";
-import type { JobKind, RerunModels } from "../../lib/jobs";
 
 type RerunDialogProps = {
-  kind: JobKind;
   isPending: boolean;
-  onConfirm: (models: RerunModels) => void;
+  onConfirm: (transcriptionModelId: string) => void;
   onClose: () => void;
 };
 
 export function RerunDialog({
-  kind,
   isPending,
   onConfirm,
   onClose,
 }: RerunDialogProps) {
   const { user } = useAuth();
-  const { entries, loading, error } = useModelsQuery(!!user);
-  const isAudio = kind === "audio";
-
-  // Summarization model — both kinds re-summarize. (`null` = not yet chosen.)
-  const [summaryPick, setSummaryPick] = useState<string | null>(null);
-  const summaryModel =
-    summaryPick ??
-    (entries.length > 0 ? resolveDefaultModel(entries, "text") : null);
-  const summaryOptions = filterModelsForMode(entries, "text").map(
-    ([id, info]) => ({ id, label: id, info }),
-  );
-
-  // Transcription model — audio jobs re-transcribe before re-summarizing.
+  const { entries, loading, error } = useTranscriptionModelsQuery(!!user);
   const [transcriptionPick, setTranscriptionPick] = useState<string | null>(
     null,
   );
   const transcriptionModel =
     transcriptionPick ??
-    (entries.length > 0 ? resolveDefaultModel(entries, "audio") : null);
-  const transcriptionOptions = filterModelsForMode(entries, "audio").map(
-    ([id, info]) => ({ id, label: id, info }),
-  );
+    resolveDefaultModel(
+      entries.map(([modelId]) => modelId),
+      DEFAULT_TRANSCRIPTION_MODEL,
+    );
+  const transcriptionOptions = entries.map(([id, info]) => ({
+    id,
+    label: info.name || id,
+    info: {
+      description: [
+        info.architecture,
+        info.languages?.length ? `${info.languages.length} languages` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    },
+  }));
 
-  const canSubmit =
-    !!summaryModel && (!isAudio || !!transcriptionModel) && !isPending;
+  const canSubmit = !!transcriptionModel && !isPending;
 
   const handleConfirm = () => {
-    if (!summaryModel) return;
-    if (isAudio) {
-      if (!transcriptionModel) return;
-      onConfirm({
-        chosenModelId: summaryModel,
-        transcriptionModelId: transcriptionModel,
-      });
-    } else {
-      onConfirm({ chosenModelId: summaryModel });
-    }
+    if (transcriptionModel) onConfirm(transcriptionModel);
   };
 
   return (
@@ -76,29 +62,15 @@ export function RerunDialog({
             Re-run job
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {isAudio
-              ? "Re-transcribe the audio and re-summarize the result."
-              : "Re-summarize the original upload with a different model."}
+            Transcribe the original audio again with a different model.
           </p>
         </div>
 
-        {isAudio && (
-          <ModelSelector
-            label={modelLabelForMode("audio")}
-            models={transcriptionOptions}
-            value={transcriptionModel}
-            onChange={setTranscriptionPick}
-            disabled={loading || isPending}
-            loading={loading}
-            error={error}
-          />
-        )}
-
         <ModelSelector
-          label={modelLabelForMode("text")}
-          models={summaryOptions}
-          value={summaryModel}
-          onChange={setSummaryPick}
+          label="Transcription model"
+          models={transcriptionOptions}
+          value={transcriptionModel}
+          onChange={setTranscriptionPick}
           disabled={loading || isPending}
           loading={loading}
           error={error}

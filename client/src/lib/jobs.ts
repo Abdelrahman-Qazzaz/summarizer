@@ -2,40 +2,20 @@ import { jobEndpoint, jobRerunEndpoint, jobsListEndpoint } from "../config";
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
-export type JobKind = "text" | "audio";
-
-export type TextJob = {
-  kind: "text";
-  uploadId: string;
-  fileName: string;
-  status: JobStatus;
-  summary: string | null;
-  error: string | null;
-};
-
-export type AudioJob = {
-  kind: "audio";
+export type Job = {
   uploadId: string;
   fileName: string;
   status: JobStatus;
   transcript: string | null;
-  /** Summary of the transcript, produced by the downstream summarize worker. */
-  summary: string | null;
-  /** Optional status of the downstream summarization step. */
-  summaryStatus?: JobStatus | null;
   error: string | null;
 };
 
-export type Job = TextJob | AudioJob;
-
 /** Lightweight job shape returned by the history list endpoint. */
 export type JobSummary = {
-  kind: JobKind;
   uploadId: string;
   fileName: string;
   status: JobStatus;
   createdAt: string;
-  chosenModelId: string;
   error: string | null;
 };
 
@@ -48,7 +28,6 @@ export type JobsListParams = {
   limit?: number;
   cursor?: string | null;
   status?: JobStatus | null;
-  kind?: JobKind | null;
   q?: string | null;
 };
 
@@ -70,34 +49,21 @@ async function parseJson(res: Response): Promise<unknown> {
 }
 
 function asJob(data: unknown): Job {
-  if (!data || typeof data !== "object" || !("kind" in data)) {
+  if (!data || typeof data !== "object" || !("uploadId" in data)) {
     throw new Error("Invalid job response");
   }
   return data as Job;
 }
 
 export async function fetchJob(uploadId: string): Promise<Job> {
-  // A deep link gives us only the id, not the kind, and the backend splits job
-  // routes by pipeline. Try the text (summarize) route, then fall back to the
-  // audio (transcribe) route on a 404.
-  const text = await fetch(jobEndpoint(uploadId, "text"), {
+  const response = await fetch(jobEndpoint(uploadId), {
     credentials: "include",
   });
-  if (text.ok) return asJob(await parseJson(text));
-  if (text.status !== 404) {
-    const data = await parseJson(text);
+  const data = await parseJson(response);
+  if (!response.ok) {
     throw new Error(
-      messageFromBody(data, text) || `Failed to load job (${text.status})`,
-    );
-  }
-
-  const audio = await fetch(jobEndpoint(uploadId, "audio"), {
-    credentials: "include",
-  });
-  const data = await parseJson(audio);
-  if (!audio.ok) {
-    throw new Error(
-      messageFromBody(data, audio) || `Failed to load job (${audio.status})`,
+      messageFromBody(data, response) ||
+        `Failed to load job (${response.status})`,
     );
   }
   return asJob(data);
@@ -110,7 +76,6 @@ export async function fetchJobs(
   if (params.limit != null) url.searchParams.set("limit", String(params.limit));
   if (params.cursor) url.searchParams.set("cursor", params.cursor);
   if (params.status) url.searchParams.set("status", params.status);
-  if (params.kind) url.searchParams.set("kind", params.kind);
   if (params.q) url.searchParams.set("q", params.q);
 
   const res = await fetch(url.toString(), { credentials: "include" });
@@ -132,11 +97,8 @@ export async function fetchJobs(
   return { jobs: parsed.jobs, nextCursor: parsed.nextCursor ?? null };
 }
 
-export async function deleteJob(
-  uploadId: string,
-  kind: JobKind,
-): Promise<void> {
-  const res = await fetch(jobEndpoint(uploadId, kind), {
+export async function deleteJob(uploadId: string): Promise<void> {
+  const res = await fetch(jobEndpoint(uploadId), {
     method: "DELETE",
     credentials: "include",
   });
@@ -148,32 +110,15 @@ export async function deleteJob(
   }
 }
 
-export type RerunModels = {
-  /** Summarization model — used by both kinds. */
-  chosenModelId: string;
-  /** Transcription model — required for audio jobs (they re-transcribe). */
-  transcriptionModelId?: string;
-};
-
-/** Re-run an existing upload with new model(s). Returns the id to track. */
 export async function rerunJob(
   uploadId: string,
-  kind: JobKind,
-  models: RerunModels,
+  transcriptionModelId: string,
 ): Promise<string> {
-  const body =
-    kind === "audio"
-      ? {
-          transcriptionModelId: models.transcriptionModelId,
-          chosenModelId: models.chosenModelId,
-        }
-      : { chosenModelId: models.chosenModelId };
-
-  const res = await fetch(jobRerunEndpoint(uploadId, kind), {
+  const res = await fetch(jobRerunEndpoint(uploadId), {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ transcriptionModelId }),
   });
   const data = await parseJson(res);
   if (!res.ok) {
@@ -189,6 +134,5 @@ export async function rerunJob(
   ) {
     return (data as { uploadId: string }).uploadId;
   }
-  // Fall back to the original id if the server doesn't echo a new one.
   return uploadId;
 }

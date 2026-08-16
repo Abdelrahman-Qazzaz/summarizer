@@ -12,7 +12,8 @@ export const queryClient = new QueryClient({
 
 /** Centralized query keys so the socket bridge and mutations stay in sync. */
 export const queryKeys = {
-  models: ["models"] as const,
+  chatModels: ["models", "chat"] as const,
+  transcriptionModels: ["models", "transcription"] as const,
   jobs: ["jobs"] as const,
   job: (uploadId: string) => ["job", uploadId] as const,
 };

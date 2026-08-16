@@ -10,7 +10,7 @@ const PAGE_SIZE = 20;
  */
 export function useJobsQuery(
   enabled: boolean,
-  filters: Pick<JobsListParams, "status" | "kind" | "q"> = {},
+  filters: Pick<JobsListParams, "status" | "q"> = {},
 ) {
   return useInfiniteQuery({
     queryKey: [...queryKeys.jobs, filters],

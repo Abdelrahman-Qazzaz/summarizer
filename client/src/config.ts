@@ -18,26 +18,24 @@ export function authLogoutEndpoint(): string {
   return `${apiBase}/auth/logout`;
 }
 
-/** Backend splits job routes by pipeline: text → summarize, audio → transcribe. */
-type JobKind = "text" | "audio";
-function jobKindSegment(kind: JobKind): "summarize" | "transcribe" {
-  return kind === "audio" ? "transcribe" : "summarize";
-}
-
-export function jobEndpoint(uploadId: string, kind: JobKind): string {
-  return `${apiBase}/jobs/${jobKindSegment(kind)}/${uploadId}`;
+export function jobEndpoint(uploadId: string): string {
+  return `${apiBase}/jobs/transcribe/${uploadId}`;
 }
 
 export function jobsListEndpoint(): string {
   return `${apiBase}/jobs`;
 }
 
-export function jobRerunEndpoint(uploadId: string, kind: JobKind): string {
-  return `${apiBase}/jobs/${jobKindSegment(kind)}/${uploadId}/rerun`;
+export function jobRerunEndpoint(uploadId: string): string {
+  return `${apiBase}/jobs/transcribe/${uploadId}/rerun`;
 }
 
-export function modelsEndpoint(): string {
-  return `${apiBase}/models`;
+export function chatModelsEndpoint(): string {
+  return `${apiBase}/models/chat`;
+}
+
+export function transcriptionModelsEndpoint(): string {
+  return `${apiBase}/models/transcription`;
 }
 
 /** WebSocket URL for job notifications (forward WS_PORT in dev containers). */
@@ -58,17 +56,13 @@ export function socketIoUrl(): string {
   return `http://${DEV_HOST}:4000`;
 }
 
-function uploadPath(suffix: "audio" | "text" | "youtube") {
+function uploadPath(suffix: "audio" | "youtube") {
   const path = `/upload/${suffix}`;
   return apiBase ? `${apiBase}${path}` : path;
 }
 
 export function uploadAudioEndpoint() {
   return uploadPath("audio");
-}
-
-export function uploadTextEndpoint() {
-  return uploadPath("text");
 }
 
 export function uploadYoutubeEndpoint() {

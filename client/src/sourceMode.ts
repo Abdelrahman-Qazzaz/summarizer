@@ -1,5 +1,4 @@
-/** File-backed modes — drive the accept/extension helpers below. */
-export type SourceMode = "text" | "video" | "audio";
+export type SourceMode = "video" | "audio";
 
 /** Everything the upload form can stage; youtube takes a URL, not a file. */
 export type UploadMode = SourceMode | "youtube";
@@ -22,7 +21,6 @@ export function isYoutubeUrl(raw: string): boolean {
   }
 }
 
-const TEXT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".text", ".pdf"]);
 const VIDEO_EXTENSIONS = new Set([
   ".mp4",
   ".webm",
@@ -45,8 +43,6 @@ const AUDIO_EXTENSIONS = new Set([
   ".weba",
 ]);
 
-const TEXT_ACCEPT =
-  ".txt,.md,.markdown,.text,.pdf,text/plain,text/markdown,application/pdf";
 const VIDEO_ACCEPT = "video/*,.mp4,.webm,.mov,.mkv,.avi,.m4v,.mpeg,.mpg";
 const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.opus,.weba";
 
@@ -56,7 +52,6 @@ function fileExtension(name: string): string {
 }
 
 export function acceptForMode(mode: SourceMode): string {
-  if (mode === "text") return TEXT_ACCEPT;
   if (mode === "video") return VIDEO_ACCEPT;
   return AUDIO_ACCEPT;
 }
@@ -64,12 +59,6 @@ export function acceptForMode(mode: SourceMode): string {
 export function isFileAcceptedForMode(file: File, mode: SourceMode): boolean {
   const ext = fileExtension(file.name);
   const type = file.type.toLowerCase();
-
-  if (mode === "text") {
-    if (TEXT_EXTENSIONS.has(ext)) return true;
-    if (type === "application/pdf") return true;
-    return type.startsWith("text/");
-  }
 
   if (mode === "video") {
     if (type.startsWith("video/")) return true;
@@ -83,9 +72,6 @@ export function isFileAcceptedForMode(file: File, mode: SourceMode): boolean {
 }
 
 export function rejectedFileMessage(mode: SourceMode): string {
-  if (mode === "text") {
-    return "Please choose a text or PDF file (.txt, .md, .pdf, …).";
-  }
   if (mode === "video") {
     return "Please choose a video file (MP4, WebM, MOV, …).";
   }
@@ -96,9 +82,6 @@ export function dropZoneCopy(mode: SourceMode): {
   title: string;
   hint: string;
 } {
-  if (mode === "text") {
-    return { title: "Drop a text or PDF file", hint: ".txt, .md, .pdf" };
-  }
   if (mode === "video") {
     return { title: "Drop a video file", hint: "MP4, WebM, MOV, MKV" };
   }

@@ -20,7 +20,7 @@ export function HistoryRow({ job }: { job: JobSummary }) {
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     if (window.confirm(`Delete “${job.fileName}”? This can't be undone.`)) {
-      deleteMutation.mutate({ uploadId: job.uploadId, kind: job.kind });
+      deleteMutation.mutate({ uploadId: job.uploadId });
     }
   };
 
@@ -29,17 +29,12 @@ export function HistoryRow({ job }: { job: JobSummary }) {
       to={`/jobs/${job.uploadId}`}
       className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-sm transition-all"
     >
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 capitalize">
-        {job.kind}
-      </span>
-
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
           {job.fileName}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
           {formatDate(job.createdAt)}
-          {job.chosenModelId ? ` · ${job.chosenModelId}` : ""}
         </p>
       </div>
 

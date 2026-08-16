@@ -21,19 +21,16 @@ export function JobDetailPage() {
     if (!uploadId || !job) return;
     if (window.confirm("Delete this job? This can't be undone.")) {
       deleteMutation.mutate(
-        { uploadId, kind: job.kind },
+        { uploadId },
         { onSuccess: () => navigate("/history") },
       );
     }
   };
 
-  const handleRerun = (models: {
-    chosenModelId: string;
-    transcriptionModelId?: string;
-  }) => {
+  const handleRerun = (transcriptionModelId: string) => {
     if (!uploadId || !job) return;
     rerunMutation.mutate(
-      { uploadId, kind: job.kind, ...models },
+      { uploadId, transcriptionModelId },
       {
         onSuccess: (newUploadId) => {
           setRerunOpen(false);
@@ -83,8 +80,8 @@ export function JobDetailPage() {
               <h1 className="text-xl font-bold text-gray-900 dark:text-white truncate">
                 {job.fileName}
               </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400 capitalize mt-0.5">
-                {job.kind} job
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                Transcription job
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -111,7 +108,6 @@ export function JobDetailPage() {
 
       {rerunOpen && job && (
         <RerunDialog
-          kind={job.kind}
           isPending={rerunMutation.isPending}
           onConfirm={handleRerun}
           onClose={() => setRerunOpen(false)}

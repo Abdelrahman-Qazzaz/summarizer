@@ -9,18 +9,6 @@ type JobUpdatedPayload = {
   uploadId: string;
 };
 
-type JobChunkPayload = {
-  uploadId: string;
-  delta: string;
-};
-
-/**
- * Mounted once (in AppLayout). Listens to `jobChunk` events (streamed summary
- * deltas) and appends them to the cached job so the detail view fills in live,
- * plus `jobUpdated` events to invalidate the affected job + the history list and
- * surface a toast when a job reaches a terminal state. The terminal `jobUpdated`
- * refetch reconciles the streamed text with the authoritative stored summary.
- */
 export function useJobUpdatesBridge(enabled: boolean) {
   const socket = useContext(SocketContext);
   const qc = useQueryClient();
@@ -28,15 +16,6 @@ export function useJobUpdatesBridge(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled || !socket) return;
-
-    const chunkHandler = ({ uploadId, delta }: JobChunkPayload) => {
-      if (!uploadId || !delta) return;
-      // Only append when the job detail is already cached (i.e. the user is on
-      // that page); otherwise the terminal jobUpdated refetch fills it in.
-      qc.setQueryData<Job>(queryKeys.job(uploadId), (prev) =>
-        prev ? { ...prev, summary: (prev.summary ?? "") + delta } : prev,
-      );
-    };
 
     const handler = async ({ uploadId }: JobUpdatedPayload) => {
       if (!uploadId) return;
@@ -57,10 +36,8 @@ export function useJobUpdatesBridge(enabled: boolean) {
       }
     };
 
-    socket.on("jobChunk", chunkHandler);
     socket.on("jobUpdated", handler);
     return () => {
-      socket.off("jobChunk", chunkHandler);
       socket.off("jobUpdated", handler);
     };
   }, [enabled, socket, qc, toast]);

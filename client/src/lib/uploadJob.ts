@@ -1,6 +1,5 @@
 import {
   uploadAudioEndpoint,
-  uploadTextEndpoint,
   uploadYoutubeEndpoint,
 } from "../config";
 import { extractAudioFromVideo } from "./extractAudio";
@@ -33,51 +32,26 @@ function uploadIdFromBody(data: unknown): string | null {
   return null;
 }
 
-export type UploadModels = {
-  /** Summary model — used to summarize the text/transcript. */
-  chosenModelId: string;
-  /** Transcription model — required for audio/video, omitted for text. */
-  transcriptionModelId?: string;
-};
-
-/**
- * Runs the full client-side upload pipeline for a single file: extract audio
- * from video (video mode), compress audio (audio/video modes), then POST to the
- * matching endpoint. Returns the resulting uploadId. Reused by the upload queue.
- */
 export async function runUpload(
   file: File,
   mode: SourceMode,
-  models: UploadModels,
+  transcriptionModelId: string,
   onPhase: (phase: UploadPhase) => void,
 ): Promise<string> {
   const body = new FormData();
-  let url: string;
-
-  if (mode === "text") {
-    onPhase("upload");
-    body.append("uploadFile", file);
-    url = uploadTextEndpoint();
-  } else {
-    let uploadFile = file;
-    if (mode === "video") {
-      onPhase("extract");
-      uploadFile = await extractAudioFromVideo(file);
-    }
-    onPhase("compress");
-    uploadFile = await compressAudioForSpeech(uploadFile);
-    onPhase("upload");
-    body.append("uploadFile", uploadFile);
-    body.append("audioSource", mode === "video" ? "video" : "audio");
-    if (models.transcriptionModelId) {
-      body.append("transcriptionModelId", models.transcriptionModelId);
-    }
-    url = uploadAudioEndpoint();
+  let uploadFile = file;
+  if (mode === "video") {
+    onPhase("extract");
+    uploadFile = await extractAudioFromVideo(file);
   }
+  onPhase("compress");
+  uploadFile = await compressAudioForSpeech(uploadFile);
+  onPhase("upload");
+  body.append("uploadFile", uploadFile);
+  body.append("audioSource", mode);
+  body.append("transcriptionModelId", transcriptionModelId);
 
-  body.append("chosenModelId", models.chosenModelId);
-
-  const res = await fetch(url, {
+  const res = await fetch(uploadAudioEndpoint(), {
     method: "POST",
     body,
     credentials: "include",
@@ -95,15 +69,9 @@ export async function runUpload(
   return uploadId;
 }
 
-/**
- * POST a YouTube URL for summarization. Unlike the file uploads this is a JSON
- * body — the youtube-fetcher service downloads the audio server-side, so there
- * is no client-side extract/compress pipeline. Returns the uploadId to track;
- * the job then behaves like a normal audio (transcribe) job.
- */
 export async function runYoutubeUpload(
   url: string,
-  models: UploadModels,
+  transcriptionModelId: string,
 ): Promise<string> {
   const res = await fetch(uploadYoutubeEndpoint(), {
     method: "POST",
@@ -111,10 +79,7 @@ export async function runYoutubeUpload(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       youtubeUrl: url,
-      chosenModelId: models.chosenModelId,
-      ...(models.transcriptionModelId
-        ? { transcriptionModelId: models.transcriptionModelId }
-        : {}),
+      transcriptionModelId,
     }),
   });
   const data: unknown = await res.json().catch(() => null);

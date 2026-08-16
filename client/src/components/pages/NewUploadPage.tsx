@@ -5,61 +5,23 @@ import { FilePreview } from "../upload/FilePreview";
 import { ModelSelector } from "../models/ModelSelector";
 import { UploadQueue } from "../upload/UploadQueue";
 import { useUploadQueue } from "../../hooks/upload/UploadQueueProvider";
-import { modelLabelForMode } from "../../lib/modelFilters";
-
-function InputMethodToggle({
-  value,
-  onChange,
-}: {
-  value: "file" | "text";
-  onChange: (next: "file" | "text") => void;
-}) {
-  const options: { value: "file" | "text"; label: string }[] = [
-    { value: "file", label: "Upload file" },
-    { value: "text", label: "Paste text" },
-  ];
-  return (
-    <div className="inline-flex p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-            value === opt.value
-              ? "bg-white dark:bg-gray-700 text-primary-700 dark:text-primary-300 shadow-sm"
-              : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export function NewUploadPage() {
   const {
     inputId,
     mode,
     setMode,
-    inputMethod,
-    setInputMethod,
     accept,
     dropTitle,
     dropHint,
     file,
     setFile,
-    textInput,
-    setTextInput,
     youtubeUrl,
     setYoutubeUrl,
     dragOver,
     setDragOver,
     pickFiles,
     onDrop,
-    summaryModel,
-    setSummaryPick,
-    summaryOptions,
     transcriptionModel,
     setTranscriptionPick,
     transcriptionOptions,
@@ -79,48 +41,28 @@ export function NewUploadPage() {
     setDragOver(false);
   };
 
-  const usePasteText = mode === "text" && inputMethod === "text";
-
   return (
     <div className="max-w-2xl mx-auto space-y-8">
       <div className="text-center">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">
-          New summary
+          New transcription
         </h1>
         <p className="text-gray-600 dark:text-gray-300">
-          Add text, audio, video, or a YouTube link — queue as many as you like.
+          Add audio, video, or a YouTube link — queue as many as you like.
         </p>
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl shadow-gray-200/50 dark:shadow-black/30 border border-gray-100 dark:border-gray-800">
         <div className="p-6 sm:p-8 space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <ModeSelector mode={mode} onModeChange={setMode} />
-            {mode === "text" && (
-              <InputMethodToggle
-                value={inputMethod}
-                onChange={setInputMethod}
-              />
-            )}
           </div>
 
-          {mode !== "text" && (
-            <ModelSelector
-              label={modelLabelForMode("audio")}
-              models={transcriptionOptions}
-              value={transcriptionModel}
-              onChange={setTranscriptionPick}
-              disabled={modelsLoading}
-              loading={modelsLoading}
-              error={modelsError}
-            />
-          )}
-
           <ModelSelector
-            label={modelLabelForMode("text")}
-            models={summaryOptions}
-            value={summaryModel}
-            onChange={setSummaryPick}
+            label="Transcription model"
+            models={transcriptionOptions}
+            value={transcriptionModel}
+            onChange={setTranscriptionPick}
             disabled={modelsLoading}
             loading={modelsLoading}
             error={modelsError}
@@ -143,17 +85,6 @@ export function NewUploadPage() {
                 upload from this device.
               </p>
             </div>
-          ) : usePasteText ? (
-            <textarea
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Paste or type the text you want summarized…"
-              rows={8}
-              className="w-full px-4 py-3 text-sm rounded-xl border border-gray-200 dark:border-gray-700
-                bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-y
-                placeholder:text-gray-400 dark:placeholder:text-gray-500
-                focus:outline-none focus:ring-2 focus:ring-primary-500/40"
-            />
           ) : file ? (
             <FilePreview file={file} onRemove={() => setFile(null)} />
           ) : (

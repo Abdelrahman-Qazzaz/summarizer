@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { deleteJob, rerunJob, type JobKind } from "../../lib/jobs";
+import { deleteJob, rerunJob } from "../../lib/jobs";
 import { queryKeys } from "../../lib/queryClient";
 import { useToast } from "../toast/useToast";
 
@@ -8,8 +8,7 @@ export function useDeleteJobMutation() {
   const toast = useToast();
 
   return useMutation({
-    mutationFn: ({ uploadId, kind }: { uploadId: string; kind: JobKind }) =>
-      deleteJob(uploadId, kind),
+    mutationFn: ({ uploadId }: { uploadId: string }) => deleteJob(uploadId),
     onSuccess: (_data, { uploadId }) => {
       qc.removeQueries({ queryKey: queryKeys.job(uploadId) });
       void qc.invalidateQueries({ queryKey: queryKeys.jobs });
@@ -32,15 +31,11 @@ export function useRerunJobMutation() {
   return useMutation({
     mutationFn: ({
       uploadId,
-      kind,
-      chosenModelId,
       transcriptionModelId,
     }: {
       uploadId: string;
-      kind: JobKind;
-      chosenModelId: string;
-      transcriptionModelId?: string;
-    }) => rerunJob(uploadId, kind, { chosenModelId, transcriptionModelId }),
+      transcriptionModelId: string;
+    }) => rerunJob(uploadId, transcriptionModelId),
     onSuccess: (newUploadId) => {
       void qc.invalidateQueries({ queryKey: queryKeys.jobs });
       void qc.invalidateQueries({ queryKey: queryKeys.job(newUploadId) });

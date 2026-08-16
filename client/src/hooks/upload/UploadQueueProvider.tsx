@@ -9,14 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "../auth/useAuth";
-import { useModelsQuery } from "../queries/useModelsQuery";
+import { useTranscriptionModelsQuery } from "../queries/useModelsQuery";
+import { runUpload, runYoutubeUpload } from "../../lib/uploadJob";
 import {
-  runUpload,
-  runYoutubeUpload,
-  type UploadModels,
-} from "../../lib/uploadJob";
-import {
-  filterModelsForMode,
+  DEFAULT_TRANSCRIPTION_MODEL,
   resolveDefaultModel,
 } from "../../lib/modelFilters";
 import {
@@ -28,7 +24,7 @@ import {
   type SourceMode,
   type UploadMode,
 } from "../../sourceMode";
-import type { InputMethod, QueueItem } from "./context";
+import type { QueueItem } from "./context";
 
 let queueIdCounter = 0;
 
@@ -39,54 +35,47 @@ function useUploadQueueState() {
     entries,
     loading: modelsLoading,
     error: modelsError,
-  } = useModelsQuery(!!user);
+  } = useTranscriptionModelsQuery(!!user);
 
-  const [mode, setMode] = useState<UploadMode>("text");
-  const [inputMethod, setInputMethod] = useState<InputMethod>("file");
-  // Summary model (all modes) and transcription model (audio/video/youtube).
-  // `null` pick = fall back to the resolved default for that list.
-  const [summaryPick, setSummaryPick] = useState<string | null>(null);
+  const [mode, setMode] = useState<UploadMode>("audio");
   const [transcriptionPick, setTranscriptionPick] = useState<string | null>(
     null,
   );
   const [file, setFile] = useState<File | null>(null);
-  const [textInput, setTextInput] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [items, setItems] = useState<QueueItem[]>([]);
 
-  // The DropZone isn't rendered in youtube mode; fall back to "audio" so the
-  // file-mode helpers stay well-typed.
   const fileMode: SourceMode = mode === "youtube" ? "audio" : mode;
   const accept = acceptForMode(fileMode);
   const { title: dropTitle, hint: dropHint } = dropZoneCopy(fileMode);
 
-  const summaryOptions = useMemo(
-    () =>
-      filterModelsForMode(entries, "text").map(([id, info]) => ({
-        id,
-        label: id,
-        info,
-      })),
-    [entries],
-  );
   const transcriptionOptions = useMemo(
     () =>
-      filterModelsForMode(entries, "audio").map(([id, info]) => ({
+      entries.map(([id, info]) => ({
         id,
-        label: id,
-        info,
+        label: info.name || id,
+        info: {
+          description: [
+            info.architecture,
+            info.languages?.length
+              ? `${info.languages.length} languages`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        },
       })),
     [entries],
   );
 
-  const summaryModel =
-    summaryPick ??
-    (entries.length > 0 ? resolveDefaultModel(entries, "text") : null);
   const transcriptionModel =
     transcriptionPick ??
-    (entries.length > 0 ? resolveDefaultModel(entries, "audio") : null);
+    resolveDefaultModel(
+      entries.map(([modelId]) => modelId),
+      DEFAULT_TRANSCRIPTION_MODEL,
+    );
 
   const changeMode = useCallback((nextMode: UploadMode) => {
     setMode(nextMode);
@@ -94,23 +83,15 @@ function useUploadQueueState() {
     // Keep a staged file only if the new mode is a file mode that accepts it.
     setFile((current) =>
       current &&
-      nextMode !== "youtube" &&
-      isFileAcceptedForMode(current, nextMode)
+      nextMode !== "youtube" && isFileAcceptedForMode(current, nextMode)
         ? current
         : null,
     );
-    // Paste-text only applies to text mode.
-    if (nextMode !== "text") setInputMethod("file");
-  }, []);
-
-  const changeInputMethod = useCallback((next: InputMethod) => {
-    setInputMethod(next);
-    setFormError(null);
   }, []);
 
   const pickFiles = useCallback(
     (list: FileList | null) => {
-      if (mode === "youtube") return; // no file input in youtube mode
+      if (mode === "youtube") return;
       const next = list?.[0];
       if (!next) {
         setFile(null);
@@ -147,13 +128,13 @@ function useUploadQueueState() {
       id: string,
       uploadFile: File,
       itemMode: SourceMode,
-      models: UploadModels,
+      selectedTranscriptionModel: string,
     ) => {
       try {
         const uploadId = await runUpload(
           uploadFile,
           itemMode,
-          models,
+          selectedTranscriptionModel,
           (phase) => updateItem(id, { phase }),
         );
         updateItem(id, { status: "uploaded", phase: null, uploadId });
@@ -169,9 +150,12 @@ function useUploadQueueState() {
   );
 
   const processYoutubeItem = useCallback(
-    async (id: string, url: string, models: UploadModels) => {
+    async (id: string, url: string, selectedTranscriptionModel: string) => {
       try {
-        const uploadId = await runYoutubeUpload(url, models);
+        const uploadId = await runYoutubeUpload(
+          url,
+          selectedTranscriptionModel,
+        );
         updateItem(id, { status: "uploaded", phase: null, uploadId });
       } catch (e) {
         updateItem(id, {
@@ -185,11 +169,7 @@ function useUploadQueueState() {
   );
 
   const addToQueue = useCallback(() => {
-    if (!summaryModel) {
-      setFormError("Select a summarization model first.");
-      return;
-    }
-    if (mode !== "text" && !transcriptionModel) {
+    if (!transcriptionModel) {
       setFormError("Select a transcription model first.");
       return;
     }
@@ -200,17 +180,12 @@ function useUploadQueueState() {
         setFormError("Enter a valid YouTube URL (youtube.com or youtu.be).");
         return;
       }
-      const models: UploadModels = {
-        chosenModelId: summaryModel,
-        transcriptionModelId: transcriptionModel ?? undefined,
-      };
       const id = `queue-${queueIdCounter++}`;
       const item: QueueItem = {
         id,
         fileName: url,
         mode,
-        model: summaryModel,
-        transcriptionModel: transcriptionModel ?? undefined,
+        transcriptionModel,
         phase: "upload",
         status: "processing",
         uploadId: null,
@@ -219,44 +194,21 @@ function useUploadQueueState() {
       setItems((current) => [item, ...current]);
       setFormError(null);
       setYoutubeUrl("");
-      void processYoutubeItem(id, url, models);
+      void processYoutubeItem(id, url, transcriptionModel);
       return;
     }
 
-    let uploadFile: File;
-    if (mode === "text" && inputMethod === "text") {
-      const text = textInput.trim();
-      if (!text) {
-        setFormError("Enter some text to summarize.");
-        return;
-      }
-      uploadFile = new File([text], `pasted-${Date.now()}.txt`, {
-        type: "text/plain",
-      });
-    } else {
-      if (!file) {
-        setFormError("Choose a file first.");
-        return;
-      }
-      uploadFile = file;
+    if (!file) {
+      setFormError("Choose a file first.");
+      return;
     }
-
-    const models: UploadModels =
-      mode === "text"
-        ? { chosenModelId: summaryModel }
-        : {
-            chosenModelId: summaryModel,
-            transcriptionModelId: transcriptionModel ?? undefined,
-          };
 
     const id = `queue-${queueIdCounter++}`;
     const item: QueueItem = {
       id,
-      fileName: uploadFile.name,
+      fileName: file.name,
       mode,
-      model: summaryModel,
-      transcriptionModel:
-        mode === "text" ? undefined : (transcriptionModel ?? undefined),
+      transcriptionModel,
       phase: null,
       status: "processing",
       uploadId: null,
@@ -264,17 +216,12 @@ function useUploadQueueState() {
     };
     setItems((current) => [item, ...current]);
     setFormError(null);
-    // Reset the staged inputs for the next add.
     setFile(null);
-    setTextInput("");
-    void processItem(id, uploadFile, mode, models);
+    void processItem(id, file, mode, transcriptionModel);
   }, [
     file,
-    inputMethod,
     mode,
-    summaryModel,
     transcriptionModel,
-    textInput,
     youtubeUrl,
     processItem,
     processYoutubeItem,
@@ -290,37 +237,26 @@ function useUploadQueueState() {
     );
   }, []);
 
-  const hasModels = !!summaryModel && (mode === "text" || !!transcriptionModel);
+  const hasModels = !!transcriptionModel;
   const hasInput =
-    mode === "youtube"
-      ? youtubeUrl.trim().length > 0
-      : mode === "text" && inputMethod === "text"
-        ? textInput.trim().length > 0
-        : !!file;
+    mode === "youtube" ? youtubeUrl.trim().length > 0 : !!file;
   const canAdd = hasModels && hasInput;
 
   return {
     inputId,
     mode,
     setMode: changeMode,
-    inputMethod,
-    setInputMethod: changeInputMethod,
     accept,
     dropTitle,
     dropHint,
     file,
     setFile,
-    textInput,
-    setTextInput,
     youtubeUrl,
     setYoutubeUrl,
     dragOver,
     setDragOver,
     pickFiles,
     onDrop,
-    summaryModel,
-    setSummaryPick,
-    summaryOptions,
     transcriptionModel,
     setTranscriptionPick,
     transcriptionOptions,

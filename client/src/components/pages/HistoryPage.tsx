@@ -3,10 +3,9 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../hooks/auth/useAuth";
 import { useJobsQuery } from "../../hooks/queries/useJobsQuery";
 import { HistoryRow } from "../history/HistoryRow";
-import type { JobKind, JobStatus } from "../../lib/jobs";
+import type { JobStatus } from "../../lib/jobs";
 
 type StatusFilter = JobStatus | "all";
-type KindFilter = JobKind | "all";
 
 const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -16,12 +15,6 @@ const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: "failed", label: "Failed" },
 ];
 
-const kindOptions: { value: KindFilter; label: string }[] = [
-  { value: "all", label: "All types" },
-  { value: "text", label: "Text" },
-  { value: "audio", label: "Audio" },
-];
-
 const selectClass =
   "px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500/40";
 
@@ -29,7 +22,6 @@ export function HistoryPage() {
   const { user } = useAuth();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [kind, setKind] = useState<KindFilter>("all");
 
   const {
     data,
@@ -40,7 +32,6 @@ export function HistoryPage() {
     isFetchingNextPage,
   } = useJobsQuery(!!user, {
     status: status === "all" ? null : status,
-    kind: kind === "all" ? null : kind,
     q: q.trim() || null,
   });
 
@@ -52,10 +43,9 @@ export function HistoryPage() {
     return all.filter(
       (job) =>
         (status === "all" || job.status === status) &&
-        (kind === "all" || job.kind === kind) &&
         (!query || job.fileName.toLowerCase().includes(query)),
     );
-  }, [data, q, status, kind]);
+  }, [data, q, status]);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -67,7 +57,7 @@ export function HistoryPage() {
           to="/app"
           className="px-4 py-2 text-sm font-medium rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors"
         >
-          New summary
+          New transcription
         </Link>
       </div>
 
@@ -85,17 +75,6 @@ export function HistoryPage() {
           className={selectClass}
         >
           {statusOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={kind}
-          onChange={(e) => setKind(e.target.value as KindFilter)}
-          className={selectClass}
-        >
-          {kindOptions.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -130,7 +109,7 @@ export function HistoryPage() {
             to="/app"
             className="inline-block mt-4 px-4 py-2 text-sm font-medium rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors"
           >
-            Create your first summary
+            Create your first transcription
           </Link>
         </div>
       ) : (
