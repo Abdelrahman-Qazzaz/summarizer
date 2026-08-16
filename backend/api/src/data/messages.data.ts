@@ -35,7 +35,11 @@ export async function findConversationMessages(conversationId: string) {
     .select(messageColumns)
     .from(ChatMessages)
     .where(eq(ChatMessages.conversationId, conversationId))
-    .orderBy(asc(ChatMessages.createdAt), asc(ChatMessages.id));
+    .orderBy(
+      asc(ChatMessages.createdAt),
+      asc(ChatMessages.role),
+      asc(ChatMessages.id),
+    );
 }
 
 /** One history turn with everything the prompt is rebuilt from, grouped. */
@@ -79,7 +83,11 @@ export async function findRecentMessagesWithContext(
     })
     .from(ChatMessages)
     .where(eq(ChatMessages.conversationId, conversationId))
-    .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
+    .orderBy(
+      desc(ChatMessages.createdAt),
+      desc(ChatMessages.role),
+      desc(ChatMessages.id),
+    )
     .limit(limit)
     .as("recent");
 
@@ -112,6 +120,7 @@ export async function findRecentMessagesWithContext(
     )
     .orderBy(
       desc(recent.createdAt),
+      desc(recent.role),
       desc(recent.id),
       asc(ImageUploads.createdAt),
     );
@@ -216,7 +225,11 @@ export async function deleteOwnedMessage(
             eq(ChatMessages.userId, userId),
           ),
         )
-        .orderBy(desc(ChatMessages.createdAt), desc(ChatMessages.id))
+        .orderBy(
+          desc(ChatMessages.createdAt),
+          desc(ChatMessages.role),
+          desc(ChatMessages.id),
+        )
         .limit(1);
 
       await tx

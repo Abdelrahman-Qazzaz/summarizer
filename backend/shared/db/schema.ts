@@ -174,10 +174,11 @@ export const ChatMessages = pgTable("chat_messages", {
 }, (table) => [
   // The busiest read in the app: findConversationMessages (asc) and
   // findRecentMessagesWithContext (desc) both filter by conversation and order
-  // by (created_at, id), fully covered here so neither scans nor sorts.
+  // by (created_at, role, id), fully covered here so neither scans nor sorts.
   index("chat_messages_conversation_created_idx").on(
     table.conversationId,
     table.createdAt,
+    table.role,
     table.id,
   ),
 ]);
