@@ -278,24 +278,28 @@ export async function handleCreateMessage(c: Context) {
     releaseConversationClaimSafely(userId, conversationId, claimToken);
 
   try {
-    if (attachments.length !== uploadIds.length) {
-      await releaseClaim();
-      return c.json({ message: "Attachment not found" }, 404);
-    }
-    if (audioUploadId && !transcript) {
-      await releaseClaim();
-      return c.json({ message: "Transcript not found" }, 404);
-    }
-    if (transcript && transcript.length >= MAX_CONTEXT_CHARS) {
-      await releaseClaim();
-      return c.json(
-        {
-          message: "Transcript is too long for one message",
-          maxChars: MAX_CONTEXT_CHARS,
-          chars: transcript.length,
-        },
-        413,
+    const validationErrors: Response[] = [];
+    if (attachments.length !== uploadIds.length)
+      validationErrors.push(
+        c.json({ message: "Attachment not found" }, 404),
       );
+    if (audioUploadId && !transcript)
+      validationErrors.push(c.json({ message: "Transcript not found" }, 404));
+    if (transcript && transcript.length >= MAX_CONTEXT_CHARS)
+      validationErrors.push(
+        c.json(
+          {
+            message: "Transcript is too long for one message",
+            maxChars: MAX_CONTEXT_CHARS,
+            chars: transcript.length,
+          },
+          413,
+        ),
+      );
+
+    if (validationErrors.length > 0) {
+      await releaseClaim();
+      return validationErrors[0];
     }
 
     const turns = await assembleConversationContext(

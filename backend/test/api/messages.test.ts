@@ -643,6 +643,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(await res.json()).toEqual({ message: "Transcript not found" });
       expect(mockChatAI).not.toHaveBeenCalled();
       expect(mockPersistChatTurn).not.toHaveBeenCalled();
+      expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
     });
 
     it("refuses a transcript past the context budget rather than truncating it", async () => {
@@ -662,6 +663,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         chars: MAX_CONTEXT_CHARS + 1,
       });
       expect(mockChatAI).not.toHaveBeenCalled();
+      expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
     });
 
     it("charges the transcript against the budget, dropping history to fit", async () => {
@@ -759,6 +761,27 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Attachment not found" });
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases once and returns the first of multiple validation errors", async () => {
+    const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
+    mockResolveUnattachedImages.mockResolvedValueOnce([]);
+    mockFindTranscript.mockResolvedValueOnce({
+      content: "x".repeat(MAX_CONTEXT_CHARS + 1),
+    });
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+      attachmentUploadIds: [uploadId],
+      audioUploadId,
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ message: "Attachment not found" });
+    expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
+    expect(mockChatAI).not.toHaveBeenCalled();
   });
 
   it("rejects attachments on a model that can't read images with 400", async () => {
