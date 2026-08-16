@@ -1,0 +1,4 @@
+min_version = "2026.8.6"
+
+[tools]
+doppler = "3.76.0"
