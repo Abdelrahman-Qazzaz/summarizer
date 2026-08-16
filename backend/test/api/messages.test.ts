@@ -295,6 +295,51 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
+  it("fetches message context while the conversation claim is pending", async () => {
+    let resolveClaim!: (claimToken: string) => void;
+    mockClaimConversationTurn.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveClaim = resolve;
+        }),
+    );
+    mockChatAI.mockResolvedValueOnce("Hello world");
+
+    const responsePromise = postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockResolveUnattachedImages).toHaveBeenCalled();
+      expect(mockFindRecentMessagesWithContext).toHaveBeenCalled();
+    });
+
+    resolveClaim("claim-token");
+    const res = await responsePromise;
+    expect(res.status).toBe(200);
+    await res.text();
+  });
+
+  it("releases an acquired claim when a context read fails", async () => {
+    mockFindRecentMessagesWithContext.mockRejectedValueOnce(
+      new Error("history unavailable"),
+    );
+
+    const res = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+
+    expect(res.status).toBe(500);
+    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+    expect(mockChatAI).not.toHaveBeenCalled();
+  });
+
   it("returns 409 without starting the model when the head cannot be claimed", async () => {
     mockClaimConversationTurn.mockResolvedValueOnce(null);
 

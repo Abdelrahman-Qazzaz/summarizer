@@ -196,6 +196,20 @@ export async function handleListMessages(c: Context) {
   });
 }
 
+async function releaseConversationClaimSafely(
+  userId: string,
+  conversationId: string,
+  claimToken: string,
+) {
+  try {
+    await releaseConversationTurn(userId, conversationId, claimToken);
+  } catch (error) {
+    log.error("Failed to release conversation turn claim", error, {
+      conversationId,
+    });
+  }
+}
+
 /**
  * POST /conversations/:conversationId/messages — build the model context, stream
  * the reply over SSE, and persist the turn without the client waiting on it.
@@ -220,11 +234,36 @@ export async function handleCreateMessage(c: Context) {
   const audioUploadId: string | undefined = c.get(CTX_KEYS.audioUploadId);
   const expectedLastMessageId: string | null = c.get(CTX_KEYS.lastMessageId);
 
-  const claimToken = await claimConversationTurn(
+  const claimPromise = claimConversationTurn(
     userId,
     conversationId,
     expectedLastMessageId,
   );
+
+  let requestData;
+  try {
+    requestData = await Promise.all([
+      claimPromise,
+      resolveUnattachedImages(userId, uploadIds),
+      audioUploadId ? readTurnTranscript(userId, audioUploadId) : null,
+      findRecentMessagesWithContext(
+        userId,
+        conversationId,
+        MAX_CONTEXT_MESSAGES - 1,
+      ),
+    ]);
+  } catch (error) {
+    const acquiredClaimToken = await claimPromise.catch(() => null);
+    if (acquiredClaimToken)
+      await releaseConversationClaimSafely(
+        userId,
+        conversationId,
+        acquiredClaimToken,
+      );
+    throw error;
+  }
+
+  const [claimToken, attachments, transcript, history] = requestData;
   if (!claimToken) {
     const ownedConversation = await findOwnedConversation(userId, conversationId);
     if (!ownedConversation)
@@ -235,27 +274,10 @@ export async function handleCreateMessage(c: Context) {
     );
   }
 
-  const releaseClaim = async () => {
-    try {
-      await releaseConversationTurn(userId, conversationId, claimToken);
-    } catch (error) {
-      log.error("Failed to release conversation turn claim", error, {
-        conversationId,
-      });
-    }
-  };
+  const releaseClaim = () =>
+    releaseConversationClaimSafely(userId, conversationId, claimToken);
 
   try {
-    const [attachments, transcript, history] = await Promise.all([
-      resolveUnattachedImages(userId, uploadIds),
-      audioUploadId ? readTurnTranscript(userId, audioUploadId) : null,
-      findRecentMessagesWithContext(
-        userId,
-        conversationId,
-        MAX_CONTEXT_MESSAGES - 1,
-      ),
-    ]);
-
     if (attachments.length !== uploadIds.length) {
       await releaseClaim();
       return c.json({ message: "Attachment not found" }, 404);
