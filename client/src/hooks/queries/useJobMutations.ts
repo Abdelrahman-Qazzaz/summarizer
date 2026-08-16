@@ -10,7 +10,10 @@ export function useDeleteJobMutation() {
   return useMutation({
     mutationFn: ({ uploadId }: { uploadId: string }) => deleteJob(uploadId),
     onSuccess: (_data, { uploadId }) => {
-      qc.removeQueries({ queryKey: queryKeys.job(uploadId) });
+      void qc.invalidateQueries({
+        queryKey: queryKeys.job(uploadId),
+        refetchType: "none",
+      });
       void qc.invalidateQueries({ queryKey: queryKeys.jobs });
       toast.show({ kind: "success", message: "Job deleted." });
     },
