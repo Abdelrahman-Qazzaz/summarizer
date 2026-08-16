@@ -2,12 +2,11 @@
 
 A modular monolith. Everything under `backend/` is a
 single npm package (`summarizer-server`) built from one codebase and one
-`shared/` module. It runs as multiple process types that talk to each other (Main API, transcribe-service, etc.)
-through a RabbitMQ message queue and a shared Postgres database:
+`shared/` module. It runs as multiple process types that talk through a
+RabbitMQ message queue and a shared Postgres database:
 
 - `api` — the HTTP + WebSocket service clients talk to.
-- `transcribe-service` — a background queue worker that does the heavy async
-  work (transcription).
+- `transcribe-worker` — the background queue worker that runs transcription.
 
 They are the same artifact started at different entrypoints, not independently
 deployable services. See [Why it isn't microservices](#why-it-isnt-microservices).
@@ -24,7 +23,7 @@ Defined in `shared/message-queue/messageQueue.ts`:
 
 | Queue              | Producer → Consumer          | Payload                          |
 | ------------------ | ---------------------------- | -------------------------------- |
-| `transcribe`       | api / fetcher → worker       | `uploadId`                       |
+| `transcribe`       | api / fetcher → worker       | `{ uploadId }`                   |
 | `transcribe_done`  | worker → api                 | `{ uploadId, userId }`           |
 | `yt_fetch`         | api → youtube-fetcher        | `{ uploadId, url, userId }`      |
 | `yt_fetch_failed`  | youtube-fetcher → api        | `{ uploadId, userId, error? }`   |
@@ -42,10 +41,9 @@ handles at most one transcribe job at a time. Handlers are `await`ed before
   ┌──────┐  create AudioTranscriptionJobs (queued)      ┌───────────────────┐
   │ api  │ ───────────── transcribe ───────────────────▶│ transcribe worker │
   └──────┘                                              └───────────────────┘
-    ▲                                                     │ claim job, read audio,
-    │                                                     │ call OpenRouter, write
-    │◀───────────── transcribe_done ──────────────────────┤ transcript to bucket,
-    │                                                     │ record transcript_upload_id
+    ▲                                                     │ claim job, sign audio URL,
+    │                                                     │ call Deepgram, save transcript
+    │◀───────────── transcribe_done ──────────────────────┤ and complete job in Postgres
     └── Socket.IO: jobUpdated to the user's room ──▶ browser
 ```
 
@@ -53,17 +51,16 @@ A YouTube upload takes the same path one step earlier: the API publishes
 `yt_fetch`, and the Python youtube-fetcher downloads the audio into the bucket
 under the job's `uploadId` before publishing `transcribe` itself.
 
-**Transcripts are not summarized.** The transcript lands in the bucket under its
-own key (the audio occupies the job row's own key), and the user feeds it to a
-model by attaching the job to a chat message — see
-`chat_messages.audio_upload_id`. There is no second job pipeline: the prompt is
-whatever the user types, and the reply streams over the same SSE endpoint every
-other chat turn uses.
+**Transcripts are not summarized.** The transcript is stored in Postgres under
+the audio job's `uploadId`. The user feeds it to a model by attaching that job
+to a chat message — see `chat_messages.audio_upload_id`. There is no second job
+pipeline: the prompt is whatever the user types, and the reply streams over the
+same SSE endpoint every other chat turn uses.
 
-Job state transitions are **claimed atomically** — each handler does
-`UPDATE ... SET status='processing' WHERE status='queued' RETURNING *` and bails
-if no row comes back. Combined with RabbitMQ delivering each message to one
-consumer, this makes running many workers concurrently safe.
+Job state transitions are **claimed atomically**. A fresh delivery can claim
+only a queued job; a broker redelivery can reclaim a processing job. Every claim
+gets a new token, which prevents an older worker from writing a stale result if
+it later finishes.
 
 ## Deployment & scaling
 
@@ -72,7 +69,8 @@ One build artifact, run as different processes:
 - `api` — normally a single instance behind an ingress. Its port is
   fixed and known (`PORT`, plus `WS_PORT` for Socket.IO) because clients
   dial it. Do not randomize it.
-- `transcribe-service` — run **N replicas** to scale throughput.
+- `transcribe-worker` (`transcribe-worker/index.ts`) — run **N replicas** to
+  scale throughput.
   Because the workers are RabbitMQ _competing consumers_, messages are
   load-balanced across every connected replica automatically. No load balancer
   sits in front of workers — they pull work.

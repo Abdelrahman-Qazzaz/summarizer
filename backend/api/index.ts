@@ -8,7 +8,6 @@ import { failAudioJobById } from "../shared/data/jobs.data";
 
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
-import { handleTranscribeJob } from "../transcribe-worker/transcribeJob";
 
 // createApp() runs the fail-fast preflight: if any third-party dependency is
 // down (incl. RabbitMQ, which it also connects), the API never starts.
@@ -16,8 +15,6 @@ const app = await createApp();
 export const port = env.PORT;
 
 export const io = await startSocketServer();
-
-await mq.consume(mq.queues.TRANSCRIBE, handleTranscribeJob);
 
 await mq.consume(mq.queues.TRANSCRIBE_DONE, ({ uploadId, userId }) => {
   io.to(userId).emit("jobUpdated", { uploadId });
