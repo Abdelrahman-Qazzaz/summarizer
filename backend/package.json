@@ -12,7 +12,7 @@
     "db": "npm run --silent doppler -- drizzle-kit push",
     "test": "npm run --silent doppler -- vitest run",
     "test:watch": "npm run --silent doppler -- vitest",
-    "doppler": "set -a; [ -f .env ] && . ./.env; set +a; exec doppler run --"
+    "doppler": "set -a; [ -f .env ] && . ./.env; set +a; exec mise exec -- doppler run --"
   },
   "dependencies": {
     "@deepgram/sdk": "^5.7.0",
@@ -36,6 +36,7 @@
     "concurrently": "9.2.1",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
+    "mise": "2026.8.6",
     "tsx": "4.20.5",
     "typescript": "5.7.3",
     "typescript-eslint": "8.57.0",
