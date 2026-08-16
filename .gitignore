@@ -1,6 +1,9 @@
 .env
 node_modules
 uploads
+/output/
+/test_data/*
+!/test_data/README.md
 
 # Python (youtube-fetcher)
 .venv/

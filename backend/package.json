@@ -4,6 +4,7 @@
   "type": "module",
   "packageManager": "npm@11.14.1",
   "scripts": {
+    "browser:auth": "npm run --silent doppler -- tsx scripts/createBrowserAuthState.ts",
     "dev": "npm run --silent doppler -- concurrently -k -n api,transcribe-worker \"tsx watch --inspect=9229 api/index.ts\" \"tsx watch --inspect=9230 transcribe-worker/index.ts\"",
     "dev:api": "npm run --silent doppler -- tsx watch --inspect=9229 api/index.ts",
     "dev:transcribe-worker": "npm run --silent doppler -- tsx watch --inspect=9230 transcribe-worker/index.ts",

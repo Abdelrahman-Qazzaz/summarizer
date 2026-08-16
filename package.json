@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "npm@11.14.1",
   "scripts": {
+    "browser:auth": "npm run --silent browser:auth --prefix backend",
     "dev": "concurrently -k -n backend,client,fetcher -c blue,green,yellow \"npm run dev --prefix backend\" \"npm run dev --prefix client\" \"npm run dev:fetcher\"",
     "dev:fetcher": "until curl -sf http://localhost:3001/contract > /dev/null; do sleep 1; done && cd youtube-fetcher && { set -a; [ -f .env ] && . ./.env; set +a; exec mise exec -- doppler run -- .venv/bin/python app/app.py; }"
   },

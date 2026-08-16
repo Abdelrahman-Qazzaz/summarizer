@@ -1,0 +1,8 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "isolated": true
+  },
+  "outputDir": "output/playwright",
+  "outputMode": "stdout"
+}
