@@ -162,6 +162,7 @@ export function SourcesDrawer() {
                         kind: "transcript",
                         uploadId: job.uploadId,
                         fileName: job.fileName,
+                        title: job.title,
                       })
                     }
                     onAttach={() => attach(job.uploadId, job.fileName)}

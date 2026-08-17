@@ -154,7 +154,10 @@ export function SourceDialog() {
   if (!openSource) return null;
 
   const close = () => setOpenSource(null);
-  const title = openSource.fileName;
+  const title =
+    openSource.kind === "transcript"
+      ? (openSource.title ?? openSource.fileName)
+      : openSource.fileName;
 
   return (
     <div

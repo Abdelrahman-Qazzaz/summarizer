@@ -6,6 +6,7 @@ export type JobStatus = "queued" | "processing" | "completed" | "failed";
 export type Job = {
   uploadId: string;
   fileName: string;
+  title: string | null;
   status: JobStatus;
   transcript: string | null;
   error: string | null;
@@ -15,6 +16,7 @@ export type Job = {
 export type JobSummary = {
   uploadId: string;
   fileName: string;
+  title: string | null;
   status: JobStatus;
   createdAt: string;
   error: string | null;

@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import { AudioTranscriptionJobs, db, type Executor } from "../db";
+import {
+  AudioTranscriptionJobs,
+  TranscriptContents,
+  db,
+  type Executor,
+} from "../db";
 import type { jobStatusEnum } from "../db";
 import type { UploadId } from "../types";
 
@@ -32,10 +37,18 @@ export async function findAudioJob(userId: string, uploadId: string) {
     .select({
       uploadId: AudioTranscriptionJobs.uploadId,
       fileName: AudioTranscriptionJobs.fileName,
+      title: TranscriptContents.title,
       status: AudioTranscriptionJobs.status,
       error: AudioTranscriptionJobs.error,
     })
     .from(AudioTranscriptionJobs)
+    .leftJoin(
+      TranscriptContents,
+      and(
+        eq(TranscriptContents.uploadId, AudioTranscriptionJobs.uploadId),
+        eq(TranscriptContents.userId, userId),
+      ),
+    )
     .where(ownedBy(userId, uploadId))
     .limit(1);
 
@@ -49,12 +62,13 @@ export type JobCursor = { createdAt: string; uploadId: string };
 export type JobSummary = Pick<
   AudioRow,
   "uploadId" | "fileName" | "status" | "error" | "createdAt"
->;
+> & { title: string | null };
 
 /** The projection behind JobSummary — the list page needs no more. */
 const audioJobColumns = {
   uploadId: AudioTranscriptionJobs.uploadId,
   fileName: AudioTranscriptionJobs.fileName,
+  title: TranscriptContents.title,
   status: AudioTranscriptionJobs.status,
   createdAt: AudioTranscriptionJobs.createdAt,
   error: AudioTranscriptionJobs.error,
@@ -100,12 +114,22 @@ export async function findUserJobsPage(
   return db
     .select(audioJobColumns)
     .from(AudioTranscriptionJobs)
+    .leftJoin(
+      TranscriptContents,
+      and(
+        eq(TranscriptContents.uploadId, AudioTranscriptionJobs.uploadId),
+        eq(TranscriptContents.userId, userId),
+      ),
+    )
     .where(
       and(
         eq(AudioTranscriptionJobs.userId, userId),
         status ? eq(AudioTranscriptionJobs.status, status) : undefined,
         searchQuery
-          ? ilike(AudioTranscriptionJobs.fileName, `%${searchQuery}%`)
+          ? or(
+              ilike(AudioTranscriptionJobs.fileName, `%${searchQuery}%`),
+              ilike(TranscriptContents.title, `%${searchQuery}%`),
+            )
           : undefined,
         afterCursor(
           AudioTranscriptionJobs.createdAt,

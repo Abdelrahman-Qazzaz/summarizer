@@ -55,7 +55,10 @@ describe("rate limiting", () => {
     mockGetUserIdFromCode.mockRejectedValue(new Error("WorkOS unavailable"));
     mockgetChatModelData.mockResolvedValue({});
     mockWhere.mockImplementation(() => ({ limit: mockLimit }));
-    mockFrom.mockImplementation(() => ({ where: mockWhere }));
+    mockFrom.mockImplementation(() => ({
+      leftJoin: () => ({ where: mockWhere }),
+      where: mockWhere,
+    }));
     mockSelect.mockImplementation(() => ({ from: mockFrom }));
     // The transcript-view handler now reads the job and its transcript in
     // parallel; the second (transcript) read defaults to none unless overridden.

@@ -34,9 +34,10 @@ export function TurnSources({
                 kind: "transcript",
                 uploadId: transcript.uploadId,
                 fileName: transcript.fileName,
+                title: transcript.title,
               })
             }
-            aria-label={`View the transcript for ${transcript.fileName}`}
+            aria-label={`View the transcript for ${transcript.title ?? transcript.fileName}`}
             className="flex max-w-full items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 transition-colors hover:border-signal"
           >
             <Meter state="ready" className="h-3" />
@@ -45,7 +46,7 @@ export function TurnSources({
               className="h-3.5 w-3.5 shrink-0 text-faint"
             />
             <span className="truncate font-mono text-[11px] text-muted">
-              {transcript.fileName}
+              {transcript.title ?? transcript.fileName}
             </span>
           </button>
         </li>

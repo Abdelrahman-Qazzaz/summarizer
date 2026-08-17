@@ -225,6 +225,7 @@ describe("GET /conversations/:conversationId/messages", () => {
             {
               uploadId: "950e8400-e29b-41d4-a716-446655440444",
               fileName: "interview.mp3",
+              title: "Customer interview",
               source: "audio",
               charCount: 120,
             },
@@ -250,6 +251,7 @@ describe("GET /conversations/:conversationId/messages", () => {
             {
               uploadId: "950e8400-e29b-41d4-a716-446655440444",
               fileName: "interview.mp3",
+              title: "Customer interview",
               source: "audio",
             },
           ],
@@ -535,6 +537,7 @@ describe("POST /conversations/:conversationId/messages", () => {
           {
             uploadId: "audio-fits",
             fileName: "fits.mp3",
+            title: null,
             source: "audio",
             charCount: 10,
           },
@@ -547,6 +550,7 @@ describe("POST /conversations/:conversationId/messages", () => {
           {
             uploadId: "audio-huge",
             fileName: "huge.mp3",
+            title: null,
             source: "audio",
             charCount: MAX_CONTEXT_CHARS,
           },
@@ -693,12 +697,14 @@ describe("POST /conversations/:conversationId/messages", () => {
             {
               uploadId: firstAudioUploadId,
               fileName: "interview.mp3",
+              title: "Customer interview",
               source: "audio",
               charCount: firstTranscript.length,
             },
             {
               uploadId: secondAudioUploadId,
               fileName: "Product demo",
+              title: "Product demonstration",
               source: "youtube",
               charCount: secondTranscript.length,
             },

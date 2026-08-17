@@ -13,6 +13,7 @@ export type MessageImage = {
 export type MessageTranscript = {
   uploadId: string;
   fileName: string;
+  title: string | null;
   source: string;
 };
 

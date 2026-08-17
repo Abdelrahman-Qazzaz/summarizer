@@ -32,6 +32,7 @@ function toPendingTurn(content: string, sources: StagedSource[]): PendingTurn {
       .map((source) => ({
         uploadId: source.uploadId ?? source.localId,
         fileName: source.name,
+        title: null,
         source: source.kind,
       })),
     assistantContent: "",

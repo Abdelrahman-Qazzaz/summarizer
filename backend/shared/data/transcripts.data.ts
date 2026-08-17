@@ -81,6 +81,7 @@ export async function findTranscripts(
 export type StoredTranscriptAttachment = {
   uploadId: string;
   fileName: string;
+  title: string | null;
   source: string;
   charCount: number | null;
 };
@@ -101,6 +102,7 @@ export async function findMessageTranscriptAttachments(
       messageId: ChatMessageTranscriptions.messageId,
       uploadId: AudioTranscriptionJobs.uploadId,
       fileName: AudioTranscriptionJobs.fileName,
+      title: TranscriptContents.title,
       source: AudioTranscriptionJobs.source,
       charCount: TranscriptContents.charCount,
     })

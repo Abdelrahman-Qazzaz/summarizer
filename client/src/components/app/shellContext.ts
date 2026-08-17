@@ -5,7 +5,12 @@ import { createContext, useContext } from "react";
  * have a URL by the time they can be opened, so they carry it.
  */
 export type OpenSource =
-  | { kind: "transcript"; uploadId: string; fileName: string }
+  | {
+      kind: "transcript";
+      uploadId: string;
+      fileName: string;
+      title?: string | null;
+    }
   | { kind: "image"; url: string; fileName: string };
 
 export type ShellContextValue = {

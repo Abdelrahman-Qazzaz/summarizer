@@ -45,6 +45,7 @@ export async function handleGetTranscribeJob(c: Context) {
   return c.json({
     uploadId: audioJob.uploadId,
     fileName: audioJob.fileName,
+    title: audioJob.title,
     status: audioJob.status,
     transcript: transcriptResult.data?.get(uploadId) ?? null,
     error: audioJob.error,

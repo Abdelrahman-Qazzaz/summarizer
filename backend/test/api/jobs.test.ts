@@ -77,6 +77,7 @@ const uploadId = "550e8400-e29b-41d4-a716-446655440000";
 const audioJob = {
   uploadId,
   fileName: "clip.mp3",
+  title: "Audio highlights",
   status: "completed",
   error: null,
 };
@@ -107,6 +108,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
   it("returns an audio job for the owner", async () => {
     mockFindAudioJob.mockResolvedValueOnce({
       ...audioJob,
+      title: null,
       status: "processing",
     });
 
@@ -119,6 +121,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     expect(await res.json()).toEqual({
       uploadId,
       fileName: "clip.mp3",
+      title: null,
       status: "processing",
       transcript: null,
       error: null,
@@ -140,6 +143,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     expect(await res.json()).toEqual({
       uploadId,
       fileName: "clip.mp3",
+      title: "Audio highlights",
       status: "completed",
       transcript: "the full transcript text",
       error: null,
@@ -176,6 +180,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     expect(await res.json()).toEqual({
       uploadId,
       fileName: "clip.mp3",
+      title: "Audio highlights",
       status: "completed",
       transcript: null,
       error: null,
