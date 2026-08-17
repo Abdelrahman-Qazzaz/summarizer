@@ -1,6 +1,6 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../../hooks/auth/useAuth";
-import { LoadingScreen } from "../layout/LoadingScreen";
+import { LoadingScreen } from "../ui/LoadingScreen";
 
 /** Route guard for authenticated pages. Redirects to the landing page when logged out. */
 export function RequireAuth() {

@@ -3,15 +3,20 @@ import { useQueryClient } from "@tanstack/react-query";
 import { SocketContext } from "./context";
 import { queryKeys } from "../../lib/queryClient";
 import { useToast } from "../toast/useToast";
-import type { Job } from "../../lib/jobs";
+import type { Job } from "../../api/jobs";
 
 type JobUpdatedPayload = {
   uploadId: string;
 };
 
+/**
+ * The fast path for transcript progress: a job update refreshes that job, which
+ * is what the staged-source watcher and the sources drawer both read. Only
+ * failures are announced — a finished transcript is already visible on its chip.
+ */
 export function useJobUpdatesBridge(enabled: boolean) {
   const socket = useContext(SocketContext);
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   const toast = useToast();
 
   useEffect(() => {
@@ -19,26 +24,30 @@ export function useJobUpdatesBridge(enabled: boolean) {
 
     const handler = async ({ uploadId }: JobUpdatedPayload) => {
       if (!uploadId) return;
-      await qc.invalidateQueries({ queryKey: queryKeys.job(uploadId) });
-      void qc.invalidateQueries({ queryKey: queryKeys.jobs });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.job(uploadId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
 
-      const job = qc.getQueryData<Job>(queryKeys.job(uploadId));
-      if (job?.status === "completed") {
-        toast.show({
-          kind: "success",
-          message: `“${job.fileName}” is ready.`,
-        });
-      } else if (job?.status === "failed") {
+      const job = queryClient.getQueryData<Job>(queryKeys.job(uploadId));
+      if (job?.status === "failed") {
         toast.show({
           kind: "error",
-          message: `“${job.fileName}” failed${job.error ? `: ${job.error}` : "."}`,
+          message: `${job.fileName} failed${job.error ? `: ${job.error}` : "."}`,
         });
       }
     };
 
+    // Updates published while the socket was down were delivered to nobody, so
+    // reconnecting has to re-read rather than wait for the next push.
+    const onReconnect = () => {
+      void queryClient.invalidateQueries({ queryKey: ["job"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+    };
+
     socket.on("jobUpdated", handler);
+    socket.on("connect", onReconnect);
     return () => {
       socket.off("jobUpdated", handler);
+      socket.off("connect", onReconnect);
     };
-  }, [enabled, socket, qc, toast]);
+  }, [enabled, socket, queryClient, toast]);
 }

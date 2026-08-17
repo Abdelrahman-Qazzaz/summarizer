@@ -42,6 +42,10 @@ export function conversationsEndpoint(): string {
   return `${apiBase}/conversations`;
 }
 
+export function conversationEndpoint(conversationId: string): string {
+  return `${apiBase}/conversations/${conversationId}`;
+}
+
 export function conversationMessagesEndpoint(conversationId: string): string {
   return `${apiBase}/conversations/${conversationId}/messages`;
 }
@@ -50,8 +54,16 @@ export function uploadImageEndpoint(): string {
   return `${apiBase}/upload/image`;
 }
 
+export function uploadAudioEndpoint(): string {
+  return `${apiBase}/upload/audio`;
+}
+
+export function uploadYoutubeEndpoint(): string {
+  return `${apiBase}/upload/youtube`;
+}
+
 /** WebSocket URL for job notifications (forward WS_PORT in dev containers). */
-export function wsUrl(): string {
+function wsUrl(): string {
   const fromEnv = import.meta.env.VITE_WS_URL;
   if (typeof fromEnv === "string" && fromEnv.trim()) {
     return fromEnv.trim();
@@ -66,17 +78,4 @@ export function socketIoUrl(): string {
   if (ws.startsWith("wss://")) return `https://${ws.slice("wss://".length)}`;
   if (/^https?:\/\//i.test(ws)) return ws.replace(/\/$/, "");
   return `http://${DEV_HOST}:4000`;
-}
-
-function uploadPath(suffix: "audio" | "youtube") {
-  const path = `/upload/${suffix}`;
-  return apiBase ? `${apiBase}${path}` : path;
-}
-
-export function uploadAudioEndpoint() {
-  return uploadPath("audio");
-}
-
-export function uploadYoutubeEndpoint() {
-  return uploadPath("youtube");
 }

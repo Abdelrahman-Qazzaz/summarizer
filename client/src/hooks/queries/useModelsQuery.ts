@@ -1,19 +1,17 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchChatModels,
   fetchTranscriptionModels,
   type ModelInfo,
   type TranscriptionModelInfo,
-} from "../../lib/models";
+} from "../../api/models";
 import { queryKeys } from "../../lib/queryClient";
 
-export type ChatModelEntry = [name: string, info: ModelInfo];
-export type TranscriptionModelEntry = [
-  name: string,
-  info: TranscriptionModelInfo,
-];
+export type ChatModelEntry = [id: string, info: ModelInfo];
+export type TranscriptionModelEntry = [id: string, info: TranscriptionModelInfo];
 
-/** Fetches the available models and exposes them as sorted [name, info] entries. */
+/** The available models as sorted [id, info] entries, stable across renders. */
 export function useChatModelsQuery(enabled: boolean) {
   const query = useQuery({
     queryKey: queryKeys.chatModels,
@@ -22,11 +20,15 @@ export function useChatModelsQuery(enabled: boolean) {
     staleTime: 5 * 60_000,
   });
 
-  const entries: ChatModelEntry[] = query.data
-    ? Object.entries(query.data.modelData).sort(([a], [b]) =>
-        a.localeCompare(b),
-      )
-    : [];
+  const entries = useMemo<ChatModelEntry[]>(
+    () =>
+      query.data
+        ? Object.entries(query.data).sort(([first], [second]) =>
+            first.localeCompare(second),
+          )
+        : [],
+    [query.data],
+  );
 
   return {
     entries,
@@ -43,11 +45,15 @@ export function useTranscriptionModelsQuery(enabled: boolean) {
     staleTime: 5 * 60_000,
   });
 
-  const entries: TranscriptionModelEntry[] = query.data
-    ? Object.entries(query.data.transcriptionModelData).sort(
-        ([first], [second]) => first.localeCompare(second),
-      )
-    : [];
+  const entries = useMemo<TranscriptionModelEntry[]>(
+    () =>
+      query.data
+        ? Object.entries(query.data).sort(([first], [second]) =>
+            first.localeCompare(second),
+          )
+        : [],
+    [query.data],
+  );
 
   return {
     entries,
