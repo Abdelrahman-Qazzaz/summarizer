@@ -2,6 +2,7 @@
 the job flows on exactly like a normal audio upload."""
 import logging
 import tempfile
+import time
 from pathlib import Path
 import bucket
 from contract import contract
@@ -10,6 +11,28 @@ from message_queue import mq
 
 
 log = logging.getLogger(__name__)
+
+# YouTube's media CDN intermittently rejects a signed download URL with 403,
+# and the same URL will keep being rejected — so a retry has to re-extract to
+# get fresh ones, which is why the whole fetch is retried rather than the
+# request. Handlers run off the AMQP I/O thread (message_queue.listen), so
+# sleeping here does not stall heartbeats.
+FETCH_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 2
+
+# Failures no amount of retrying will fix; retrying them only delays the job
+# being marked failed. Matched against the message because yt-dlp raises one
+# DownloadError type for everything.
+PERMANENT_FAILURES = (
+    "video unavailable",
+    "private video",
+    "removed by the uploader",
+    "members-only",
+    "sign in to confirm your age",
+    "no video formats found",
+    "unsupported url",
+    "is not a valid url",
+)
 
 # The transcribe worker derives the audio format from the stored content type
 # (backend/shared/ai/transcribe.ts) — it must be accurate, not just plausible.
@@ -25,12 +48,41 @@ EXT_CONTENT_TYPES = {
 }
 
 
+def _is_retryable(error: Exception) -> bool:
+    """Only yt-dlp download failures are worth another extraction. Our own
+    RuntimeErrors (oversized audio, no output file) are deterministic."""
+    if not isinstance(error, yt_dlp.utils.DownloadError):
+        return False
+    message = str(error).lower()
+    return not any(marker in message for marker in PERMANENT_FAILURES)
+
+
+def _fetch_with_retries(upload_id: str, url: str, user_id: str) -> None:
+    for attempt in range(1, FETCH_ATTEMPTS + 1):
+        try:
+            _fetch_and_upload(upload_id, url, user_id)
+            return
+        except Exception as error:
+            if attempt == FETCH_ATTEMPTS or not _is_retryable(error):
+                raise
+            backoff = RETRY_BACKOFF_SECONDS * attempt
+            log.warning(
+                "Fetch %s attempt %d/%d failed (%s); re-extracting in %ds",
+                upload_id,
+                attempt,
+                FETCH_ATTEMPTS,
+                str(error)[:200],
+                backoff,
+            )
+            time.sleep(backoff)
+
+
 def handle_yt_fetch(event: dict) -> None:
     try:
         upload_id: str = event["uploadId"]
         url: str = event["url"]
         user_id: str = event["userId"]
-        _fetch_and_upload(upload_id, url, user_id)
+        _fetch_with_retries(upload_id, url, user_id)
     except Exception as error:
         # Tell the API so it can mark the job row failed — a malformed
         # payload (missing url/userId) must still fail the job if we know
@@ -69,6 +121,8 @@ def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
             # Same cap the API enforces on direct uploads (from /contract).
             # yt-dlp aborts the download when the limit is known up front.
             "max_filesize": max_bytes,
+            # YouTube's media CDN can reject non-ranged downloads with 403.
+            "http_chunk_size": 1024 * 1024,
             # A stalled connection shouldn't hold the (prefetch-1) worker
             # hostage; yt-dlp retries after a timeout.
             "socket_timeout": 30,

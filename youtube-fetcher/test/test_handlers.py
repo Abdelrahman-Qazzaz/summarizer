@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import yt_dlp
 
 import handlers
 from contract import QueueName, _Queues, contract
@@ -86,6 +87,11 @@ class TestFetchAndUpload:
 
         assert ydl.last.options["max_filesize"] == MAX_BYTES
         assert ydl.last.options["noplaylist"] is True
+
+    def test_downloads_in_small_http_chunks(self, ydl, upload):
+        handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
+
+        assert ydl.last.options["http_chunk_size"] == 1024 * 1024
 
     def test_rejects_oversized_audio_before_downloading(self, ydl, upload):
         ydl.info = {"filesize": MAX_BYTES + 1}
@@ -211,3 +217,57 @@ class TestHandleYtFetch:
             handlers.handle_yt_fetch({})
 
         publish.assert_not_called()
+
+
+class TestFetchWithRetries:
+    """The CDN rejects a signed media URL with 403 often enough that a single
+    attempt is not enough. Each retry must re-run the whole fetch, because the
+    rejected URL is the thing that failed."""
+
+    @pytest.fixture(autouse=True)
+    def no_sleep(self, monkeypatch):
+        monkeypatch.setattr(handlers.time, "sleep", lambda _seconds: None)
+
+    def transient(self):
+        return yt_dlp.utils.DownloadError(
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+        )
+
+    def test_retries_a_transient_failure_until_it_succeeds(self, monkeypatch):
+        fetch = MagicMock(side_effect=[self.transient(), self.transient(), None])
+        monkeypatch.setattr(handlers, "_fetch_and_upload", fetch)
+
+        handlers._fetch_with_retries("u1", "https://youtu.be/x", "usr")
+
+        assert fetch.call_count == 3
+
+    def test_gives_up_after_the_attempt_limit(self, monkeypatch):
+        fetch = MagicMock(side_effect=self.transient())
+        monkeypatch.setattr(handlers, "_fetch_and_upload", fetch)
+
+        with pytest.raises(yt_dlp.utils.DownloadError):
+            handlers._fetch_with_retries("u1", "https://youtu.be/x", "usr")
+
+        assert fetch.call_count == handlers.FETCH_ATTEMPTS
+
+    def test_does_not_retry_a_permanently_unavailable_video(self, monkeypatch):
+        fetch = MagicMock(
+            side_effect=yt_dlp.utils.DownloadError("ERROR: Video unavailable")
+        )
+        monkeypatch.setattr(handlers, "_fetch_and_upload", fetch)
+
+        with pytest.raises(yt_dlp.utils.DownloadError):
+            handlers._fetch_with_retries("u1", "https://youtu.be/x", "usr")
+
+        assert fetch.call_count == 1
+
+    def test_does_not_retry_our_own_deterministic_failures(self, monkeypatch):
+        # Oversized audio fails identically every time; retrying only delays
+        # marking the job failed.
+        fetch = MagicMock(side_effect=RuntimeError("audio is 999 bytes, over"))
+        monkeypatch.setattr(handlers, "_fetch_and_upload", fetch)
+
+        with pytest.raises(RuntimeError):
+            handlers._fetch_with_retries("u1", "https://youtu.be/x", "usr")
+
+        assert fetch.call_count == 1
