@@ -35,7 +35,9 @@ export function RerunDialog({
     info: {
       description: [
         info.architecture,
-        info.languages?.length ? `${info.languages.length} languages` : undefined,
+        info.languages?.length
+          ? `${info.languages.length} languages`
+          : undefined,
       ]
         .filter(Boolean)
         .join(" · "),

@@ -11,7 +11,9 @@ const {
   transactionExecutor,
 } = vi.hoisted(() => {
   const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-  const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflictDoUpdate }));
+  const mockValues = vi.fn(() => ({
+    onConflictDoUpdate: mockOnConflictDoUpdate,
+  }));
   const mockInsert = vi.fn(() => ({ values: mockValues }));
   const transactionExecutor = { insert: mockInsert };
 

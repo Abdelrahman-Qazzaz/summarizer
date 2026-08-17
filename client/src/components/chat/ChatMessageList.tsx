@@ -2,11 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ChatMessage, MessageAttachment } from "../../lib/chat";
 import type { PendingTurn } from "./types";
 
-function AttachmentGrid({
-  attachments,
-}: {
-  attachments: MessageAttachment[];
-}) {
+function AttachmentGrid({ attachments }: { attachments: MessageAttachment[] }) {
   if (attachments.length === 0) return null;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
@@ -44,7 +40,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {message.audioUploadId && (
           <p
             className={`mb-2 text-xs font-medium ${
-              isUser ? "text-primary-100" : "text-primary-600 dark:text-primary-300"
+              isUser
+                ? "text-primary-100"
+                : "text-primary-600 dark:text-primary-300"
             }`}
           >
             Transcript attached

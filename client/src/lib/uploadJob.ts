@@ -1,7 +1,4 @@
-import {
-  uploadAudioEndpoint,
-  uploadYoutubeEndpoint,
-} from "../config";
+import { uploadAudioEndpoint, uploadYoutubeEndpoint } from "../config";
 import { extractAudioFromVideo } from "./extractAudio";
 import { compressAudioForSpeech } from "./compressAudio";
 import type { SourceMode } from "../sourceMode";

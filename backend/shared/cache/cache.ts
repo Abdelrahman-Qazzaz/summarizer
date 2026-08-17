@@ -63,7 +63,8 @@ export async function setCache<T>(name: CacheName, data: T): Promise<void> {
   const { error } = await tryCatch(
     getRedisClient().set(entry.redisKey, data, { ex: entry.redisTtlSeconds }),
   );
-  if (error) logger.error("Cache write failed", error, { cacheKey: entry.redisKey });
+  if (error)
+    logger.error("Cache write failed", error, { cacheKey: entry.redisKey });
 }
 
 /** Test-only: drops the in-process memo so cases don't leak entries into each other. */

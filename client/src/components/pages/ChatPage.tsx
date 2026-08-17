@@ -116,9 +116,15 @@ export function ChatPage() {
     const accepted: StagedImage[] = [];
     for (const file of selectedFiles) {
       if (!file.type.startsWith("image/")) {
-        toast.show({ kind: "error", message: `“${file.name}” is not an image.` });
+        toast.show({
+          kind: "error",
+          message: `“${file.name}” is not an image.`,
+        });
       } else if (file.size > MAX_IMAGE_BYTES) {
-        toast.show({ kind: "error", message: `“${file.name}” is larger than 10 MB.` });
+        toast.show({
+          kind: "error",
+          message: `“${file.name}” is larger than 10 MB.`,
+        });
       } else {
         accepted.push({
           localId: crypto.randomUUID(),

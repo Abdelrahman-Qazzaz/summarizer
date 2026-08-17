@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockGetCache, mockSetCache, mockModelsList, mockChatSend } =
-  vi.hoisted(() => ({
+const { mockGetCache, mockSetCache, mockModelsList, mockChatSend } = vi.hoisted(
+  () => ({
     mockGetCache: vi.fn(),
     mockSetCache: vi.fn(),
     mockModelsList: vi.fn(),
     mockChatSend: vi.fn(),
-  }));
+  }),
+);
 
 vi.mock("../../shared/cache/cache", () => ({
   getCache: mockGetCache,

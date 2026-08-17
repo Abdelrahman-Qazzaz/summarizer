@@ -21,12 +21,12 @@ starting half-alive.
 
 Defined in `shared/message-queue/messageQueue.ts`:
 
-| Queue              | Producer → Consumer          | Payload                          |
-| ------------------ | ---------------------------- | -------------------------------- |
-| `transcribe`       | api / fetcher → worker       | `{ uploadId }`                   |
-| `transcribe_done`  | worker → api                 | `{ uploadId, userId }`           |
-| `yt_fetch`         | api → youtube-fetcher        | `{ uploadId, url, userId }`      |
-| `yt_fetch_failed`  | youtube-fetcher → api        | `{ uploadId, userId, error? }`   |
+| Queue             | Producer → Consumer    | Payload                        |
+| ----------------- | ---------------------- | ------------------------------ |
+| `transcribe`      | api / fetcher → worker | `{ uploadId }`                 |
+| `transcribe_done` | worker → api           | `{ uploadId, userId }`         |
+| `yt_fetch`        | api → youtube-fetcher  | `{ uploadId, url, userId }`    |
+| `yt_fetch_failed` | youtube-fetcher → api  | `{ uploadId, userId, error? }` |
 
 The channel uses `prefetch(1)` **per consumer**, so a single worker process
 handles at most one transcribe job at a time. Handlers are `await`ed before

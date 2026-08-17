@@ -265,7 +265,10 @@ export async function handleCreateMessage(c: Context) {
 
   const [claimToken, attachments, transcript, history] = requestData;
   if (!claimToken) {
-    const ownedConversation = await findOwnedConversation(userId, conversationId);
+    const ownedConversation = await findOwnedConversation(
+      userId,
+      conversationId,
+    );
     if (!ownedConversation)
       return c.json({ message: "Conversation not found" }, 404);
     return c.json(
@@ -280,9 +283,7 @@ export async function handleCreateMessage(c: Context) {
   try {
     const validationErrors: Response[] = [];
     if (attachments.length !== uploadIds.length)
-      validationErrors.push(
-        c.json({ message: "Attachment not found" }, 404),
-      );
+      validationErrors.push(c.json({ message: "Attachment not found" }, 404));
     if (audioUploadId && !transcript)
       validationErrors.push(c.json({ message: "Transcript not found" }, 404));
     if (transcript && transcript.length >= MAX_CONTEXT_CHARS)

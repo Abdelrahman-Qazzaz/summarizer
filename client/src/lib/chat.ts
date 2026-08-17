@@ -72,7 +72,10 @@ function responseMessage(data: unknown, response: Response): string {
 async function expectJson<T>(response: Response): Promise<T> {
   const data = await responseData(response);
   if (!response.ok) {
-    throw new ChatRequestError(responseMessage(data, response), response.status);
+    throw new ChatRequestError(
+      responseMessage(data, response),
+      response.status,
+    );
   }
   return data as T;
 }
@@ -175,9 +178,7 @@ export async function streamConversationMessage(
         messageContent: input.messageContent,
         chosenModelId: input.chosenModelId,
         attachmentUploadIds: input.attachmentUploadIds,
-        ...(input.audioUploadId
-          ? { audioUploadId: input.audioUploadId }
-          : {}),
+        ...(input.audioUploadId ? { audioUploadId: input.audioUploadId } : {}),
         lastMessageId: input.lastMessageId,
       }),
     },
@@ -185,7 +186,10 @@ export async function streamConversationMessage(
 
   if (!response.ok) {
     const data = await responseData(response);
-    throw new ChatRequestError(responseMessage(data, response), response.status);
+    throw new ChatRequestError(
+      responseMessage(data, response),
+      response.status,
+    );
   }
   if (!response.body) throw new Error("The response stream was empty");
 

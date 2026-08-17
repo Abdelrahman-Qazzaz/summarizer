@@ -77,7 +77,10 @@ export async function handleDeleteConversation(c: Context) {
   const row = await deleteOwnedConversation(userId, conversationId);
 
   if (!row) {
-    const ownedConversation = await findOwnedConversation(userId, conversationId);
+    const ownedConversation = await findOwnedConversation(
+      userId,
+      conversationId,
+    );
     if (!ownedConversation)
       return c.json({ message: "Conversation not found" }, 404);
     return c.json({ message: "A response is already in progress" }, 409);

@@ -83,7 +83,8 @@ function useUploadQueueState() {
     // Keep a staged file only if the new mode is a file mode that accepts it.
     setFile((current) =>
       current &&
-      nextMode !== "youtube" && isFileAcceptedForMode(current, nextMode)
+      nextMode !== "youtube" &&
+      isFileAcceptedForMode(current, nextMode)
         ? current
         : null,
     );
@@ -238,8 +239,7 @@ function useUploadQueueState() {
   }, []);
 
   const hasModels = !!transcriptionModel;
-  const hasInput =
-    mode === "youtube" ? youtubeUrl.trim().length > 0 : !!file;
+  const hasInput = mode === "youtube" ? youtubeUrl.trim().length > 0 : !!file;
   const canAdd = hasModels && hasInput;
 
   return {

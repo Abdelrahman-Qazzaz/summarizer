@@ -74,7 +74,9 @@ vi.mock("../../api/src/data/images.data", async (importActual) => ({
 }));
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../shared/data/transcripts.data")>()),
+  ...(await importActual<
+    typeof import("../../shared/data/transcripts.data")
+  >()),
   findTranscript: mockFindTranscript,
   findTranscriptContents: mockFindTranscriptContents,
 }));
@@ -381,9 +383,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(body).toContain(JSON.stringify({ delta: "Hello " }));
     expect(body).toContain(JSON.stringify({ delta: "world" }));
     expect(body).toContain("event: done");
-    expect(body).toContain(
-      JSON.stringify({ lastMessageId: assistantRow.id }),
-    );
+    expect(body).toContain(JSON.stringify({ lastMessageId: assistantRow.id }));
     expect(body).not.toContain("event: error");
     // The persisted head trails the tokens the client rendered.
     expect(body.indexOf("event: delta")).toBeLessThan(
@@ -449,7 +449,11 @@ describe("POST /conversations/:conversationId/messages", () => {
   it("replays prior history to the model, oldest first", async () => {
     mockFindRecentMessagesWithContext.mockResolvedValueOnce([
       // History arrives newest-first from the query; the controller reverses it.
-      contextMessage({ id: assistantRow.id, role: "assistant", content: "Old answer" }),
+      contextMessage({
+        id: assistantRow.id,
+        role: "assistant",
+        content: "Old answer",
+      }),
       contextMessage({ id: messageId, role: "user", content: "Old question" }),
     ]);
     mockChatAI.mockResolvedValueOnce("Hello world");

@@ -44,8 +44,8 @@ export function useTranscriptionModelsQuery(enabled: boolean) {
   });
 
   const entries: TranscriptionModelEntry[] = query.data
-    ? Object.entries(query.data.transcriptionModelData).sort(([first], [second]) =>
-        first.localeCompare(second),
+    ? Object.entries(query.data.transcriptionModelData).sort(
+        ([first], [second]) => first.localeCompare(second),
       )
     : [];
 

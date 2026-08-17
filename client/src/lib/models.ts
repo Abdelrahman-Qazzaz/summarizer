@@ -1,7 +1,4 @@
-import {
-  chatModelsEndpoint,
-  transcriptionModelsEndpoint,
-} from "../config";
+import { chatModelsEndpoint, transcriptionModelsEndpoint } from "../config";
 
 export type ModelPricing = {
   prompt?: string;
@@ -69,9 +66,7 @@ async function fetchModelData<T>(url: string): Promise<T> {
       typeof (data as { message: unknown }).message === "string"
         ? (data as { message: string }).message
         : response.statusText;
-    throw new Error(
-      message || `Failed to load models (${response.status})`,
-    );
+    throw new Error(message || `Failed to load models (${response.status})`);
   }
   return data as T;
 }

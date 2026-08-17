@@ -36,7 +36,9 @@ vi.mock("../../shared/data/jobs.data", async (importActual) => ({
 }));
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../shared/data/transcripts.data")>()),
+  ...(await importActual<
+    typeof import("../../shared/data/transcripts.data")
+  >()),
   findTranscript: mockFindTranscript,
   deleteTranscript: mockDeleteTranscript,
 }));
@@ -103,7 +105,10 @@ describe("GET /jobs/summarize/:uploadId", () => {
 
 describe("GET /jobs/transcribe/:uploadId", () => {
   it("returns an audio job for the owner", async () => {
-    mockFindAudioJob.mockResolvedValueOnce({ ...audioJob, status: "processing" });
+    mockFindAudioJob.mockResolvedValueOnce({
+      ...audioJob,
+      status: "processing",
+    });
 
     const res = await (
       await createApp()
@@ -122,7 +127,9 @@ describe("GET /jobs/transcribe/:uploadId", () => {
 
   it("returns the transcript once the job has completed", async () => {
     mockFindAudioJob.mockResolvedValueOnce(audioJob);
-    mockFindTranscript.mockResolvedValueOnce({ content: "the full transcript text" });
+    mockFindTranscript.mockResolvedValueOnce({
+      content: "the full transcript text",
+    });
 
     const res = await (
       await createApp()

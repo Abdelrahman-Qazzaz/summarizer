@@ -6,17 +6,18 @@ import { QUEUES } from "../../shared/message-queue/messageQueue";
 describe("message queue consumer", () => {
   it("passes RabbitMQ redelivery metadata to the handler", async () => {
     let deliveryCallback:
-      | ((message: ConsumeMessage | null) => unknown)
-      | undefined;
+      ((message: ConsumeMessage | null) => unknown) | undefined;
     const acknowledge = vi.fn();
     const channel = {
-      consume: vi.fn(async (
-        _queue: string,
-        callback: (message: ConsumeMessage | null) => unknown,
-      ) => {
-        deliveryCallback = callback;
-        return { consumerTag: "consumer-1" };
-      }),
+      consume: vi.fn(
+        async (
+          _queue: string,
+          callback: (message: ConsumeMessage | null) => unknown,
+        ) => {
+          deliveryCallback = callback;
+          return { consumerTag: "consumer-1" };
+        },
+      ),
       ack: acknowledge,
       nack: vi.fn(),
       cancel: vi.fn(),
