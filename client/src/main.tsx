@@ -1,13 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { BrowserRouter } from "react-router-dom";
 import "@fontsource-variable/ibm-plex-sans";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./index.css";
 import App from "./App.tsx";
-import { queryClient } from "./lib/queryClient";
+import { persistOptions, queryClient } from "./lib/queryClient";
 import { AuthProvider } from "./hooks/auth/AuthProvider";
 import { SocketProvider } from "./hooks/socket/SocketProvider";
 import { ThemeProvider } from "./hooks/theme/ThemeProvider";
@@ -16,7 +16,10 @@ import { Toaster } from "./components/feedback/Toaster";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={persistOptions}
+    >
       <ThemeProvider>
         <AuthProvider>
           <SocketProvider>
@@ -29,6 +32,6 @@ createRoot(document.getElementById("root")!).render(
           </SocketProvider>
         </AuthProvider>
       </ThemeProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   </StrictMode>,
 );
