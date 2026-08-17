@@ -1,15 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { verify } from "hono/jwt";
 
 const MOCK_WORKOS_URL = "https://workos.example/authorize";
 const userId = "user_01CALLBACK";
+const sessionId = "session_01CALLBACK";
 
-const { mockGetRiderctUrl, mockGetUserIdFromCode, mockInsert } = vi.hoisted(
-  () => ({
+const {
+  mockGetRiderctUrl,
+  mockGetAuthSessionFromCode,
+  mockRevokeAuthSession,
+  mockInsert,
+} = vi.hoisted(() => ({
     mockGetRiderctUrl: vi.fn(),
-    mockGetUserIdFromCode: vi.fn(),
+    mockGetAuthSessionFromCode: vi.fn(),
+    mockRevokeAuthSession: vi.fn(),
     mockInsert: vi.fn(),
-  }),
-);
+  }));
 
 vi.mock("../../api/src/auth/auth", async (importOriginal) => {
   const actual =
@@ -17,7 +23,8 @@ vi.mock("../../api/src/auth/auth", async (importOriginal) => {
   return {
     ...actual,
     getRiderctUrl: mockGetRiderctUrl,
-    getUserIdFromCode: mockGetUserIdFromCode,
+    getAuthSessionFromCode: mockGetAuthSessionFromCode,
+    revokeAuthSession: mockRevokeAuthSession,
   };
 });
 
@@ -86,7 +93,7 @@ describe("GET /auth/login", () => {
 describe("GET /auth/callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetUserIdFromCode.mockResolvedValue(userId);
+    mockGetAuthSessionFromCode.mockResolvedValue({ userId, sessionId });
     mockInsert.mockReturnValue({
       values: vi.fn().mockReturnValue({
         onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
@@ -109,24 +116,69 @@ describe("GET /auth/callback", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("http://localhost:5173");
-    expect(mockGetUserIdFromCode).toHaveBeenCalledWith("oauth_code_123");
+    expect(mockGetAuthSessionFromCode).toHaveBeenCalledWith("oauth_code_123");
     expect(mockInsert).toHaveBeenCalledTimes(1);
     const setCookie = res.headers.get("Set-Cookie");
     expect(setCookie).toContain(`${COOKIE_KEYS.session}=`);
+    const token = setCookie?.match(
+      new RegExp(`${COOKIE_KEYS.session}=([^;]+)`),
+    )?.[1];
+    expect(token).toBeDefined();
+    await expect(
+      verify(token!, process.env.SESSION_SECRET!, "HS256"),
+    ).resolves.toMatchObject({ sub: userId, sid: sessionId });
   });
 });
 
 describe("POST /auth/logout", () => {
-  it("clears the session cookie", async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRevokeAuthSession.mockResolvedValue(undefined);
+  });
+
+  it("revokes the WorkOS session and clears the session cookie", async () => {
     const res = await (
       await createApp()
     ).request("http://localhost/auth/logout", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01TEST") },
+      headers: {
+        Cookie: await sessionCookieHeader("user_01TEST", sessionId),
+      },
     });
     expect(res.status).toBe(200);
+    expect(mockRevokeAuthSession).toHaveBeenCalledWith(sessionId);
     const setCookie = res.headers.get("Set-Cookie");
     expect(setCookie).toContain(`${COOKIE_KEYS.session}=`);
     expect(setCookie?.toLowerCase()).toMatch(/max-age=0|expires=/);
+  });
+
+  it("remains successful without a session cookie", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/auth/logout", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(mockRevokeAuthSession).not.toHaveBeenCalled();
+    expect(res.headers.get("Set-Cookie")?.toLowerCase()).toMatch(
+      /max-age=0|expires=/,
+    );
+  });
+
+  it("still clears the local session when WorkOS revocation fails", async () => {
+    mockRevokeAuthSession.mockRejectedValueOnce(new Error("WorkOS unavailable"));
+
+    const res = await (
+      await createApp()
+    ).request("http://localhost/auth/logout", {
+      method: "POST",
+      headers: {
+        Cookie: await sessionCookieHeader("user_01TEST", sessionId),
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")?.toLowerCase()).toMatch(
+      /max-age=0|expires=/,
+    );
   });
 });

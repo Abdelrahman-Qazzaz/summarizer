@@ -1,4 +1,5 @@
 import { WorkOS } from "@workos-inc/node";
+import { decode } from "hono/jwt";
 import { getApiEnv } from "../../../shared/env";
 
 export const WORKOS_REDIRECT_URI = new URL(
@@ -26,10 +27,21 @@ export function getRiderctUrl() {
   });
 }
 
-export async function getUserIdFromCode(code: string) {
-  const { user } = await workos.userManagement.authenticateWithCode({
-    code,
-    clientId: getApiEnv().WORKOS_CLIENT_ID,
+export async function getAuthSessionFromCode(code: string) {
+  const { user, accessToken } =
+    await workos.userManagement.authenticateWithCode({
+      code,
+      clientId: getApiEnv().WORKOS_CLIENT_ID,
+    });
+  const { payload } = decode(accessToken);
+  if (typeof payload.sid !== "string") {
+    throw new Error("WorkOS authentication response is missing a session ID");
+  }
+  return { userId: user.id, sessionId: payload.sid };
+}
+
+export async function revokeAuthSession(sessionId: string): Promise<void> {
+  await workos.userManagement.revokeSession({
+    sessionId,
   });
-  return user.id;
 }

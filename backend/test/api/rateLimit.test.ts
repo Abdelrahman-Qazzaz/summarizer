@@ -9,14 +9,14 @@ const {
   mockWhere,
   mockFrom,
   mockSelect,
-  mockGetUserIdFromCode,
+  mockGetAuthSessionFromCode,
   mockgetChatModelData,
 } = vi.hoisted(() => ({
   mockLimit: vi.fn(),
   mockWhere: vi.fn(),
   mockFrom: vi.fn(),
   mockSelect: vi.fn(),
-  mockGetUserIdFromCode: vi.fn(),
+  mockGetAuthSessionFromCode: vi.fn(),
   mockgetChatModelData: vi.fn(),
 }));
 
@@ -30,7 +30,7 @@ vi.mock("../../api/src/auth/auth", async (importOriginal) => {
     await importOriginal<typeof import("../../api/src/auth/auth")>();
   return {
     ...actual,
-    getUserIdFromCode: mockGetUserIdFromCode,
+    getAuthSessionFromCode: mockGetAuthSessionFromCode,
   };
 });
 
@@ -52,7 +52,9 @@ describe("rate limiting", () => {
   beforeEach(() => {
     resetRateLimitMock();
     vi.clearAllMocks();
-    mockGetUserIdFromCode.mockRejectedValue(new Error("WorkOS unavailable"));
+    mockGetAuthSessionFromCode.mockRejectedValue(
+      new Error("WorkOS unavailable"),
+    );
     mockgetChatModelData.mockResolvedValue({});
     mockWhere.mockImplementation(() => ({ limit: mockLimit }));
     mockFrom.mockImplementation(() => ({
@@ -112,7 +114,7 @@ describe("rate limiting", () => {
     expect(await res.json()).toEqual({
       message: "Too many requests, please try again later.",
     });
-    expect(mockGetUserIdFromCode).toHaveBeenCalledTimes(20);
+    expect(mockGetAuthSessionFromCode).toHaveBeenCalledTimes(20);
   });
 
   it("returns 503 when the rate limit store is unavailable", async () => {

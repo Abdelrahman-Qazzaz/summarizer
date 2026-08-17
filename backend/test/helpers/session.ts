@@ -2,9 +2,16 @@
 import { sign } from "hono/jwt";
 import { COOKIE_KEYS } from "../../shared/keys";
 
-export async function sessionCookieHeader(userId: string): Promise<string> {
+export async function sessionCookieHeader(
+  userId: string,
+  sessionId?: string,
+): Promise<string> {
   const token = await sign(
-    { sub: userId, exp: Math.floor(Date.now() / 1000) + 3600 },
+    {
+      sub: userId,
+      ...(sessionId ? { sid: sessionId } : {}),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    },
     process.env.SESSION_SECRET!,
   );
   return `${COOKIE_KEYS.session}=${token}`;
