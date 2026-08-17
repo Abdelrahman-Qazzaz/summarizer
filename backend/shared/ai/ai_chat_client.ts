@@ -86,7 +86,10 @@ export async function chatAI(
       },
     });
 
-    return completion.choices[0]?.message?.content ?? "";
+    if (!("choices" in completion))
+      throw new Error("Expected a non-streaming chat response");
+    const content = completion.choices[0]?.message?.content;
+    return typeof content === "string" ? content : "";
   }
 
   // Streaming
@@ -100,6 +103,8 @@ export async function chatAI(
     },
   });
 
+  if (!(Symbol.asyncIterator in stream))
+    throw new Error("Expected a streaming chat response");
   let full = "";
   for await (const chunk of stream) {
     if (chunk.error) throw new Error(chunk.error.message);
@@ -138,7 +143,7 @@ export async function getChatModelData(): Promise<ChatModelData> {
   // is served by Deepgram. "text" is the SDK default — passed explicitly for
   // clarity — and keeps the fetched + cached catalog small.
   const models = (await ai_client.models.list({ outputModalities: "text" }))
-    .data;
+    .result.data;
   const modelData: ChatModelData = Object.fromEntries(
     models.map((model) => [
       model.id,

@@ -12,7 +12,7 @@ import { tryCatch } from "../try-catch";
  */
 const CACHE_ENTRIES = {
   openRouterModels: {
-    redisKey: "models:v7",
+    redisKey: "models:v8",
     redisTtlSeconds: 24 * 60 * 60,
     memoTtlMs: 5 * 60 * 1000,
   },

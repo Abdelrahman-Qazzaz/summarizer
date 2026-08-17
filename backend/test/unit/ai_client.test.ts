@@ -79,7 +79,9 @@ describe("getChatModelData", () => {
 
   it("fetches, normalizes, and caches on cache miss", async () => {
     mockGetCache.mockResolvedValueOnce(null);
-    mockModelsList.mockResolvedValueOnce({ data: [openRouterListModel] });
+    mockModelsList.mockResolvedValueOnce({
+      result: { data: [openRouterListModel] },
+    });
 
     const result = await getChatModelData();
 
@@ -118,7 +120,9 @@ describe("validateChatModelInput", () => {
 
   it("returns false for an unknown model id", async () => {
     mockGetCache.mockResolvedValue(null);
-    mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
+    mockModelsList.mockResolvedValue({
+      result: { data: [openRouterListModel] },
+    });
 
     expect(await validateChatModelInput("unknown/model", "image")).toBe(false);
   });
@@ -165,7 +169,9 @@ describe("validateChatModelOutput", () => {
 
   it("returns false for an unknown model id after fetch", async () => {
     mockGetCache.mockResolvedValue(null);
-    mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
+    mockModelsList.mockResolvedValue({
+      result: { data: [openRouterListModel] },
+    });
 
     const result = await validateChatModelOutput("unknown/model", "text");
 
@@ -175,7 +181,9 @@ describe("validateChatModelOutput", () => {
 
   it("returns true for a known model id after fetch", async () => {
     mockGetCache.mockResolvedValue(null);
-    mockModelsList.mockResolvedValue({ data: [openRouterListModel] });
+    mockModelsList.mockResolvedValue({
+      result: { data: [openRouterListModel] },
+    });
 
     const result = await validateChatModelOutput(DEFAULT_CHAT_MODEL, "text");
 
