@@ -26,3 +26,4 @@ backend/shared/logger/logs/
 .aliases.sh
 .vscode
 .DS_Store
+/frontend_screenshots
