@@ -52,10 +52,11 @@ A YouTube upload takes the same path one step earlier: the API publishes
 under the job's `uploadId` before publishing `transcribe` itself.
 
 **Transcripts are not summarized.** The transcript is stored in Postgres under
-the audio job's `uploadId`. The user feeds it to a model by attaching that job
-to a chat message — see `chat_messages.audio_upload_id`. There is no second job
-pipeline: the prompt is whatever the user types, and the reply streams over the
-same SSE endpoint every other chat turn uses.
+the audio job's `uploadId`. The user feeds one or more completed jobs to a model
+through `chat_message_transcriptions`, which preserves their attachment order.
+There is no second job pipeline: the prompt contains the attached transcripts
+plus whatever the user types, and the reply streams over the same SSE endpoint
+every other chat turn uses.
 
 Job state transitions are **claimed atomically**. A fresh delivery can claim
 only a queued job; a broker redelivery can reclaim a processing job. Every claim
