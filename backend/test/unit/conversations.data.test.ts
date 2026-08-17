@@ -67,12 +67,14 @@ describe("conversation turn claims", () => {
         "conversation-1",
         "claim-1",
         "assistant-message-1",
+        "Planning the next quarter",
       ),
     ).resolves.toBe(true);
     expect(mockSet).toHaveBeenCalledWith(
       expect.objectContaining({
         activeTurnClaimToken: null,
         lastMessageId: "assistant-message-1",
+        title: expect.anything(),
       }),
     );
   });

@@ -18,6 +18,7 @@ const {
   mockValidateModel,
   mockValidateModelInput,
   mockChatAI,
+  mockGenerateTitle,
 } = vi.hoisted(() => ({
   mockFindOwnedConversation: vi.fn(),
   mockClaimConversationTurn: vi.fn(),
@@ -36,6 +37,7 @@ const {
   mockValidateModel: vi.fn(),
   mockValidateModelInput: vi.fn(),
   mockChatAI: vi.fn(),
+  mockGenerateTitle: vi.fn(),
 }));
 
 // The data layer is mocked directly — these tests drive the controller's
@@ -99,6 +101,7 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
     validateChatModelOutput: mockValidateModel,
     validateChatModelInput: mockValidateModelInput,
     chatAI: mockChatAI,
+    generateTitle: mockGenerateTitle,
   };
 });
 
@@ -179,6 +182,7 @@ beforeEach(() => {
   mockPersistChatTurn.mockResolvedValue(assistantRow.id);
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
+  mockGenerateTitle.mockResolvedValue("Friendly greeting");
   mockDeleteFilesFromBucket.mockResolvedValue([]);
 });
 
@@ -319,6 +323,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       conversationId,
       messageId,
     );
+    expect(mockGenerateTitle).not.toHaveBeenCalled();
   });
 
   it("fetches message context while the conversation claim is pending", async () => {
@@ -429,7 +434,26 @@ describe("POST /conversations/:conversationId/messages", () => {
         chosenModelId: modelId,
         attachmentUploadIds: [],
         audioUploadIds: [],
+        conversationTitle: "Friendly greeting",
         claimToken: "claim-token",
+      }),
+    );
+    expect(mockGenerateTitle).toHaveBeenCalledWith("conversation", "Hi there");
+  });
+
+  it("uses the first message as a fallback when title generation fails", async () => {
+    mockChatAI.mockResolvedValueOnce("Hello world");
+    mockGenerateTitle.mockRejectedValueOnce(new Error("title model failed"));
+
+    const response = await postMessage({
+      messageContent: "  Plan   the next quarter  ",
+      chosenModelId: modelId,
+    });
+    await response.text();
+
+    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationTitle: "Plan the next quarter",
       }),
     );
   });

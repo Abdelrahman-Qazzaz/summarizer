@@ -120,12 +120,14 @@ export const ImageUploads = pgTable(
   ],
 );
 
+export const DEFAULT_CONVERSATION_TITLE = "New conversation";
+
 /** Chat conversations owned by a user. */
 export const Conversations = pgTable(
   "conversations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    title: text("title").notNull().default("New conversation"),
+    title: text("title").notNull().default(DEFAULT_CONVERSATION_TITLE),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

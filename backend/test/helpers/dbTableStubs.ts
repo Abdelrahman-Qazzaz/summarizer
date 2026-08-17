@@ -7,6 +7,7 @@
  * one place instead of every suite that happens to build the app.
  */
 export const tableStubs = {
+  DEFAULT_CONVERSATION_TITLE: "New conversation",
   users: { id: "id", createdAt: "created_at", updatedAt: "updated_at" },
 
   AudioTranscriptionJobs: {

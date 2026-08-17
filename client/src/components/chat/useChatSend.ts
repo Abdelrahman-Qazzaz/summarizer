@@ -10,11 +10,6 @@ import type { PendingTurn } from "./types";
 
 /** Deltas arrive faster than a long reply can be re-parsed; batch them. */
 const FLUSH_INTERVAL_MS = 80;
-const MAX_TITLE_LENGTH = 80;
-
-function conversationTitle(content: string): string {
-  return content.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE_LENGTH);
-}
 
 const uploadIdsOf = (sources: StagedSource[], images: boolean) =>
   sources
@@ -88,9 +83,7 @@ export function useChatSend() {
 
       try {
         if (!conversationId) {
-          const created = await createConversation(
-            conversationTitle(input.content),
-          );
+          const created = await createConversation();
           const createdId = created.id;
           conversationId = createdId;
           queryClient.setQueryData<Conversation[]>(

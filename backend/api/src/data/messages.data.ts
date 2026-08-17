@@ -234,6 +234,7 @@ export async function persistChatTurn(turn: {
   audioUploadIds: readonly string[];
   chosenModelId: string;
   assistantContent: string;
+  conversationTitle?: string;
   claimToken: string;
 }) {
   return db.transaction(async (tx) => {
@@ -274,6 +275,7 @@ export async function persistChatTurn(turn: {
       turn.conversationId,
       turn.claimToken,
       assistantMessage.id,
+      turn.conversationTitle,
       tx,
     );
     if (!completed) throw new Error("Conversation turn claim was lost");

@@ -10,7 +10,11 @@ import {
   type MessageRow,
 } from "../data/messages.data";
 import { CTX_KEYS } from "../../../shared/keys";
-import { buildUserTurn, chatAI } from "../../../shared/ai/ai_chat_client";
+import {
+  buildUserTurn,
+  chatAI,
+  generateTitle,
+} from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
 import {
@@ -51,6 +55,24 @@ export const MAX_RESPONSE_TOKENS = 4_000;
  * so this is their own ceiling on what one turn costs.
  */
 const MAX_CONTEXT_IMAGES = 8;
+const FALLBACK_CONVERSATION_TITLE_CHARS = 80;
+
+async function titleForFirstTurn(content: string, conversationId: string) {
+  const fallback = content
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, FALLBACK_CONVERSATION_TITLE_CHARS);
+
+  try {
+    return (await generateTitle("conversation", content)) || fallback;
+  } catch (error) {
+    log.warn("Conversation title generation failed", {
+      conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallback;
+  }
+}
 
 function toMessageJson(
   row: MessageRow,
@@ -336,11 +358,16 @@ export async function handleCreateMessage(c: Context) {
 
     void (async () => {
       try {
-        const assistantContent = await chatAI(chosenModelId, turns, {
-          onDelta: async (delta) => events.push("delta", { delta }),
-          maxOutputTokens: MAX_RESPONSE_TOKENS,
-          sessionId: conversationId,
-        });
+        const [assistantContent, conversationTitle] = await Promise.all([
+          chatAI(chosenModelId, turns, {
+            onDelta: async (delta) => events.push("delta", { delta }),
+            maxOutputTokens: MAX_RESPONSE_TOKENS,
+            sessionId: conversationId,
+          }),
+          expectedLastMessageId === null
+            ? titleForFirstTurn(content, conversationId)
+            : Promise.resolve(undefined),
+        ]);
         const lastMessageId = await persistChatTurn({
           userId,
           conversationId,
@@ -351,6 +378,7 @@ export async function handleCreateMessage(c: Context) {
           audioUploadIds,
           chosenModelId,
           assistantContent,
+          conversationTitle,
           claimToken,
         });
         events.push("done", { lastMessageId });

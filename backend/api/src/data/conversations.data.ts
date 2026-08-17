@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
-import { Conversations, db, type Executor } from "../../../shared/db";
+import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import {
+  Conversations,
+  DEFAULT_CONVERSATION_TITLE,
+  db,
+  type Executor,
+} from "../../../shared/db";
 
 const conversationColumns = {
   id: Conversations.id,
@@ -95,6 +100,7 @@ export async function completeConversationTurn(
   conversationId: string,
   claimToken: string,
   lastMessageId: string,
+  conversationTitle?: string,
   executor: Executor = db,
 ) {
   const [row] = await executor
@@ -103,6 +109,11 @@ export async function completeConversationTurn(
       lastMessageId,
       activeTurnClaimToken: null,
       updatedAt: new Date(),
+      ...(conversationTitle
+        ? {
+            title: sql<string>`case when ${Conversations.title} = ${DEFAULT_CONVERSATION_TITLE} then ${conversationTitle} else ${Conversations.title} end`,
+          }
+        : {}),
     })
     .where(
       and(

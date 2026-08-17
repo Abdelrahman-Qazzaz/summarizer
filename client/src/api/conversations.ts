@@ -18,11 +18,8 @@ export async function fetchConversations(): Promise<Conversation[]> {
   return data.conversations;
 }
 
-export async function createConversation(title: string): Promise<Conversation> {
-  return apiJson<Conversation>(
-    conversationsEndpoint(),
-    jsonRequest("POST", { conversationTitle: title }),
-  );
+export async function createConversation(): Promise<Conversation> {
+  return apiJson<Conversation>(conversationsEndpoint(), { method: "POST" });
 }
 
 export async function renameConversation(
