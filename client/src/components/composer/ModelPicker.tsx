@@ -242,8 +242,8 @@ export function ModelPicker({
           {excluded > 0 && (
             <p className="shrink-0 border-b border-line bg-signal-tint px-3 py-1.5 text-[11px] text-signal-strong">
               {requirements.image
-                ? `${excluded} models hidden — this message carries an image`
-                : `${excluded} models hidden — this message is too long for them`}
+                ? `${excluded} models hidden — this conversation carries an image`
+                : `${excluded} models hidden — this conversation is too long for them`}
             </p>
           )}
 

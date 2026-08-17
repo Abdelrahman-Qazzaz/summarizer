@@ -33,6 +33,14 @@ export type MessagesResponse = {
   messages: ChatMessage[];
 };
 
+/**
+ * How many turns the server replays (messages.controller.ts). The client needs
+ * it to predict what a turn will actually send: the prompt is not just the
+ * message being written, it is the replayed history as well, and a model has
+ * to be able to serve the whole thing.
+ */
+export const MAX_CONTEXT_MESSAGES = 50;
+
 export type SendMessageInput = {
   conversationId: string;
   messageContent: string;

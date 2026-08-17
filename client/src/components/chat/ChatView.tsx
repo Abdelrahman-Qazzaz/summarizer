@@ -9,6 +9,7 @@ import {
 } from "../../api/models";
 import { useAuth } from "../../hooks/auth/useAuth";
 import { useChatModelsQuery } from "../../hooks/queries/useModelsQuery";
+import { MAX_CONTEXT_MESSAGES } from "../../api/messages";
 import { useMessagesQuery } from "../../hooks/queries/useMessagesQuery";
 import { isSourceInFlight, type StagedSource } from "../../sources/types";
 import { useSources } from "../../sources/useSources";
@@ -53,20 +54,40 @@ export function ChatView() {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
 
-  // What this message will demand of a model, derived from what it is actually
-  // carrying. The picker hides anything that can't serve it, so a turn the API
-  // would reject is never selectable.
+  const history = messagesQuery.data?.messages;
+
+  /**
+   * What the next turn will demand of a model. This is the whole prompt, not
+   * just the message being written: the server replays the conversation's
+   * recent history, so an image three turns back still makes the request an
+   * image request, and the replayed text still has to fit the context window.
+   * The API rejects a model that can't serve the assembled context, so the
+   * picker hides those rather than letting the send fail.
+   */
   const requirements: MessageRequirements = useMemo(() => {
-    const transcriptChars = sources.reduce(
+    // Only the window the server actually replays counts.
+    const replayed = (history ?? []).slice(-MAX_CONTEXT_MESSAGES);
+    const historyChars = replayed.reduce(
+      (total, message) => total + message.content.length,
+      0,
+    );
+    const stagedChars = sources.reduce(
       (total, source) =>
         source.kind === "image" ? total : total + (source.charCount ?? 0),
       0,
     );
+    // Deliberately not capped at the server's truncation ceiling: a model that
+    // only fits because history would be dropped is not a model that can answer
+    // this conversation. Once something disqualifies a model it stays
+    // disqualified, which makes the list predictable.
+    const chars = historyChars + stagedChars + text.length;
     return {
-      image: sources.some((source) => source.kind === "image"),
-      tokens: Math.ceil((transcriptChars + text.length) / CHARS_PER_TOKEN),
+      image:
+        sources.some((source) => source.kind === "image") ||
+        replayed.some((message) => message.attachments.length > 0),
+      tokens: Math.ceil(chars / CHARS_PER_TOKEN),
     };
-  }, [sources, text]);
+  }, [history, sources, text]);
 
   const models = useMemo(
     () => chatModels.entries.map(([modelId, info]) => ({ id: modelId, info })),
