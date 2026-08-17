@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  canChatWithImages,
-  canChatWithText,
+  CHARS_PER_TOKEN,
   DEFAULT_TEXT_MODEL,
+  meetsRequirements,
   resolveDefaultModel,
+  type MessageRequirements,
 } from "../../api/models";
 import { useAuth } from "../../hooks/auth/useAuth";
 import { useChatModelsQuery } from "../../hooks/queries/useModelsQuery";
@@ -52,29 +53,38 @@ export function ChatView() {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
 
-  const hasImages = sources.some((source) => source.kind === "image");
+  // What this message will demand of a model, derived from what it is actually
+  // carrying. The picker hides anything that can't serve it, so a turn the API
+  // would reject is never selectable.
+  const requirements: MessageRequirements = useMemo(() => {
+    const transcriptChars = sources.reduce(
+      (total, source) =>
+        source.kind === "image" ? total : total + (source.charCount ?? 0),
+      0,
+    );
+    return {
+      image: sources.some((source) => source.kind === "image"),
+      tokens: Math.ceil((transcriptChars + text.length) / CHARS_PER_TOKEN),
+    };
+  }, [sources, text]);
+
   const models = useMemo(
-    () =>
-      chatModels.entries
-        .filter(([, info]) =>
-          hasImages ? canChatWithImages(info) : canChatWithText(info),
-        )
-        .map(([modelId, info]) => ({
-          id: modelId,
-          label: info.name || modelId,
-          info,
-        })),
-    [chatModels.entries, hasImages],
+    () => chatModels.entries.map(([modelId, info]) => ({ id: modelId, info })),
+    [chatModels.entries],
   );
 
-  // A staged image narrows the list, so the pick can fall out of it.
+  // Requirements narrow the list, so a pick made earlier can fall out of it.
+  const eligibleIds = useMemo(
+    () =>
+      models
+        .filter((model) => meetsRequirements(model.info, requirements))
+        .map((model) => model.id),
+    [models, requirements],
+  );
   const modelId =
-    modelPick && models.some((model) => model.id === modelPick)
+    modelPick && eligibleIds.includes(modelPick)
       ? modelPick
-      : resolveDefaultModel(
-          models.map((model) => model.id),
-          DEFAULT_TEXT_MODEL,
-        );
+      : resolveDefaultModel(eligibleIds, DEFAULT_TEXT_MODEL);
 
   const sending = !!sendingKeys[draftKey];
   const blockedReason = blockedReasonFor(sources);
@@ -157,7 +167,7 @@ export function ChatView() {
         onModelChange={setModelPick}
         modelsLoading={chatModels.loading}
         modelsError={chatModels.error}
-        visionOnly={hasImages}
+        requirements={requirements}
         sending={sending}
         canSend={canSend}
         blockedReason={blockedReason}

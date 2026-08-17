@@ -5,6 +5,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from "react";
+import type { MessageRequirements } from "../../api/models";
 import { useShell } from "../app/shellContext";
 import { findYoutubeUrl } from "../../media/youtube";
 import { useSources } from "../../sources/useSources";
@@ -27,7 +28,7 @@ type ComposerProps = {
   onModelChange: (modelId: string) => void;
   modelsLoading: boolean;
   modelsError: string | null;
-  visionOnly: boolean;
+  requirements: MessageRequirements;
   sending: boolean;
   canSend: boolean;
   /** What the send is waiting on, if anything — shown under the box. */
@@ -44,7 +45,7 @@ export function Composer({
   onModelChange,
   modelsLoading,
   modelsError,
-  visionOnly,
+  requirements,
   sending,
   canSend,
   blockedReason,
@@ -158,7 +159,7 @@ export function Composer({
               models={models}
               value={modelId}
               onChange={onModelChange}
-              visionOnly={visionOnly}
+              requirements={requirements}
               loading={modelsLoading}
               error={modelsError}
             />
