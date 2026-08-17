@@ -11,12 +11,13 @@ export const tableStubs = {
 
   AudioTranscriptionJobs: {
     uploadId: "upload_id",
+    source: "source",
     fileName: "file_name",
     status: "status",
     error: "error",
     claimToken: "claim_token",
     createdAt: "created_at",
-    transcriptionModelId: "transcription_model_id",
+    transcriptModelId: "transcription_model_id",
     transcriptUploadId: "transcript_upload_id",
     userId: "user_id",
   },
@@ -52,6 +53,12 @@ export const tableStubs = {
     createdAt: "created_at",
     updatedAt: "updated_at",
     userId: "user_id",
+  },
+
+  ChatMessageTranscriptions: {
+    messageId: "message_id",
+    audioUploadId: "audio_upload_id",
+    position: "position",
   },
 
   TranscriptContents: {

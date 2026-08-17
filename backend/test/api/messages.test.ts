@@ -12,8 +12,8 @@ const {
   mockResolveMessageImages,
   mockFindMessageImageUploadIds,
   mockResolveImageUploadUrls,
-  mockFindTranscript,
-  mockFindTranscriptContents,
+  mockFindMessageTranscriptAttachments,
+  mockFindTranscripts,
   mockDeleteFilesFromBucket,
   mockValidateModel,
   mockValidateModelInput,
@@ -30,8 +30,8 @@ const {
   mockResolveMessageImages: vi.fn(),
   mockFindMessageImageUploadIds: vi.fn(),
   mockResolveImageUploadUrls: vi.fn(),
-  mockFindTranscript: vi.fn(),
-  mockFindTranscriptContents: vi.fn(),
+  mockFindMessageTranscriptAttachments: vi.fn(),
+  mockFindTranscripts: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
   mockValidateModel: vi.fn(),
   mockValidateModelInput: vi.fn(),
@@ -77,8 +77,9 @@ vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   ...(await importActual<
     typeof import("../../shared/data/transcripts.data")
   >()),
-  findTranscript: mockFindTranscript,
-  findTranscriptContents: mockFindTranscriptContents,
+  findMessageTranscriptAttachments: mockFindMessageTranscriptAttachments,
+  findTranscripts: mockFindTranscripts,
+  attachTranscriptionsToMessage: vi.fn(),
 }));
 
 vi.mock("../../shared/bucket", () => ({
@@ -158,8 +159,7 @@ function contextMessage(partial: Partial<ContextMessage> = {}): ContextMessage {
     role: "user",
     content: "",
     createdAt: new Date(createdAt),
-    audioUploadId: null,
-    transcriptCharCount: null,
+    transcripts: [],
     images: [],
     ...partial,
   };
@@ -174,8 +174,8 @@ beforeEach(() => {
   mockResolveUnattachedImages.mockResolvedValue([]);
   mockResolveMessageImages.mockResolvedValue(new Map());
   mockResolveImageUploadUrls.mockResolvedValue(new Map());
-  mockFindTranscript.mockResolvedValue(null);
-  mockFindTranscriptContents.mockResolvedValue(new Map());
+  mockFindMessageTranscriptAttachments.mockResolvedValue(new Map());
+  mockFindTranscripts.mockResolvedValue(new Map());
   mockPersistChatTurn.mockResolvedValue(assistantRow.id);
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
@@ -202,16 +202,31 @@ describe("GET /conversations/:conversationId/messages", () => {
     expect(await res.json()).toEqual({
       lastMessageId: null,
       messages: [
-        { ...userRow, attachments: [] },
-        { ...assistantRow, attachments: [] },
+        { ...userRow, attachments: [], transcriptAttachments: [] },
+        { ...assistantRow, attachments: [], transcriptAttachments: [] },
       ],
     });
   });
 
-  it("returns each user turn's images as its attachments", async () => {
+  it("returns each user turn's attachments", async () => {
     mockFindConversationMessages.mockResolvedValueOnce([userRow, assistantRow]);
     mockResolveMessageImages.mockResolvedValueOnce(
       new Map([[messageId, [resolvedImage]]]),
+    );
+    mockFindMessageTranscriptAttachments.mockResolvedValueOnce(
+      new Map([
+        [
+          messageId,
+          [
+            {
+              uploadId: "950e8400-e29b-41d4-a716-446655440444",
+              fileName: "interview.mp3",
+              source: "audio",
+              charCount: 120,
+            },
+          ],
+        ],
+      ]),
     );
 
     const res = await (
@@ -224,9 +239,18 @@ describe("GET /conversations/:conversationId/messages", () => {
     expect(await res.json()).toEqual({
       lastMessageId: null,
       messages: [
-        { ...userRow, attachments: [resolvedImage] },
-        // The image hangs off the user turn only.
-        { ...assistantRow, attachments: [] },
+        {
+          ...userRow,
+          attachments: [resolvedImage],
+          transcriptAttachments: [
+            {
+              uploadId: "950e8400-e29b-41d4-a716-446655440444",
+              fileName: "interview.mp3",
+              source: "audio",
+            },
+          ],
+        },
+        { ...assistantRow, attachments: [], transcriptAttachments: [] },
       ],
     });
   });
@@ -404,6 +428,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         assistantContent: "Hello world",
         chosenModelId: modelId,
         attachmentUploadIds: [],
+        audioUploadIds: [],
         claimToken: "claim-token",
       }),
     );
@@ -482,17 +507,29 @@ describe("POST /conversations/:conversationId/messages", () => {
       contextMessage({
         id: assistantRow.id,
         content: "Newer",
-        audioUploadId: "audio-fits",
-        transcriptCharCount: 10,
+        transcripts: [
+          {
+            uploadId: "audio-fits",
+            fileName: "fits.mp3",
+            source: "audio",
+            charCount: 10,
+          },
+        ],
       }),
       contextMessage({
         id: messageId,
         content: "Older",
-        audioUploadId: "audio-huge",
-        transcriptCharCount: MAX_CONTEXT_CHARS,
+        transcripts: [
+          {
+            uploadId: "audio-huge",
+            fileName: "huge.mp3",
+            source: "audio",
+            charCount: MAX_CONTEXT_CHARS,
+          },
+        ],
       }),
     ]);
-    mockFindTranscriptContents.mockResolvedValueOnce(
+    mockFindTranscripts.mockResolvedValueOnce(
       new Map([["audio-fits", "T"]]),
     );
     mockChatAI.mockResolvedValueOnce("Hello world");
@@ -505,7 +542,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     await res.text();
 
     // The dropped turn's body is never fetched — only the admitted one's.
-    expect(mockFindTranscriptContents).toHaveBeenCalledWith(userId, [
+    expect(mockFindTranscripts).toHaveBeenCalledWith(userId, [
       "audio-fits",
     ]);
     // The over-budget turn didn't make the prompt.
@@ -575,120 +612,158 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(opts.maxOutputTokens).toBe(MAX_RESPONSE_TOKENS);
   });
 
-  describe("with a transcript attached", () => {
-    const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
-    const transcript = "and then the speaker said something important";
+  describe("with transcription jobs attached", () => {
+    const firstAudioUploadId = "950e8400-e29b-41d4-a716-446655440444";
+    const secondAudioUploadId = "a50e8400-e29b-41d4-a716-446655440555";
+    const firstTranscript = "the interview transcript";
+    const secondTranscript = "the product demonstration transcript";
 
-    it("splices the transcript into the turn and records the link", async () => {
-      mockFindTranscript.mockResolvedValueOnce({ content: transcript });
+    it("sends multiple transcripts in order and records their links", async () => {
+      mockFindTranscripts.mockResolvedValueOnce(
+        new Map([
+          [firstAudioUploadId, firstTranscript],
+          [secondAudioUploadId, secondTranscript],
+        ]),
+      );
       mockChatAI.mockResolvedValueOnce("Hello world");
 
-      const res = await postMessage({
-        messageContent: "Summarise this",
+      const response = await postMessage({
+        messageContent: "Compare these",
         chosenModelId: modelId,
-        audioUploadId,
+        audioUploadIds: [firstAudioUploadId, secondAudioUploadId],
       });
-      expect(res.status).toBe(200);
-      await res.text();
+      expect(response.status).toBe(200);
+      await response.text();
 
-      // The model sees transcript + prompt...
       expect(mockChatAI).toHaveBeenCalledWith(
         modelId,
-        [{ role: "user", content: `${transcript}\n\nSummarise this` }],
+        [
+          {
+            role: "user",
+            content: `${firstTranscript}\n\n${secondTranscript}\n\nCompare these`,
+          },
+        ],
         expect.objectContaining({ onDelta: expect.any(Function) }),
       );
-      // ...but the row stores only what was typed, plus the link.
       await vi.waitFor(() =>
         expect(mockPersistChatTurn).toHaveBeenCalledWith(
           expect.objectContaining({
-            content: "Summarise this",
-            audioUploadId,
+            content: "Compare these",
+            audioUploadIds: [firstAudioUploadId, secondAudioUploadId],
           }),
         ),
       );
-      expect(mockFindTranscript).toHaveBeenCalledWith(userId, audioUploadId);
+      expect(mockFindTranscripts).toHaveBeenCalledWith(userId, [
+        firstAudioUploadId,
+        secondAudioUploadId,
+      ]);
     });
 
-    it("replays a past turn's transcript so follow-ups still see it", async () => {
+    it("replays all transcripts from a past turn", async () => {
       mockFindRecentMessagesWithContext.mockResolvedValueOnce([
         contextMessage({
           id: messageId,
           role: "user",
-          content: "Summarise this",
-          audioUploadId,
-          transcriptCharCount: transcript.length,
+          content: "Compare these",
+          transcripts: [
+            {
+              uploadId: firstAudioUploadId,
+              fileName: "interview.mp3",
+              source: "audio",
+              charCount: firstTranscript.length,
+            },
+            {
+              uploadId: secondAudioUploadId,
+              fileName: "Product demo",
+              source: "youtube",
+              charCount: secondTranscript.length,
+            },
+          ],
         }),
       ]);
-      mockFindTranscriptContents.mockResolvedValueOnce(
-        new Map([[audioUploadId, transcript]]),
+      mockFindTranscripts.mockResolvedValueOnce(
+        new Map([
+          [firstAudioUploadId, firstTranscript],
+          [secondAudioUploadId, secondTranscript],
+        ]),
       );
       mockChatAI.mockResolvedValueOnce("Hello world");
 
-      const res = await postMessage({
-        messageContent: "What did they say about it?",
+      const response = await postMessage({
+        messageContent: "What do they have in common?",
         chosenModelId: modelId,
       });
-      expect(res.status).toBe(200);
-      await res.text();
+      expect(response.status).toBe(200);
+      await response.text();
 
       const [, turns] = mockChatAI.mock.calls[0];
-      expect(turns[0].content).toBe(`${transcript}\n\nSummarise this`);
+      expect(turns[0].content).toContain(firstTranscript);
+      expect(turns[0].content).toContain(secondTranscript);
+      expect(turns[0].content.indexOf(firstTranscript)).toBeLessThan(
+        turns[0].content.indexOf(secondTranscript),
+      );
     });
 
-    it("returns 404 when the transcript isn't the caller's or isn't ready", async () => {
-      // A row exists only for a completed job the user owns; otherwise none.
-      mockFindTranscript.mockResolvedValueOnce(null);
-      const res = await postMessage({
-        messageContent: "Summarise this",
+    it("returns 404 when any requested transcript is unavailable", async () => {
+      mockFindTranscripts.mockResolvedValueOnce(
+        new Map([[firstAudioUploadId, firstTranscript]]),
+      );
+
+      const response = await postMessage({
+        messageContent: "Compare these",
         chosenModelId: modelId,
-        audioUploadId,
+        audioUploadIds: [firstAudioUploadId, secondAudioUploadId],
       });
-      expect(res.status).toBe(404);
-      expect(await res.json()).toEqual({ message: "Transcript not found" });
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({
+        message: "Transcript not found",
+      });
       expect(mockChatAI).not.toHaveBeenCalled();
       expect(mockPersistChatTurn).not.toHaveBeenCalled();
       expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
     });
 
-    it("refuses a transcript past the context budget rather than truncating it", async () => {
-      mockFindTranscript.mockResolvedValueOnce({
-        content: "x".repeat(MAX_CONTEXT_CHARS + 1),
-      });
+    it("refuses combined transcript content past the context budget", async () => {
+      const oversizedTranscript = "x".repeat(MAX_CONTEXT_CHARS);
+      mockFindTranscripts.mockResolvedValueOnce(
+        new Map([[firstAudioUploadId, oversizedTranscript]]),
+      );
 
-      const res = await postMessage({
+      const response = await postMessage({
         messageContent: "Summarise this",
         chosenModelId: modelId,
-        audioUploadId,
+        audioUploadIds: [firstAudioUploadId],
       });
-      expect(res.status).toBe(413);
-      expect(await res.json()).toEqual({
-        message: "Transcript is too long for one message",
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({
+        message: "Transcripts are too long for one message",
         maxChars: MAX_CONTEXT_CHARS,
-        chars: MAX_CONTEXT_CHARS + 1,
+        chars: expect.any(Number),
       });
       expect(mockChatAI).not.toHaveBeenCalled();
       expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
     });
 
-    it("charges the transcript against the budget, dropping history to fit", async () => {
+    it("charges all transcripts against the budget when admitting history", async () => {
       const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
-      // Half the budget: one ~third-budget history turn still fits, two don't.
-      mockFindTranscript.mockResolvedValueOnce({
-        content: "y".repeat(MAX_CONTEXT_CHARS / 2),
-      });
+      const transcript = "y".repeat(MAX_CONTEXT_CHARS / 2);
+      mockFindTranscripts.mockResolvedValueOnce(
+        new Map([[firstAudioUploadId, transcript]]),
+      );
       mockFindRecentMessagesWithContext.mockResolvedValueOnce([
         contextMessage({ role: "user", content: `newest ${long}` }),
         contextMessage({ role: "assistant", content: `middle ${long}` }),
       ]);
       mockChatAI.mockResolvedValueOnce("Hello world");
 
-      const res = await postMessage({
+      const response = await postMessage({
         messageContent: "Summarise this",
         chosenModelId: modelId,
-        audioUploadId,
+        audioUploadIds: [firstAudioUploadId],
       });
-      expect(res.status).toBe(200);
-      await res.text();
+      expect(response.status).toBe(200);
+      await response.text();
 
       const [, turns] = mockChatAI.mock.calls[0];
       expect(turns).toHaveLength(2);
@@ -771,15 +846,15 @@ describe("POST /conversations/:conversationId/messages", () => {
   it("releases once and returns the first of multiple validation errors", async () => {
     const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
     mockResolveUnattachedImages.mockResolvedValueOnce([]);
-    mockFindTranscript.mockResolvedValueOnce({
-      content: "x".repeat(MAX_CONTEXT_CHARS + 1),
-    });
+    mockFindTranscripts.mockResolvedValueOnce(
+      new Map([[audioUploadId, "x".repeat(MAX_CONTEXT_CHARS + 1)]]),
+    );
 
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: modelId,
       attachmentUploadIds: [uploadId],
-      audioUploadId,
+      audioUploadIds: [audioUploadId],
     });
 
     expect(res.status).toBe(404);

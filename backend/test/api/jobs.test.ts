@@ -5,7 +5,7 @@ const {
   mockFindUserJobsPage,
   mockDeleteAudioJob,
   mockRequeueAudioJob,
-  mockFindTranscript,
+  mockFindTranscripts,
   mockDeleteTranscript,
   mockDeleteFilesFromBucket,
   mockPublish,
@@ -15,7 +15,7 @@ const {
   mockFindUserJobsPage: vi.fn(),
   mockDeleteAudioJob: vi.fn(),
   mockRequeueAudioJob: vi.fn(),
-  mockFindTranscript: vi.fn(),
+  mockFindTranscripts: vi.fn(),
   mockDeleteTranscript: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
   mockPublish: vi.fn(),
@@ -39,7 +39,7 @@ vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   ...(await importActual<
     typeof import("../../shared/data/transcripts.data")
   >()),
-  findTranscript: mockFindTranscript,
+  findTranscripts: mockFindTranscripts,
   deleteTranscript: mockDeleteTranscript,
 }));
 
@@ -83,7 +83,7 @@ const audioJob = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFindTranscript.mockResolvedValue(null);
+  mockFindTranscripts.mockResolvedValue(new Map());
   mockDeleteAudioJob.mockResolvedValue(undefined);
   mockRequeueAudioJob.mockResolvedValue({ uploadId });
   mockDeleteTranscript.mockResolvedValue(undefined);
@@ -127,9 +127,9 @@ describe("GET /jobs/transcribe/:uploadId", () => {
 
   it("returns the transcript once the job has completed", async () => {
     mockFindAudioJob.mockResolvedValueOnce(audioJob);
-    mockFindTranscript.mockResolvedValueOnce({
-      content: "the full transcript text",
-    });
+    mockFindTranscripts.mockResolvedValueOnce(
+      new Map([[uploadId, "the full transcript text"]]),
+    );
 
     const res = await (
       await createApp()
@@ -144,13 +144,15 @@ describe("GET /jobs/transcribe/:uploadId", () => {
       transcript: "the full transcript text",
       error: null,
     });
-    expect(mockFindTranscript).toHaveBeenCalledWith("user_01OWNER", uploadId);
+    expect(mockFindTranscripts).toHaveBeenCalledWith("user_01OWNER", [
+      uploadId,
+    ]);
   });
 
   it("reports no transcript while the job hasn't produced one", async () => {
     // A re-run drops the row, so a job that isn't completed has no transcript.
     mockFindAudioJob.mockResolvedValueOnce({ ...audioJob, status: "queued" });
-    mockFindTranscript.mockResolvedValueOnce(null);
+    mockFindTranscripts.mockResolvedValueOnce(new Map());
 
     const res = await (
       await createApp()
@@ -163,7 +165,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
 
   it("degrades to a null transcript when the transcript read fails", async () => {
     mockFindAudioJob.mockResolvedValueOnce(audioJob);
-    mockFindTranscript.mockRejectedValueOnce(new Error("db exploded"));
+    mockFindTranscripts.mockRejectedValueOnce(new Error("db exploded"));
 
     const res = await (
       await createApp()
@@ -241,7 +243,7 @@ describe("POST /jobs/transcribe/:uploadId/rerun", () => {
           "Content-Type": "application/json",
           Cookie: await sessionCookieHeader("user_01OWNER"),
         },
-        body: JSON.stringify({ transcriptionModelId: "nova-3" }),
+        body: JSON.stringify({ transcriptModelId: "nova-3" }),
       },
     );
 

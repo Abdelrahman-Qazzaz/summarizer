@@ -12,7 +12,7 @@ import {
 } from "../../../shared/data/jobs.data";
 import {
   deleteTranscript,
-  findTranscript,
+  findTranscripts,
 } from "../../../shared/data/transcripts.data";
 import { tryCatch } from "../../../shared/try-catch";
 import { logger } from "../../../shared/logger";
@@ -28,7 +28,7 @@ export async function handleGetTranscribeJob(c: Context) {
   // A transcript-read failure degrades to null rather than failing the job view.
   const [audioJob, transcriptResult] = await Promise.all([
     findAudioJob(userId, uploadId),
-    tryCatch(findTranscript(userId, uploadId)),
+    tryCatch(findTranscripts(userId, [uploadId])),
   ]);
 
   if (!audioJob) return c.json({ message: "Job not found" }, 404);
@@ -46,7 +46,7 @@ export async function handleGetTranscribeJob(c: Context) {
     uploadId: audioJob.uploadId,
     fileName: audioJob.fileName,
     status: audioJob.status,
-    transcript: transcriptResult.data?.content ?? null,
+    transcript: transcriptResult.data?.get(uploadId) ?? null,
     error: audioJob.error,
   });
 }
@@ -105,9 +105,9 @@ export async function handleDeleteTranscribeJob(c: Context) {
 export async function handleRerunTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const uploadId = c.get(CTX_KEYS.uploadId);
-  const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
+  const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
 
-  const job = await requeueAudioJob(userId, uploadId, transcriptionModelId);
+  const job = await requeueAudioJob(userId, uploadId, transcriptModelId);
 
   if (!job) {
     const existingJob = await findAudioJob(userId, uploadId);

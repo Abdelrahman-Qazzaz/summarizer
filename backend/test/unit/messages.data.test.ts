@@ -39,6 +39,11 @@ vi.mock("../../api/src/data/conversations.data", () => ({
   completeConversationTurn: vi.fn(),
 }));
 
+vi.mock("../../shared/data/transcripts.data", () => ({
+  attachTranscriptionsToMessage: vi.fn(),
+  findMessageTranscriptAttachments: vi.fn(),
+}));
+
 import { deleteOwnedMessage } from "../../api/src/data/messages.data";
 
 function returnLockedConversation(rows: unknown[]) {

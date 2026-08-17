@@ -28,7 +28,7 @@ uploadRouter.post(
   validateMultipart(audioUploadSchema, [
     FORM_KEYS.uploadFile,
     FORM_KEYS.audioSource,
-    FORM_KEYS.transcriptionModelId,
+    FORM_KEYS.transcriptModelId,
   ]),
   uploadController.handleAudioUpload,
 );

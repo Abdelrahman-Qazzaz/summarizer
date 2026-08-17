@@ -34,4 +34,4 @@ playwright-cli -s=summarizer-qa tracing-stop
 playwright-cli -s=summarizer-qa close
 ```
 
-This is live smoke testing: uploads, transcriptions, and chat messages call the configured providers and can incur development usage.
+This is live smoke testing: uploads, transcripts, and chat messages call the configured providers and can incur development usage.

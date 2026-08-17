@@ -40,7 +40,7 @@ export type SendMessageInput = {
   messageContent: string;
   chosenModelId: string;
   attachmentUploadIds: string[];
-  audioUploadId?: string;
+  audioUploadIds: string[];
   lastMessageId: string | null;
 };
 
@@ -178,7 +178,7 @@ export async function streamConversationMessage(
         messageContent: input.messageContent,
         chosenModelId: input.chosenModelId,
         attachmentUploadIds: input.attachmentUploadIds,
-        ...(input.audioUploadId ? { audioUploadId: input.audioUploadId } : {}),
+        audioUploadIds: input.audioUploadIds,
         lastMessageId: input.lastMessageId,
       }),
     },

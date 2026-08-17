@@ -27,8 +27,9 @@ import {
 } from "../data/images.data";
 import { deleteFilesFromBucket } from "../../../shared/bucket";
 import {
-  findTranscript,
-  findTranscriptContents,
+  findMessageTranscriptAttachments,
+  findTranscripts,
+  type StoredTranscriptAttachment,
 } from "../../../shared/data/transcripts.data";
 
 const log = logger.child({ controller: "messages" });
@@ -51,36 +52,41 @@ export const MAX_RESPONSE_TOKENS = 4_000;
  */
 const MAX_CONTEXT_IMAGES = 8;
 
-function toMessageJson(row: MessageRow, attachments: ResolvedImage[] = []) {
+function toMessageJson(
+  row: MessageRow,
+  attachments: ResolvedImage[] = [],
+  transcripts: StoredTranscriptAttachment[] = [],
+) {
   return {
     id: row.id,
     role: row.role,
     content: row.content,
     chosenModelId: row.chosenModelId,
     conversationId: row.conversationId,
-    audioUploadId: row.audioUploadId,
     createdAt: row.createdAt,
     attachments,
+    transcriptAttachments: transcripts.map(
+      ({ charCount: _charCount, ...attachment }) => attachment,
+    ),
   };
 }
 
-/**
- * A turn that carried a transcript, as the model sees it: the transcript body
- * followed by what the user actually typed. The stored `content` is only ever
- * the typed part — the transcript is spliced in here, which is what lets one
- * prompt carry a body far past the 50k message cap.
- */
-function withTranscript(content: string, transcript: string) {
-  return `${transcript}\n\n${content}`;
+function withTranscripts(content: string, transcripts: readonly string[]) {
+  if (transcripts.length === 0) return content;
+  return `${transcripts.join("\n\n")}\n\n${content}`;
 }
 
-/**
- * The transcript for a turn that names a transcription job, or null when the job
- * isn't the caller's or hasn't finished — a row exists only for a completed one.
- */
-async function readTurnTranscript(userId: string, audioUploadId: string) {
-  const row = await findTranscript(userId, audioUploadId);
-  return row?.content ?? null;
+function turnCharCount(
+  content: string,
+  transcripts: readonly StoredTranscriptAttachment[],
+) {
+  return (
+    content.length +
+    transcripts.reduce(
+      (total, transcript) => total + (transcript.charCount ?? 0),
+      0,
+    )
+  );
 }
 
 /** Assistant turns never carry images, so they're not worth looking up. */
@@ -97,9 +103,9 @@ function userMessageIds(
  *
  * The new turn is always included, however long it is; history is admitted
  * newest-first until MAX_CONTEXT_CHARS is spent and truncated at the first turn
- * that doesn't fit. A turn's cost is its content length plus its transcript's
- * `charCount` — so the budget is decided without reading any bodies, and only
- * the transcripts that actually fit are then fetched. Images each past turn was
+ * that doesn't fit. A turn's cost is its content length plus its transcripts'
+ * `charCount` values, so the budget is decided without reading any bodies, and
+ * only the transcripts that fit are then fetched. Images each past turn was
  * sent with ride along under their own MAX_CONTEXT_IMAGES cap.
  */
 async function assembleConversationContext(
@@ -118,7 +124,7 @@ async function assembleConversationContext(
   }[] = [];
 
   for (const message of history) {
-    const cost = message.content.length + (message.transcriptCharCount ?? 0);
+    const cost = turnCharCount(message.content, message.transcripts);
     if (charBudget - cost < 0) break;
     charBudget -= cost;
 
@@ -131,12 +137,12 @@ async function assembleConversationContext(
 
   // Only now read the bodies and sign the images — for the admitted turns only.
   const transcriptUploadIds = admitted.flatMap(({ message }) =>
-    message.transcriptCharCount !== null && message.audioUploadId
-      ? [message.audioUploadId]
-      : [],
+    message.transcripts.flatMap((transcript) =>
+      transcript.charCount !== null ? [transcript.uploadId] : [],
+    ),
   );
   const [transcripts, urlByUploadId] = await Promise.all([
-    findTranscriptContents(userId, transcriptUploadIds),
+    findTranscripts(userId, transcriptUploadIds),
     resolveImageUploadUrls(
       userId,
       admitted.flatMap((entry) => entry.imageSlots),
@@ -145,13 +151,13 @@ async function assembleConversationContext(
 
   const turns: ChatTurn[] = [newTurn];
   for (const { message, imageSlots } of admitted) {
-    // A past turn's transcript is replayed too — a follow-up about a transcript
-    // sent three turns ago has to still see it, same as images.
-    let content = message.content;
-    if (message.audioUploadId) {
-      const transcript = transcripts.get(message.audioUploadId);
-      if (transcript) content = withTranscript(content, transcript);
-    }
+    // Past transcripts are replayed so follow-ups can still see them.
+    const resolvedTranscripts = message.transcripts.flatMap((transcript) =>
+      transcripts.has(transcript.uploadId)
+        ? [transcripts.get(transcript.uploadId) as string]
+        : [],
+    );
+    const content = withTranscripts(message.content, resolvedTranscripts);
 
     const imageUrls = imageSlots.flatMap((image) => {
       const url = urlByUploadId.get(image.uploadId);
@@ -183,15 +189,20 @@ export async function handleListMessages(c: Context) {
   if (!ownedConversation)
     return c.json({ message: "Conversation not found" }, 404);
 
-  const imagesByMessageId = await resolveMessageImages(
-    userId,
-    userMessageIds(rows),
-  );
+  const messageIds = userMessageIds(rows);
+  const [imagesByMessageId, transcriptsByMessageId] = await Promise.all([
+    resolveMessageImages(userId, messageIds),
+    findMessageTranscriptAttachments(userId, messageIds),
+  ]);
 
   return c.json({
     lastMessageId: ownedConversation.lastMessageId,
     messages: rows.map((row) =>
-      toMessageJson(row, imagesByMessageId.get(row.id)),
+      toMessageJson(
+        row,
+        imagesByMessageId.get(row.id),
+        transcriptsByMessageId.get(row.id),
+      ),
     ),
   });
 }
@@ -231,7 +242,7 @@ export async function handleCreateMessage(c: Context) {
   const content: string = c.get(CTX_KEYS.messageContent);
   const chosenModelId: string = c.get(CTX_KEYS.chosenModelId);
   const uploadIds: string[] = c.get(CTX_KEYS.attachmentUploadIds);
-  const audioUploadId: string | undefined = c.get(CTX_KEYS.audioUploadId);
+  const audioUploadIds: string[] = c.get(CTX_KEYS.audioUploadIds);
   const expectedLastMessageId: string | null = c.get(CTX_KEYS.lastMessageId);
 
   const claimPromise = claimConversationTurn(
@@ -245,7 +256,9 @@ export async function handleCreateMessage(c: Context) {
     requestData = await Promise.all([
       claimPromise,
       resolveUnattachedImages(userId, uploadIds),
-      audioUploadId ? readTurnTranscript(userId, audioUploadId) : null,
+      audioUploadIds.length > 0
+        ? findTranscripts(userId, audioUploadIds)
+        : Promise.resolve(new Map<string, string>()),
       findRecentMessagesWithContext(
         userId,
         conversationId,
@@ -263,7 +276,8 @@ export async function handleCreateMessage(c: Context) {
     throw error;
   }
 
-  const [claimToken, attachments, transcript, history] = requestData;
+  const [claimToken, attachments, transcriptsByAudioUploadId, history] =
+    requestData;
   if (!claimToken) {
     const ownedConversation = await findOwnedConversation(
       userId,
@@ -279,38 +293,42 @@ export async function handleCreateMessage(c: Context) {
 
   const releaseClaim = () =>
     releaseConversationClaimSafely(userId, conversationId, claimToken);
+  const rejectMessage = async (response: Response) => {
+    await releaseClaim();
+    return response;
+  };
 
   try {
-    const validationErrors: Response[] = [];
     if (attachments.length !== uploadIds.length)
-      validationErrors.push(c.json({ message: "Attachment not found" }, 404));
-    if (audioUploadId && !transcript)
-      validationErrors.push(c.json({ message: "Transcript not found" }, 404));
-    if (transcript && transcript.length >= MAX_CONTEXT_CHARS)
-      validationErrors.push(
+      return rejectMessage(c.json({ message: "Attachment not found" }, 404));
+    if (transcriptsByAudioUploadId.size !== audioUploadIds.length)
+      return rejectMessage(c.json({ message: "Transcript not found" }, 404));
+
+    const transcripts = audioUploadIds.map(
+      (audioUploadId) =>
+        transcriptsByAudioUploadId.get(audioUploadId) as string,
+    );
+    const newTurnContent = withTranscripts(content, transcripts);
+    if (newTurnContent.length >= MAX_CONTEXT_CHARS)
+      return rejectMessage(
         c.json(
           {
-            message: "Transcript is too long for one message",
+            message: "Transcripts are too long for one message",
             maxChars: MAX_CONTEXT_CHARS,
-            chars: transcript.length,
+            chars: newTurnContent.length,
           },
           413,
         ),
       );
 
-    if (validationErrors.length > 0) {
-      await releaseClaim();
-      return validationErrors[0];
-    }
-
     const turns = await assembleConversationContext(
       userId,
       history,
       buildUserTurn(
-        transcript ? withTranscript(content, transcript) : content,
+        newTurnContent,
         attachments.map((attachment) => attachment.url),
       ),
-      (transcript?.length ?? 0) + content.length,
+      newTurnContent.length,
     );
 
     const events = new SSEEventQueue();
@@ -327,10 +345,10 @@ export async function handleCreateMessage(c: Context) {
           userId,
           conversationId,
           content,
-          audioUploadId,
           attachmentUploadIds: attachments.map(
             (attachment) => attachment.uploadId,
           ),
+          audioUploadIds,
           chosenModelId,
           assistantContent,
           claimToken,

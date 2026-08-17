@@ -31,7 +31,7 @@ export async function handleTranscribeJob(
       uploadId,
       AUDIO_URL_TTL_SECONDS,
     );
-    const model = job.transcriptionModelId ?? DEFAULT_TRANSCRIBE_MODEL;
+    const model = job.transcriptModelId ?? DEFAULT_TRANSCRIBE_MODEL;
     const transcript = await transcribe(model, audioUrl);
     if (!transcript.trim()) {
       throw new Error("Transcription produced no text");

@@ -48,7 +48,7 @@ async function refineTranscriptionModel(modelId: string, ctx: z.RefinementCtx) {
   ctx.addIssue({
     code: "custom",
     message: "Invalid transcription model",
-    path: [FORM_KEYS.transcriptionModelId],
+    path: [FORM_KEYS.transcriptModelId],
   });
 }
 
@@ -66,7 +66,7 @@ export const audioUploadSchema = z
         .optional()
         .default("audio"),
     ),
-    [FORM_KEYS.transcriptionModelId]: transcriptionModelField,
+    [FORM_KEYS.transcriptModelId]: transcriptionModelField,
   })
   .superRefine(async (data, ctx) => {
     if (data[FORM_KEYS.uploadFile].size > MAX_AUDIO_BYTES) {
@@ -76,11 +76,11 @@ export const audioUploadSchema = z
         path: [FORM_KEYS.uploadFile],
       });
     }
-    await refineTranscriptionModel(data[FORM_KEYS.transcriptionModelId], ctx);
+    await refineTranscriptionModel(data[FORM_KEYS.transcriptModelId], ctx);
   })
   .transform((data) => ({
     [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
-    [CTX_KEYS.transcriptionModelId]: data[FORM_KEYS.transcriptionModelId],
+    [CTX_KEYS.transcriptModelId]: data[FORM_KEYS.transcriptModelId],
     [CTX_KEYS.audioSource]: data[FORM_KEYS.audioSource],
   }));
 
@@ -93,7 +93,7 @@ export const audioUploadSchema = z
 export const youtubeUploadSchema = z
   .object({
     [CTX_KEYS.youtubeUrl]: z.string().url(),
-    [FORM_KEYS.transcriptionModelId]: transcriptionModelField,
+    [FORM_KEYS.transcriptModelId]: transcriptionModelField,
   })
   .superRefine(async (data, ctx) => {
     if (!isYoutubeUrl(data[CTX_KEYS.youtubeUrl])) {
@@ -103,9 +103,9 @@ export const youtubeUploadSchema = z
         path: [CTX_KEYS.youtubeUrl],
       });
     }
-    await refineTranscriptionModel(data[FORM_KEYS.transcriptionModelId], ctx);
+    await refineTranscriptionModel(data[FORM_KEYS.transcriptModelId], ctx);
   })
   .transform((data) => ({
     [CTX_KEYS.youtubeUrl]: data[CTX_KEYS.youtubeUrl],
-    [CTX_KEYS.transcriptionModelId]: data[FORM_KEYS.transcriptionModelId],
+    [CTX_KEYS.transcriptModelId]: data[FORM_KEYS.transcriptModelId],
   }));

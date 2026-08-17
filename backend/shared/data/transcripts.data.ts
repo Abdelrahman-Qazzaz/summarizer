@@ -1,5 +1,11 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { TranscriptContents, db, type Executor } from "../db";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import {
+  AudioTranscriptionJobs,
+  ChatMessageTranscriptions,
+  TranscriptContents,
+  db,
+  type Executor,
+} from "../db";
 
 import { completeAudioJob } from "./jobs.data";
 import type { UploadId } from "../types";
@@ -47,24 +53,8 @@ export async function saveCompletedTranscript(
   });
 }
 
-/** The transcript a chat turn wants to carry, or null when there isn't one yet. */
-export async function findTranscript(userId: string, uploadId: string) {
-  const [row] = await db
-    .select({ content: TranscriptContents.content })
-    .from(TranscriptContents)
-    .where(
-      and(
-        eq(TranscriptContents.uploadId, uploadId),
-        eq(TranscriptContents.userId, userId),
-      ),
-    )
-    .limit(1);
-
-  return row ?? null;
-}
-
 /** Bodies for a set of turns at once, keyed by uploadId — the batched context read. */
-export async function findTranscriptContents(
+export async function findTranscripts(
   userId: string,
   uploadIds: readonly string[],
 ): Promise<Map<string, string>> {
@@ -84,6 +74,81 @@ export async function findTranscriptContents(
     );
 
   return new Map(rows.map((row) => [row.uploadId, row.content]));
+}
+
+export type StoredTranscriptAttachment = {
+  uploadId: string;
+  fileName: string;
+  source: string;
+  charCount: number | null;
+};
+
+/** Ordered transcription attachments grouped by chat message. */
+export async function findMessageTranscriptAttachments(
+  userId: string,
+  messageIds: readonly string[],
+): Promise<Map<string, StoredTranscriptAttachment[]>> {
+  const transcriptionsByMessageId = new Map<
+    string,
+    StoredTranscriptAttachment[]
+  >();
+  if (messageIds.length === 0) return transcriptionsByMessageId;
+
+  const rows = await db
+    .select({
+      messageId: ChatMessageTranscriptions.messageId,
+      uploadId: AudioTranscriptionJobs.uploadId,
+      fileName: AudioTranscriptionJobs.fileName,
+      source: AudioTranscriptionJobs.source,
+      charCount: TranscriptContents.charCount,
+    })
+    .from(ChatMessageTranscriptions)
+    .innerJoin(
+      AudioTranscriptionJobs,
+      and(
+        eq(
+          AudioTranscriptionJobs.uploadId,
+          ChatMessageTranscriptions.audioUploadId,
+        ),
+        eq(AudioTranscriptionJobs.userId, userId),
+      ),
+    )
+    .leftJoin(
+      TranscriptContents,
+      and(
+        eq(TranscriptContents.uploadId, AudioTranscriptionJobs.uploadId),
+        eq(TranscriptContents.userId, userId),
+      ),
+    )
+    .where(inArray(ChatMessageTranscriptions.messageId, [...messageIds]))
+    .orderBy(
+      asc(ChatMessageTranscriptions.messageId),
+      asc(ChatMessageTranscriptions.position),
+    );
+
+  for (const { messageId, ...transcription } of rows) {
+    const transcripts = transcriptionsByMessageId.get(messageId) ?? [];
+    transcripts.push(transcription);
+    transcriptionsByMessageId.set(messageId, transcripts);
+  }
+
+  return transcriptionsByMessageId;
+}
+
+export async function attachTranscriptionsToMessage(
+  messageId: string,
+  audioUploadIds: readonly string[],
+  executor: Executor = db,
+) {
+  if (audioUploadIds.length === 0) return;
+
+  await executor.insert(ChatMessageTranscriptions).values(
+    audioUploadIds.map((audioUploadId, position) => ({
+      messageId,
+      audioUploadId,
+      position,
+    })),
+  );
 }
 
 /** A re-run drops the old transcript; the worker upserts the new one on completion. */

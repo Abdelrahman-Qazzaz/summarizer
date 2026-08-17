@@ -1,14 +1,18 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   ChatMessages,
   Conversations,
   ImageUploads,
-  TranscriptContents,
   db,
   type Executor,
 } from "../../../shared/db";
 import { attachImagesToMessage } from "./images.data";
 import { completeConversationTurn } from "./conversations.data";
+import {
+  attachTranscriptionsToMessage,
+  findMessageTranscriptAttachments,
+  type StoredTranscriptAttachment,
+} from "../../../shared/data/transcripts.data";
 
 /**
  * The columns a message is exposed through — every read feeding `toMessageJson`
@@ -20,7 +24,6 @@ const messageColumns = {
   content: ChatMessages.content,
   chosenModelId: ChatMessages.chosenModelId,
   conversationId: ChatMessages.conversationId,
-  audioUploadId: ChatMessages.audioUploadId,
   createdAt: ChatMessages.createdAt,
 };
 
@@ -48,10 +51,7 @@ export type ContextMessage = {
   role: MessageRow["role"];
   content: string;
   createdAt: Date;
-  audioUploadId: string | null;
-  // Length of the turn's transcript, or null when it carried none — enough to
-  // budget the turn without reading the body (fetched later, only if it fits).
-  transcriptCharCount: number | null;
+  transcripts: StoredTranscriptAttachment[];
   images: {
     uploadId: string;
     signedUrl: string | null;
@@ -61,24 +61,19 @@ export type ContextMessage = {
 
 /**
  * The tail of a conversation for model context, newest first so LIMIT keeps the
- * latest turns — in one query. The messages are limited first (a subquery), then
- * left-joined to their image uploads and their transcript's length, so replaying
- * a page costs a single round-trip. Image signatures and the transcript bodies
- * are I/O the caller still resolves — this gathers only what's needed to decide
- * which turns fit. Rows fan out per image and are regrouped by message id.
+ * latest turns. Images and transcript metadata are loaded separately after the
+ * limit, avoiding a cross-product when a message carries several of each.
  */
 export async function findRecentMessagesWithContext(
   userId: string,
   conversationId: string,
   limit: number,
 ): Promise<ContextMessage[]> {
-  // TODO: check if its possible to use Promise.all
-  const recent = db
+  const recentMessages = await db
     .select({
       id: ChatMessages.id,
       role: ChatMessages.role,
       content: ChatMessages.content,
-      audioUploadId: ChatMessages.audioUploadId,
       createdAt: ChatMessages.createdAt,
     })
     .from(ChatMessages)
@@ -88,68 +83,47 @@ export async function findRecentMessagesWithContext(
       desc(ChatMessages.role),
       desc(ChatMessages.id),
     )
-    .limit(limit)
-    .as("recent");
+    .limit(limit);
 
-  const rows = await db
-    .select({
-      id: recent.id,
-      role: recent.role,
-      content: recent.content,
-      createdAt: recent.createdAt,
-      audioUploadId: recent.audioUploadId,
-      transcriptCharCount: TranscriptContents.charCount,
-      imageUploadId: ImageUploads.uploadId,
-      imageSignedUrl: ImageUploads.signedUrl,
-      imageSignedUrlExpiresAt: ImageUploads.signedUrlExpiresAt,
-    })
-    .from(recent)
-    .leftJoin(
-      ImageUploads,
-      and(
-        eq(ImageUploads.messageId, recent.id),
-        eq(ImageUploads.userId, userId),
-      ),
-    )
-    .leftJoin(
-      TranscriptContents,
-      and(
-        eq(TranscriptContents.uploadId, recent.audioUploadId),
-        eq(TranscriptContents.userId, userId),
-      ),
-    )
-    .orderBy(
-      desc(recent.createdAt),
-      desc(recent.role),
-      desc(recent.id),
-      asc(ImageUploads.createdAt),
-    );
+  if (recentMessages.length === 0) return [];
+  const messageIds = recentMessages.map((message) => message.id);
 
-  const byId = new Map<string, ContextMessage>();
-  for (const row of rows) {
-    let message = byId.get(row.id);
-    if (!message) {
-      message = {
-        id: row.id,
-        role: row.role,
-        content: row.content,
-        createdAt: row.createdAt,
-        audioUploadId: row.audioUploadId,
-        transcriptCharCount: row.transcriptCharCount,
-        images: [],
-      };
-      byId.set(row.id, message);
-    }
-    if (row.imageUploadId) {
-      message.images.push({
-        uploadId: row.imageUploadId,
-        signedUrl: row.imageSignedUrl,
-        signedUrlExpiresAt: row.imageSignedUrlExpiresAt,
-      });
-    }
+  const [imageRows, transcriptionsByMessageId] = await Promise.all([
+    db
+      .select({
+        messageId: ImageUploads.messageId,
+        imageUploadId: ImageUploads.uploadId,
+        imageSignedUrl: ImageUploads.signedUrl,
+        imageSignedUrlExpiresAt: ImageUploads.signedUrlExpiresAt,
+      })
+      .from(ImageUploads)
+      .where(
+        and(
+          eq(ImageUploads.userId, userId),
+          inArray(ImageUploads.messageId, messageIds),
+        ),
+      )
+      .orderBy(asc(ImageUploads.createdAt)),
+    findMessageTranscriptAttachments(userId, messageIds),
+  ]);
+
+  const imagesByMessageId = new Map<string, ContextMessage["images"]>();
+  for (const image of imageRows) {
+    if (!image.messageId) continue;
+    const images = imagesByMessageId.get(image.messageId) ?? [];
+    images.push({
+      uploadId: image.imageUploadId,
+      signedUrl: image.imageSignedUrl,
+      signedUrlExpiresAt: image.imageSignedUrlExpiresAt,
+    });
+    imagesByMessageId.set(image.messageId, images);
   }
 
-  return [...byId.values()];
+  return recentMessages.map((message) => ({
+    ...message,
+    transcripts: transcriptionsByMessageId.get(message.id) ?? [],
+    images: imagesByMessageId.get(message.id) ?? [],
+  }));
 }
 
 export async function createMessage(
@@ -159,7 +133,6 @@ export async function createMessage(
     conversationId: string;
     userId: string;
     chosenModelId?: string;
-    audioUploadId?: string;
   },
   executor: Executor = db,
 ) {
@@ -257,8 +230,8 @@ export async function persistChatTurn(turn: {
   userId: string;
   conversationId: string;
   content: string;
-  audioUploadId?: string;
   attachmentUploadIds: readonly string[];
+  audioUploadIds: readonly string[];
   chosenModelId: string;
   assistantContent: string;
   claimToken: string;
@@ -270,7 +243,6 @@ export async function persistChatTurn(turn: {
         content: turn.content,
         conversationId: turn.conversationId,
         userId: turn.userId,
-        audioUploadId: turn.audioUploadId,
       },
       tx,
     );
@@ -278,6 +250,11 @@ export async function persistChatTurn(turn: {
       turn.userId,
       userMessage.id,
       turn.attachmentUploadIds,
+      tx,
+    );
+    await attachTranscriptionsToMessage(
+      userMessage.id,
+      turn.audioUploadIds,
       tx,
     );
     const assistantMessage = await createMessage(

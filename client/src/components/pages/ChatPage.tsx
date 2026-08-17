@@ -216,7 +216,8 @@ export function ChatPage() {
           attachmentUploadIds: attachments.map(
             (attachment) => attachment.uploadId,
           ),
-          ...(transcriptReady && audioUploadId ? { audioUploadId } : {}),
+          audioUploadIds:
+            transcriptReady && audioUploadId ? [audioUploadId] : [],
           lastMessageId: conversationId
             ? (messagesQuery.data?.lastMessageId ?? null)
             : null,

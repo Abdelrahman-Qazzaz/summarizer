@@ -3,8 +3,10 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
@@ -48,7 +50,7 @@ export const AudioTranscriptionJobs = pgTable(
       .references(() => users.id),
 
     // Model used to transcribe the audio. Null falls back to the default
-    transcriptionModelId: text("transcription_model_id"),
+    transcriptModelId: text("transcription_model_id"),
   },
   (table) => [
     // Matches findUserJobsPage: owner filter + the (created_at, upload_id) keyset
@@ -171,16 +173,6 @@ export const ChatMessages = pgTable(
       .notNull()
       .references(() => Conversations.id, { onDelete: "cascade" }),
 
-    // A transcription job whose transcript was sent with this turn. The text
-    // itself stays in the bucket — this is how one prompt carries a body of
-    // arbitrary length without it living in `content`.
-    // `set null` rather than `cascade`: deleting a transcription job must not
-    // take the conversation that discussed it along with it.
-    audioUploadId: text("audio_upload_id").references(
-      () => AudioTranscriptionJobs.uploadId,
-      { onDelete: "set null" },
-    ),
-
     // could be useful for future "shared chat" feature.
     userId: text("user_id")
       .notNull()
@@ -195,6 +187,33 @@ export const ChatMessages = pgTable(
       table.createdAt,
       table.role,
       table.id,
+    ),
+  ],
+);
+
+export const ChatMessageTranscriptions = pgTable(
+  "chat_message_transcriptions",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => ChatMessages.id, { onDelete: "cascade" }),
+    audioUploadId: text("audio_upload_id")
+      .notNull()
+      .references(() => AudioTranscriptionJobs.uploadId, {
+        onDelete: "cascade",
+      }),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.messageId, table.audioUploadId],
+    }),
+    uniqueIndex("chat_message_transcriptions_message_position_idx").on(
+      table.messageId,
+      table.position,
+    ),
+    index("chat_message_transcriptions_audio_upload_idx").on(
+      table.audioUploadId,
     ),
   ],
 );

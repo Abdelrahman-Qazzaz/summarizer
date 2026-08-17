@@ -1,7 +1,7 @@
 const uploadFile = "uploadFile";
 const audioSource = "audioSource";
 const chosenModelId = "chosenModelId";
-const transcriptionModelId = "transcriptionModelId";
+const transcriptModelId = "transcriptModelId";
 const youtubeUrl = "youtubeUrl";
 
 export const CTX_KEYS = {
@@ -19,20 +19,19 @@ export const CTX_KEYS = {
 
   messageContent: "messageContent",
   attachmentUploadIds: "attachmentUploadIds",
-  // Transcription job whose transcript rides along with a chat turn.
-  audioUploadId: "audioUploadId",
+  audioUploadIds: "audioUploadIds",
   lastMessageId: "lastMessageId",
 
   uploadFile,
   chosenModelId,
-  transcriptionModelId,
+  transcriptModelId,
   audioSource,
   youtubeUrl,
 } as const;
 
 export const FORM_KEYS = {
   uploadFile,
-  transcriptionModelId,
+  transcriptModelId,
   audioSource,
 } as const;
 

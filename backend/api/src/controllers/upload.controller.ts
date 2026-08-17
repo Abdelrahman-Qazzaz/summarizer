@@ -10,7 +10,7 @@ import type { UploadId } from "../../../shared/types";
 export async function handleAudioUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const file = c.get(CTX_KEYS.uploadFile);
-  const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
+  const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
 
   const source = c.get(CTX_KEYS.audioSource);
 
@@ -24,7 +24,7 @@ export async function handleAudioUpload(c: Context) {
     fileName: file.name,
     mimeType: file.type || null,
     sizeBytes: file.size,
-    transcriptionModelId,
+    transcriptModelId,
   });
 
   await mq.publish(mq.queues.TRANSCRIBE, { uploadId });
@@ -42,7 +42,7 @@ export async function handleAudioUpload(c: Context) {
 export async function handleYoutubeUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const url = c.get(CTX_KEYS.youtubeUrl);
-  const transcriptionModelId = c.get(CTX_KEYS.transcriptionModelId);
+  const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
 
   const uploadId: UploadId = randomUUID();
 
@@ -58,7 +58,7 @@ export async function handleYoutubeUpload(c: Context) {
     fileName: "YouTube audio",
     mimeType: null,
     sizeBytes: 0,
-    transcriptionModelId,
+    transcriptModelId,
   });
 
   await mq.publish(mq.queues.YT_FETCH, { uploadId, url, userId });

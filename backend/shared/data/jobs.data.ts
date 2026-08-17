@@ -130,7 +130,7 @@ export async function createAudioJob(job: {
   fileName: string;
   mimeType: string | null;
   sizeBytes: number;
-  transcriptionModelId: string;
+  transcriptModelId: string;
   youtubeSourceUrl?: string;
 }) {
   const { youtubeSourceUrl, ...columns } = job;
@@ -155,7 +155,7 @@ export async function deleteAudioJob(userId: string, uploadId: string) {
 export async function requeueAudioJob(
   userId: string,
   uploadId: string,
-  transcriptionModelId: string,
+  transcriptModelId: string,
 ) {
   const [row] = await db
     .update(AudioTranscriptionJobs)
@@ -163,7 +163,7 @@ export async function requeueAudioJob(
       status: "queued",
       error: null,
       claimToken: null,
-      transcriptionModelId,
+      transcriptModelId,
     })
     .where(
       and(
