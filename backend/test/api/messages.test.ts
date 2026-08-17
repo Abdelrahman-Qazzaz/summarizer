@@ -616,6 +616,38 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
+  it("rejects a text-only model when the assembled history contains an image", async () => {
+    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
+      contextMessage({
+        id: messageId,
+        role: "user",
+        content: "What is this?",
+        images: [{ uploadId, signedUrl: null, signedUrlExpiresAt: null }],
+      }),
+    ]);
+    mockResolveImageUploadUrls.mockResolvedValueOnce(
+      new Map([[uploadId, resolvedImage.url]]),
+    );
+    mockValidateModelInput.mockResolvedValueOnce(false);
+
+    const response = await postMessage({
+      messageContent: "Hi there",
+      chosenModelId: modelId,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      message: "Invalid model: must accept image input",
+    });
+    expect(mockChatAI).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+  });
+
   it("drops history beyond the character budget and caps the response", async () => {
     // Two of these fit in the budget; the third pushes it over.
     const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));

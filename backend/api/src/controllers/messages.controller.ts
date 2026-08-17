@@ -14,6 +14,7 @@ import {
   buildUserTurn,
   chatAI,
   generateTitle,
+  validateChatModelInput,
 } from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
@@ -116,6 +117,14 @@ function userMessageIds(
   rows: readonly { id: string; role: MessageRow["role"] }[],
 ) {
   return rows.filter((row) => row.role === "user").map((row) => row.id);
+}
+
+function containsImageInput(turns: readonly ChatTurn[]) {
+  return turns.some(
+    (turn) =>
+      Array.isArray(turn.content) &&
+      turn.content.some((content) => content.type === "image_url"),
+  );
 }
 
 /**
@@ -352,6 +361,13 @@ export async function handleCreateMessage(c: Context) {
       ),
       newTurnContent.length,
     );
+    if (
+      containsImageInput(turns) &&
+      !(await validateChatModelInput(chosenModelId, "image"))
+    )
+      return rejectMessage(
+        c.json({ message: "Invalid model: must accept image input" }, 400),
+      );
 
     const events = new SSEEventQueue();
     const disconnectSignal = c.req.raw.signal;
