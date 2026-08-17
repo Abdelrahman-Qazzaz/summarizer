@@ -25,6 +25,7 @@ import {
   buildUserTurn,
   chatAI,
   DEFAULT_CHAT_MODEL,
+  generateTitle,
   getChatModelData,
   validateChatModelInput,
   validateChatModelOutput,
@@ -214,6 +215,39 @@ describe("chatAI", () => {
         maxCompletionTokens: 100,
         provider: { sort: "latency" },
         sessionId: "conversation-1",
+      }),
+    });
+  });
+});
+
+describe("generateTitle", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses the default model and returns a trimmed title", async () => {
+    mockChatSend.mockResolvedValueOnce({
+      choices: [{ message: { content: "  Quarterly planning  " } }],
+    });
+
+    const title = await generateTitle(
+      "conversation",
+      "How should we organize the next quarter?",
+    );
+
+    expect(title).toBe("Quarterly planning");
+    expect(mockChatSend).toHaveBeenCalledWith({
+      chatRequest: expect.objectContaining({
+        model: DEFAULT_CHAT_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: expect.stringContaining(
+              "How should we organize the next quarter?",
+            ),
+          },
+        ],
+        maxCompletionTokens: 24,
       }),
     });
   });

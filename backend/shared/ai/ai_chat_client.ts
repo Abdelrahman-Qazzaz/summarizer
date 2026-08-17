@@ -195,3 +195,22 @@ export async function validateChatModelInput(
 }
 
 export const DEFAULT_CHAT_MODEL = "openai/gpt-4o-mini";
+const DEFAULT_TITLE_GENERATION_MODEL = "openai/gpt-4o-mini";
+
+export async function generateTitle(
+  kind: "conversation" | "transcript",
+  content: string,
+): Promise<string> {
+  const title = await chatAI(
+    DEFAULT_TITLE_GENERATION_MODEL,
+    [
+      {
+        role: "user",
+        content: `Generate a concise, descriptive title of at most eight words for this ${kind}. Return only the title.\n\n${content}`,
+      },
+    ],
+    { maxOutputTokens: 24 },
+  );
+
+  return title.trim();
+}
