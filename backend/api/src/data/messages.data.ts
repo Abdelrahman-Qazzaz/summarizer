@@ -246,27 +246,29 @@ export async function persistChatTurn(turn: {
       },
       tx,
     );
-    await attachImagesToMessage(
-      turn.userId,
-      userMessage.id,
-      turn.attachmentUploadIds,
-      tx,
-    );
-    await attachTranscriptionsToMessage(
-      userMessage.id,
-      turn.audioUploadIds,
-      tx,
-    );
-    const assistantMessage = await createMessage(
-      {
-        role: "assistant",
-        content: turn.assistantContent,
-        chosenModelId: turn.chosenModelId,
-        conversationId: turn.conversationId,
-        userId: turn.userId,
-      },
-      tx,
-    );
+    const [assistantMessage] = await Promise.all([
+      createMessage(
+        {
+          role: "assistant",
+          content: turn.assistantContent,
+          chosenModelId: turn.chosenModelId,
+          conversationId: turn.conversationId,
+          userId: turn.userId,
+        },
+        tx,
+      ),
+      attachImagesToMessage(
+        turn.userId,
+        userMessage.id,
+        turn.attachmentUploadIds,
+        tx,
+      ),
+      attachTranscriptionsToMessage(
+        userMessage.id,
+        turn.audioUploadIds,
+        tx,
+      ),
+    ]);
     const completed = await completeConversationTurn(
       turn.userId,
       turn.conversationId,
