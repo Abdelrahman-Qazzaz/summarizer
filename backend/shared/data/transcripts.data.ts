@@ -22,14 +22,15 @@ export async function upsertTranscript(
   userId: string,
   uploadId: UploadId,
   content: string,
+  title: string,
   executor: Executor = db,
 ) {
   await executor
     .insert(TranscriptContents)
-    .values({ uploadId, userId, content, charCount: content.length })
+    .values({ uploadId, userId, content, charCount: content.length, title })
     .onConflictDoUpdate({
       target: TranscriptContents.uploadId,
-      set: { content, charCount: content.length },
+      set: { content, charCount: content.length, title },
     });
 }
 
@@ -42,13 +43,14 @@ export async function saveCompletedTranscript(
   userId: string,
   uploadId: UploadId,
   content: string,
+  title: string,
   claimToken: string,
 ) {
   return db.transaction(async (tx) => {
     const ownsJob = await completeAudioJob(uploadId, claimToken, tx);
     if (!ownsJob) return false;
 
-    await upsertTranscript(userId, uploadId, content, tx);
+    await upsertTranscript(userId, uploadId, content, title, tx);
     return true;
   });
 }

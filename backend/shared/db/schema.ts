@@ -79,6 +79,8 @@ export const TranscriptContents = pgTable("transcript_contents", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
+
+  title: text("title").notNull(),
 });
 
 export const ImageUploads = pgTable(

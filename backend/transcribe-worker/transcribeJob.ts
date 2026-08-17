@@ -2,6 +2,7 @@ import {
   DEFAULT_TRANSCRIBE_MODEL,
   transcribe,
 } from "../shared/ai/ai_transcribe_client";
+import { generateTitle } from "../shared/ai/ai_chat_client";
 import { AUDIO_URL_TTL_SECONDS, createSignedUrl } from "../shared/bucket";
 import { claimAudioJob, failAudioJob } from "../shared/data/jobs.data";
 import { saveCompletedTranscript } from "../shared/data/transcripts.data";
@@ -41,10 +42,22 @@ export async function handleTranscribeJob(
       length: transcript.length,
     });
 
+    let title = job.fileName;
+    try {
+      title = await generateTitle("transcript", transcript);
+    } catch (error) {
+      log.warn("Transcript title generation failed", {
+        uploadId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      title = job.fileName;
+    }
+
     const saved = await saveCompletedTranscript(
       job.userId,
       uploadId,
       transcript,
+      title,
       claimToken,
     );
     if (!saved) {

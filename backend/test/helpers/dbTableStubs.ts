@@ -65,6 +65,7 @@ export const tableStubs = {
     uploadId: "upload_id",
     content: "content",
     charCount: "char_count",
+    title: "title",
     userId: "user_id",
   },
 

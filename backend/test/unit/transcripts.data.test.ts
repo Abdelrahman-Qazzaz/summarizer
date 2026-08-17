@@ -6,6 +6,7 @@ const claimToken = "8e517c2f-0e16-4a4b-99eb-b3906818b92e";
 const {
   mockCompleteAudioJob,
   mockInsert,
+  mockValues,
   mockOnConflictDoUpdate,
   mockTransaction,
   transactionExecutor,
@@ -20,6 +21,7 @@ const {
   return {
     mockCompleteAudioJob: vi.fn(),
     mockInsert,
+    mockValues,
     mockOnConflictDoUpdate,
     mockTransaction: vi.fn(),
     transactionExecutor,
@@ -52,6 +54,7 @@ describe("saveCompletedTranscript", () => {
       "user_01",
       uploadId,
       "stale transcript",
+      "Stale transcript",
       claimToken,
     );
 
@@ -71,10 +74,18 @@ describe("saveCompletedTranscript", () => {
       "user_01",
       uploadId,
       "current transcript",
+      "Current transcript",
       claimToken,
     );
 
     expect(saved).toBe(true);
+    expect(mockValues).toHaveBeenCalledWith({
+      uploadId,
+      userId: "user_01",
+      content: "current transcript",
+      charCount: 18,
+      title: "Current transcript",
+    });
     expect(mockOnConflictDoUpdate).toHaveBeenCalled();
   });
 });

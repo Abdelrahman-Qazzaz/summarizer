@@ -10,6 +10,7 @@ const {
   mockUpdate,
   mockCreateSignedUrl,
   mockTranscribeUrl,
+  mockGenerateTitle,
   mockSaveCompletedTranscript,
 } = vi.hoisted(() => ({
   mockSendEvent: vi.fn(),
@@ -19,6 +20,7 @@ const {
   mockUpdate: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
   mockTranscribeUrl: vi.fn(),
+  mockGenerateTitle: vi.fn(),
   mockSaveCompletedTranscript: vi.fn(),
 }));
 
@@ -32,6 +34,10 @@ function deepgramResponse(transcript: string) {
 vi.mock("../../shared/bucket", () => ({
   createSignedUrl: mockCreateSignedUrl,
   AUDIO_URL_TTL_SECONDS: 3600,
+}));
+
+vi.mock("../../shared/ai/ai_chat_client", () => ({
+  generateTitle: mockGenerateTitle,
 }));
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
@@ -91,6 +97,7 @@ describe("handleTranscribeJob", () => {
     vi.clearAllMocks();
     mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
+    mockGenerateTitle.mockResolvedValue("Sample recording");
     mockSaveCompletedTranscript.mockResolvedValue(true);
     mockSendEvent.mockResolvedValue(undefined);
     setupUpdateChain([claimedJob]);
@@ -111,6 +118,7 @@ describe("handleTranscribeJob", () => {
       "user_01",
       uploadId,
       "sample transcript",
+      "Sample recording",
       expect.any(String),
     );
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
@@ -146,6 +154,21 @@ describe("handleTranscribeJob", () => {
       "user_01",
       uploadId,
       "sample transcript",
+      "Sample recording",
+      expect.any(String),
+    );
+  });
+
+  it("uses the filename when title generation fails", async () => {
+    mockGenerateTitle.mockRejectedValueOnce(new Error("title model failed"));
+
+    await handleTranscribeJob({ uploadId });
+
+    expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
+      "user_01",
+      uploadId,
+      "sample transcript",
+      "clip.mp3",
       expect.any(String),
     );
   });

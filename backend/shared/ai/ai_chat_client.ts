@@ -195,6 +195,8 @@ export async function validateChatModelInput(
 }
 
 export const DEFAULT_CHAT_MODEL = "openai/gpt-4o-mini";
+
+const MAX_TITLE_INPUT_CHARS = 12_000;
 const DEFAULT_TITLE_GENERATION_MODEL = "openai/gpt-4o-mini";
 
 export async function generateTitle(
@@ -206,7 +208,7 @@ export async function generateTitle(
     [
       {
         role: "user",
-        content: `Generate a concise, descriptive title of at most eight words for this ${kind}. Return only the title.\n\n${content}`,
+        content: `Generate a concise, descriptive title of at most eight words for this ${kind}. Return only the title.\n\n${content.slice(0, MAX_TITLE_INPUT_CHARS)}`,
       },
     ],
     { maxOutputTokens: 24 },
