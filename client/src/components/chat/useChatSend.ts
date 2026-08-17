@@ -2,7 +2,11 @@ import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createConversation, type Conversation } from "../../api/conversations";
 import { ApiError, errorMessage } from "../../api/http";
-import { streamMessage } from "../../api/messages";
+import {
+  streamMessage,
+  type ChatMessage,
+  type MessagesResponse,
+} from "../../api/messages";
 import { queryKeys } from "../../lib/queryClient";
 import { useToast } from "../../hooks/toast/useToast";
 import type { StagedSource } from "../../sources/types";
@@ -16,6 +20,63 @@ const uploadIdsOf = (sources: StagedSource[], images: boolean) =>
     .filter((source) => (source.kind === "image") === images)
     .map((source) => source.uploadId)
     .filter((uploadId): uploadId is string => uploadId !== null);
+
+/**
+ * The turn as it will be stored, built from what the client already has: the
+ * text it sent, the sources it staged, and the reply it just streamed. Writing
+ * this into the cache is what saves re-downloading the whole conversation
+ * after every message.
+ *
+ * The user message gets a local id because the server only returns the
+ * assistant's. The query is marked stale straight after, so the next fetch
+ * replaces both with the stored rows.
+ */
+function toStoredTurns(
+  input: { content: string; modelId: string; sources: StagedSource[] },
+  conversationId: string,
+  assistantId: string,
+  assistantContent: string,
+): ChatMessage[] {
+  const createdAt = new Date().toISOString();
+  const user: ChatMessage = {
+    id: `local:${crypto.randomUUID()}`,
+    role: "user",
+    content: input.content,
+    chosenModelId: null,
+    conversationId,
+    createdAt,
+    attachments: input.sources
+      .filter((source) => source.kind === "image" && source.uploadId)
+      .map((source) => ({
+        uploadId: source.uploadId as string,
+        fileName: source.name,
+        mimeType: source.file?.type ?? "",
+        size: source.file?.size ?? 0,
+        url: source.previewUrl ?? "",
+      })),
+    transcriptAttachments: input.sources
+      .filter((source) => source.kind !== "image" && source.uploadId)
+      .map((source) => ({
+        uploadId: source.uploadId as string,
+        fileName: source.name,
+        // The generated title is a server-side field; null falls back to the
+        // file name, which is the label the composer chip was already showing.
+        title: null,
+        source: source.kind,
+      })),
+  };
+  const assistant: ChatMessage = {
+    id: assistantId,
+    role: "assistant",
+    content: assistantContent,
+    chosenModelId: input.modelId,
+    conversationId,
+    createdAt,
+    attachments: [],
+    transcriptAttachments: [],
+  };
+  return [user, assistant];
+}
 
 function toPendingTurn(content: string, sources: StagedSource[]): PendingTurn {
   return {
@@ -107,6 +168,7 @@ export function useChatSend() {
         }));
 
         let buffered = "";
+        let storedAssistantId: string | null = null;
         let flushTimer: number | null = null;
         const flush = () => {
           flushTimer = null;
@@ -137,19 +199,44 @@ export function useChatSend() {
                   flushTimer = window.setTimeout(flush, FLUSH_INTERVAL_MS);
                 }
               },
-              onDone: () => undefined,
+              onDone: (lastMessageId) => {
+                storedAssistantId = lastMessageId;
+              },
             },
           );
         } finally {
           if (flushTimer !== null) window.clearTimeout(flushTimer);
         }
 
-        // Swap the pending turn for the stored one only once it's on screen, so
-        // the reply doesn't blink out between the two.
-        await queryClient.invalidateQueries({
+        // Write the finished turn into the cache rather than refetching the
+        // conversation: the whole history came down the wire after every
+        // message, and it only grows. Cancel first so an in-flight fetch can't
+        // land on top of this.
+        await queryClient.cancelQueries({
           queryKey: queryKeys.messages(target),
         });
+        queryClient.setQueryData<MessagesResponse>(
+          queryKeys.messages(target),
+          (current) => ({
+            lastMessageId: storedAssistantId ?? current?.lastMessageId ?? null,
+            messages: [
+              ...(current?.messages ?? []),
+              ...toStoredTurns(
+                input,
+                target,
+                storedAssistantId ?? `local:${crypto.randomUUID()}`,
+                buffered,
+              ),
+            ],
+          }),
+        );
         dropPending(target);
+        // Stale, but not refetched now: the next mount reconciles the local
+        // user-message id against the stored one at no cost here.
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.messages(target),
+          refetchType: "none",
+        });
         void queryClient.invalidateQueries({
           queryKey: queryKeys.conversations,
         });
