@@ -31,11 +31,13 @@ import {
   validateChatModelOutput,
 } from "../../shared/ai/ai_chat_client";
 
+// The projection deliberately drops `description` — it is ~172KB of the
+// catalog and nothing reads it. The OpenRouter fixture below still carries it,
+// so this asserts the field is stripped rather than never supplied.
 const sampleModelData = {
   [DEFAULT_CHAT_MODEL]: {
     id: DEFAULT_CHAT_MODEL,
     name: "GPT-4o Mini",
-    description: "Fast chat model",
     knowledgeCutoff: null,
     topProvider: { contextLength: 128000, isModerated: true },
     pricing: { prompt: "0.00000015", completion: "0.0000006" },

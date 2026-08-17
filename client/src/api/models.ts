@@ -13,7 +13,6 @@ export type ModelPricing = {
 export type ModelInfo = {
   id?: string;
   name?: string;
-  description?: string;
   knowledgeCutoff?: string | null;
   topProvider?: {
     contextLength?: number | null;

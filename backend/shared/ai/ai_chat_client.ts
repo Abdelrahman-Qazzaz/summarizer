@@ -122,7 +122,6 @@ type ChatModelData = {
   [k: string]: {
     id: string;
     name: string;
-    description: string | undefined;
     knowledgeCutoff: string | null | undefined;
     topProvider: TopProviderInfo;
     pricing: PublicPricing;
@@ -150,7 +149,6 @@ export async function getChatModelData(): Promise<ChatModelData> {
       {
         id: model.id,
         name: model.name,
-        description: model.description,
         knowledgeCutoff: model.knowledgeCutoff,
         topProvider: model.topProvider,
         pricing: model.pricing,

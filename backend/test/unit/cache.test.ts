@@ -16,7 +16,7 @@ import { getCache, setCache, resetCacheMemo } from "../../shared/cache/cache";
 
 // "openRouterModels" is one of the fixed cache entries; it maps to Redis key
 // "models:v7" with a 24h Redis TTL.
-const REDIS_KEY = "models:v7";
+const REDIS_KEY = "models:v9";
 
 beforeEach(() => {
   vi.clearAllMocks();

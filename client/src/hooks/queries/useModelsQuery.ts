@@ -8,6 +8,12 @@ import {
 } from "../../api/models";
 import { queryKeys } from "../../lib/queryClient";
 
+/**
+ * The catalog changes about daily and the API now serves it with an ETag,
+ * so a stale check costs a 304 with no body rather than ~40KB.
+ */
+const MODEL_CATALOG_STALE_MS = 60 * 60_000;
+
 export type ChatModelEntry = [id: string, info: ModelInfo];
 export type TranscriptionModelEntry = [id: string, info: TranscriptionModelInfo];
 
@@ -17,7 +23,7 @@ export function useChatModelsQuery(enabled: boolean) {
     queryKey: queryKeys.chatModels,
     queryFn: fetchChatModels,
     enabled,
-    staleTime: 5 * 60_000,
+    staleTime: MODEL_CATALOG_STALE_MS,
   });
 
   const entries = useMemo<ChatModelEntry[]>(
@@ -42,7 +48,7 @@ export function useTranscriptionModelsQuery(enabled: boolean) {
     queryKey: queryKeys.transcriptionModels,
     queryFn: fetchTranscriptionModels,
     enabled,
-    staleTime: 5 * 60_000,
+    staleTime: MODEL_CATALOG_STALE_MS,
   });
 
   const entries = useMemo<TranscriptionModelEntry[]>(
