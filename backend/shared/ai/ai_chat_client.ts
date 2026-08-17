@@ -44,7 +44,7 @@ export function buildUserTurn(
     content: [
       { type: "text", text: content },
       ...imageUrls.map((url) => ({
-        type: "image_url" as const,
+        type: "image_url" as const, // find more rhobust way, or find a way to unify "image_url"
         imageUrl: { url },
       })),
     ],
