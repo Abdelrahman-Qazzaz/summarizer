@@ -78,6 +78,31 @@ describe("GET /models/chat", () => {
     expect(mockgetChatModelData).toHaveBeenCalledTimes(1);
   });
 
+  it("gzips the catalog when the client accepts it", async () => {
+    // The real catalog is ~335KB of JSON sent to every client; the sample here
+    // only has to clear the middleware's 1KB threshold.
+    mockgetChatModelData.mockResolvedValue(
+      Object.fromEntries(
+        Array.from({ length: 40 }, (_, index) => [
+          `vendor/model-${index}`,
+          sampleModelData[DEFAULT_CHAT_MODEL],
+        ]),
+      ),
+    );
+
+    const res = await (
+      await createApp()
+    ).request("http://localhost/models/chat", {
+      headers: {
+        Cookie: await sessionCookieHeader("user_01"),
+        "Accept-Encoding": "gzip",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Encoding")).toBe("gzip");
+  });
+
   it("returns RateLimit draft-6 headers on success", async () => {
     const res = await (
       await createApp()

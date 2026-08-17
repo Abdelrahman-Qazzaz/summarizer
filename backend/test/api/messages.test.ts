@@ -389,6 +389,43 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
   });
 
+  it("never compresses the reply stream, even when the client accepts gzip", async () => {
+    // Response compression is mounted app-wide. Buffering this stream would
+    // turn a token-by-token reply into one chunk at the end: invisible to
+    // every other test, obvious to every user.
+    mockChatAI.mockImplementation(
+      async (
+        _model: string,
+        _turns: unknown,
+        opts: { onDelta: (d: string) => Promise<void> },
+      ) => {
+        await opts.onDelta("Hello ");
+        return "Hello";
+      },
+    );
+
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/conversations/${conversationId}/messages`, {
+      method: "POST",
+      headers: {
+        Cookie: await sessionCookieHeader(userId),
+        "Content-Type": "application/json",
+        "Accept-Encoding": "gzip, deflate",
+      },
+      body: JSON.stringify({
+        messageContent: "Hi there",
+        chosenModelId: modelId,
+        lastMessageId: null,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    expect(res.headers.get("Content-Encoding")).toBeNull();
+    expect(await res.text()).toContain("event: delta");
+  });
+
   it("streams deltas then the persisted conversation head", async () => {
     mockChatAI.mockImplementation(
       async (
