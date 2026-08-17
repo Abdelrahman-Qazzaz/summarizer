@@ -3,10 +3,11 @@ import { Outlet } from "react-router-dom";
 import { useAuth } from "../../hooks/auth/useAuth";
 import { useJobUpdatesBridge } from "../../hooks/socket/useJobUpdatesBridge";
 import { SourcesProvider } from "../../sources/SourcesProvider";
+import { SourceDialog } from "../sources/SourceDialog";
 import { SourcesDrawer } from "../sources/SourcesDrawer";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
-import { ShellContext } from "./shellContext";
+import { ShellContext, type OpenSource } from "./shellContext";
 
 /**
  * The whole app is one screen: chats on the left, the conversation in the
@@ -17,14 +18,22 @@ export function AppShell() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [openSource, setOpenSource] = useState<OpenSource | null>(null);
 
   // One subscription for the whole app: transcript progress refreshes the job
   // caches the composer chips and the drawer both read.
   useJobUpdatesBridge(!!user);
 
   const shell = useMemo(
-    () => ({ sidebarOpen, setSidebarOpen, sourcesOpen, setSourcesOpen }),
-    [sidebarOpen, sourcesOpen],
+    () => ({
+      sidebarOpen,
+      setSidebarOpen,
+      sourcesOpen,
+      setSourcesOpen,
+      openSource,
+      setOpenSource,
+    }),
+    [sidebarOpen, sourcesOpen, openSource],
   );
 
   return (
@@ -37,6 +46,7 @@ export function AppShell() {
             <Outlet />
           </div>
           {sourcesOpen && <SourcesDrawer />}
+          <SourceDialog />
         </div>
       </SourcesProvider>
     </ShellContext.Provider>

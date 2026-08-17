@@ -1,4 +1,5 @@
 import type { MessageTranscript } from "../../api/messages";
+import { useShell } from "../app/shellContext";
 import { TurnSources } from "./TurnSources";
 import type { TurnImage } from "./types";
 
@@ -11,6 +12,8 @@ export function UserTurn({
   images: TurnImage[];
   transcripts: MessageTranscript[];
 }) {
+  const { setOpenSource } = useShell();
+
   return (
     <div className="flex flex-col items-end">
       <TurnSources transcripts={transcripts} />
@@ -21,19 +24,25 @@ export function UserTurn({
             className={`mb-3 grid gap-2 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}
           >
             {images.map((image) => (
-              <a
+              <button
                 key={image.uploadId}
-                href={image.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="block overflow-hidden rounded-lg border border-line"
+                type="button"
+                onClick={() =>
+                  setOpenSource({
+                    kind: "image",
+                    url: image.url,
+                    fileName: image.fileName,
+                  })
+                }
+                aria-label={`View ${image.fileName}`}
+                className="block overflow-hidden rounded-lg border border-line transition-colors hover:border-signal"
               >
                 <img
                   src={image.url}
                   alt={image.fileName}
                   className="h-28 w-full object-cover"
                 />
-              </a>
+              </button>
             ))}
           </div>
         )}

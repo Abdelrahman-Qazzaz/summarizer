@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useMatch } from "react-router-dom";
 import type { JobStatus } from "../../api/jobs";
 import { useAuth } from "../../hooks/auth/useAuth";
 import {
@@ -14,7 +13,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Icon } from "../ui/Icon";
 import { RerunDialog } from "./RerunDialog";
 import { SourceRow } from "./SourceRow";
-import { TranscriptView } from "./TranscriptView";
+import { useDraftKey } from "./useDraftKey";
 
 const FILTERS: { label: string; status: JobStatus | null }[] = [
   { label: "All", status: null },
@@ -29,17 +28,15 @@ const SEARCH_DEBOUNCE_MS = 250;
  * onto the message being written — no second upload, no second transcription.
  */
 export function SourcesDrawer() {
-  const { setSourcesOpen } = useShell();
+  const { setSourcesOpen, openSource, setOpenSource } = useShell();
   const { user } = useAuth();
   const toast = useToast();
-  const chatMatch = useMatch("/chat/:conversationId");
-  const draftKey = chatMatch?.params.conversationId ?? "new";
+  const draftKey = useDraftKey();
   const { attachExisting, transcriptModelId } = useSources(draftKey);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState<JobStatus | null>(null);
-  const [openUploadId, setOpenUploadId] = useState<string | null>(null);
   const [rerunTarget, setRerunTarget] = useState<{
     uploadId: string;
     fileName: string;
@@ -66,7 +63,7 @@ export function SourcesDrawer() {
 
   // Escape closes the drawer, but only once whatever is stacked on top of it
   // has taken its own turn.
-  const dialogOpen = !!rerunTarget || !!deleteTarget;
+  const dialogOpen = !!rerunTarget || !!deleteTarget || !!openSource;
   useEffect(() => {
     if (dialogOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -98,110 +95,104 @@ export function SourcesDrawer() {
         aria-label="Sources"
         className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-line bg-canvas shadow-xl"
       >
-        {openUploadId ? (
-          <TranscriptView
-            uploadId={openUploadId}
-            onBack={() => setOpenUploadId(null)}
-            onAttach={(fileName) => attach(openUploadId, fileName)}
-          />
-        ) : (
-          <>
-            <div className="flex h-14 shrink-0 items-center justify-between px-4">
-              <h2 className="eyebrow text-ink">Sources</h2>
+        <div className="flex h-14 shrink-0 items-center justify-between px-4">
+          <h2 className="eyebrow text-ink">Sources</h2>
+          <button
+            type="button"
+            onClick={() => setSourcesOpen(false)}
+            aria-label="Close sources"
+            className="rounded-lg p-2 text-muted transition-colors hover:bg-sunk hover:text-ink"
+          >
+            <Icon name="close" className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="shrink-0 space-y-3 px-4 pb-3">
+          <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2">
+            <Icon name="search" className="h-4 w-4 shrink-0 text-faint" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by file name"
+              aria-label="Search sources"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-faint"
+            />
+          </div>
+
+          <div className="flex gap-1.5">
+            {FILTERS.map((filter) => (
               <button
+                key={filter.label}
                 type="button"
-                onClick={() => setSourcesOpen(false)}
-                aria-label="Close sources"
-                className="rounded-lg p-2 text-muted transition-colors hover:bg-sunk hover:text-ink"
+                onClick={() => setStatus(filter.status)}
+                aria-pressed={status === filter.status}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  status === filter.status
+                    ? "bg-signal-tint text-signal-strong"
+                    : "text-muted hover:bg-sunk hover:text-ink"
+                }`}
               >
-                <Icon name="close" className="h-5 w-5" />
+                {filter.label}
               </button>
-            </div>
+            ))}
+          </div>
+        </div>
 
-            <div className="shrink-0 space-y-3 px-4 pb-3">
-              <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2">
-                <Icon name="search" className="h-4 w-4 shrink-0 text-faint" />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search by file name"
-                  aria-label="Search sources"
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-faint"
-                />
-              </div>
-
-              <div className="flex gap-1.5">
-                {FILTERS.map((filter) => (
-                  <button
-                    key={filter.label}
-                    type="button"
-                    onClick={() => setStatus(filter.status)}
-                    aria-pressed={status === filter.status}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      status === filter.status
-                        ? "bg-signal-tint text-signal-strong"
-                        : "text-muted hover:bg-sunk hover:text-ink"
-                    }`}
-                  >
-                    {filter.label}
-                  </button>
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-line">
+          {jobsQuery.isLoading ? (
+            <p className="p-4 text-sm text-faint">Loading sources…</p>
+          ) : jobsQuery.error ? (
+            <p className="p-4 text-sm text-live">Sources couldn't be loaded.</p>
+          ) : jobs.length === 0 ? (
+            <p className="p-4 text-sm text-faint">
+              {debouncedSearch || status
+                ? "Nothing matches that."
+                : "Drop a recording into a message and it shows up here."}
+            </p>
+          ) : (
+            <>
+              <ul>
+                {jobs.map((job) => (
+                  <SourceRow
+                    key={job.uploadId}
+                    job={job}
+                    onOpen={() =>
+                      setOpenSource({
+                        kind: "transcript",
+                        uploadId: job.uploadId,
+                        fileName: job.fileName,
+                      })
+                    }
+                    onAttach={() => attach(job.uploadId, job.fileName)}
+                    onRerun={() =>
+                      setRerunTarget({
+                        uploadId: job.uploadId,
+                        fileName: job.fileName,
+                      })
+                    }
+                    onDelete={() =>
+                      setDeleteTarget({
+                        uploadId: job.uploadId,
+                        fileName: job.fileName,
+                      })
+                    }
+                  />
                 ))}
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto border-t border-line">
-              {jobsQuery.isLoading ? (
-                <p className="p-4 text-sm text-faint">Loading sources…</p>
-              ) : jobsQuery.error ? (
-                <p className="p-4 text-sm text-live">
-                  Sources couldn't be loaded.
-                </p>
-              ) : jobs.length === 0 ? (
-                <p className="p-4 text-sm text-faint">
-                  {debouncedSearch || status
-                    ? "Nothing matches that."
-                    : "Drop a recording into a message and it shows up here."}
-                </p>
-              ) : (
-                <>
-                  <ul>
-                    {jobs.map((job) => (
-                      <SourceRow
-                        key={job.uploadId}
-                        job={job}
-                        onOpen={() => setOpenUploadId(job.uploadId)}
-                        onAttach={() => attach(job.uploadId, job.fileName)}
-                        onRerun={() =>
-                          setRerunTarget({
-                            uploadId: job.uploadId,
-                            fileName: job.fileName,
-                          })
-                        }
-                        onDelete={() =>
-                          setDeleteTarget({
-                            uploadId: job.uploadId,
-                            fileName: job.fileName,
-                          })
-                        }
-                      />
-                    ))}
-                  </ul>
-                  {jobsQuery.hasNextPage && (
-                    <button
-                      type="button"
-                      onClick={() => void jobsQuery.fetchNextPage()}
-                      disabled={jobsQuery.isFetchingNextPage}
-                      className="w-full px-4 py-3 text-sm text-muted transition-colors hover:text-ink disabled:opacity-50"
-                    >
-                      {jobsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-                    </button>
-                  )}
-                </>
+              </ul>
+              {jobsQuery.hasNextPage && (
+                <button
+                  type="button"
+                  onClick={() => void jobsQuery.fetchNextPage()}
+                  disabled={jobsQuery.isFetchingNextPage}
+                  className="w-full px-4 py-3 text-sm text-muted transition-colors hover:text-ink disabled:opacity-50"
+                >
+                  {jobsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+                </button>
               )}
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </aside>
 
       {rerunTarget && (
@@ -226,7 +217,12 @@ export function SourcesDrawer() {
           confirmLabel="Delete source"
           onConfirm={() => {
             deleteJob.mutate({ uploadId: deleteTarget.uploadId });
-            if (openUploadId === deleteTarget.uploadId) setOpenUploadId(null);
+            if (
+              openSource?.kind === "transcript" &&
+              openSource.uploadId === deleteTarget.uploadId
+            ) {
+              setOpenSource(null);
+            }
             setDeleteTarget(null);
           }}
           onCancel={() => setDeleteTarget(null)}
