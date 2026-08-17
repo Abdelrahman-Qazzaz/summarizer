@@ -1,34 +1,64 @@
-### Still present
+  ## Production blockers
 
-- High — Chat retries can duplicate AI calls and messages.
-  A disconnected request continues running. Retrying starts another model run because there is no request/idempotency key.
-  backend/api/src/controllers/messages.controller.ts:222-225,304-360
+  1. Critical — jobs can be permanently lost
+      - Uploads perform bucket → database → RabbitMQ as separate operations. A failure between them leaves
+        orphaned files, stranded rows, or duplicate paid jobs when clients retry: backend/api/src/
+        controllers/upload.controller.ts:17.
 
-- High — Rerun can become permanently queued.
-  It changes the DB to queued, deletes the transcript, then publishes. If deletion or publishing fails, retrying returns 409 because the job is already queued—so the endpoint cannot
-  recover it.
-  backend/api/src/controllers/jobs.controller.ts:110-120
+      - Rerun changes the job to queued, deletes its transcript, then publishes. If publishing fails, retry
+        returns 409, leaving the job stuck: backend/api/src/controllers/jobs.controller.ts:111.
 
-- High — Upload retries create duplicate jobs.
-  Audio, YouTube, and image requests generate a fresh UUID each time. A lost response followed by retry creates another upload/job and potentially another paid transcription.
-  backend/api/src/controllers/upload.controller.ts:17-30,47-64
+      - Node consumers discard every failed delivery with nack(..., false, false): backend/shared/message-
+        queue/messageQueue.consumer.ts:27.
 
-- Medium — Stale YouTube failure events can overwrite newer state.
-  failAudioJobById() unconditionally sets failed; it has no status or claim guard.
-  backend/shared/data/jobs.data.ts:180-188
+      - Retry/DLX exchanges exist, but queues are not configured to use them: backend/shared/message-queue/
+        messageQueue.topology.ts:18.
 
-- Medium — Handler exceptions discard messages.
-  Errors use nack(..., false, false), while the declared retry/DLX exchanges are not actually wired. A transient DB failure can leave a queued job with no message.
-  backend/shared/message-queue/messageQueue.consumer.ts:22-30
-  backend/shared/message-queue/messageQueue.topology.ts:18-24
+      - The Python fetcher publishes non-persistent, unconfirmed messages and then ACKs the input. A broker/
+        network failure can lose the downstream transcription event: youtube-fetcher/app/
+        message_queue.py:44.
 
-- Medium — Deletes can orphan bucket objects.
-  Message/conversation DB rows are deleted before bucket cleanup. If cleanup fails, retry returns 404 because the IDs needed for cleanup are gone.
-  backend/api/src/controllers/messages.controller.ts:365-381
-  backend/api/src/controllers/conversations.controller.ts:65-82
+     This needs transactional outbox/idempotency, real retry policies, DLQs, and publisher confirms.
 
-- Low — Conversation creation is retry-duplicable.
-  Each repeated POST inserts another conversation.
+  2. High — upload limits are enforced too late
 
-The publisher-confirm commit improves confirmation isolation, but it does not make DB + bucket + RabbitMQ operations atomic. I inspected only commit
-a8274bddffd84873ba925dceec571c201b1fc22f; the active worktree was untouched.
+     The API loads the entire multipart request into memory with formData() before checking whether it
+     exceeds 100 MB: backend/api/src/middleware/validate.middleware.ts:79.
+
+     An authenticated client can send concurrent oversized bodies and exhaust API memory. There is no
+     checked-in ingress/body-size configuration providing an earlier limit.
+
+  3. High — a crash can permanently lock a conversation
+
+     A database claim token is written without a timestamp, lease, or expiry: backend/api/src/data/
+     conversations.data.ts:58.
+
+     If the API crashes after claiming but before persisting or releasing, that conversation can return 409
+     forever. The Node processes also have no graceful SIGTERM shutdown/drain handling: backend/api/
+     index.ts:14.
+
+  4. High — production dependency audit fails
+
+     npm audit --omit=dev reported:
+      - 6 vulnerable production packages
+      - 5 high severity
+      - 1 moderate severity
+
+     Applicable findings include Socket.IO/Engine.IO/WebSocket memory or connection exhaustion
+     vulnerabilities. The pinned runtime versions are visible in backend/package.json:18. Some reported Hono
+     advisories concern unused features, but the audit still cannot pass as shipped.
+
+  5. High — no production delivery path exists
+      - No start or build script; only development commands using tsx watch: backend/package.json:6.
+      - No service Dockerfiles, deployment manifests, or runtime version guarantees.
+      - No checked-in database migrations; the only DB command is drizzle-kit push.
+      - No CI configuration enforcing tests, lint, audits, or migrations.
+      - The Python service has no packaging/runtime configuration beyond requirements files.
+
+  6. Medium — API cannot safely scale horizontally
+
+     Socket rooms are process-local, while RabbitMQ notifications are consumed by individual API processes:
+     backend/api/src/sockets/socketManager.ts:10, backend/api/index.ts:19.
+
+     With multiple API replicas, the process consuming an update may not own the user’s socket. The
+     architecture therefore requires a single API instance, creating a single point of failure.
