@@ -1,21 +1,33 @@
-import type { Hono } from "hono";
 import { etag } from "hono/etag";
 import { createMiddleware } from "hono/factory";
-import type { BlankEnv, BlankSchema } from "hono/types";
 
-const addCacheHeaders = createMiddleware(async (context, next) => {
-  await next(); // Wait for downstream middleware and the handler to create the response.
+type HttpCachePolicy =
+  | {
+      maxAgeSeconds: number;
+      staleWhileRevalidateSeconds?: number;
+    }
+  | { revalidate: true };
 
-  const cacheable = context.res.status === 200 || context.res.status === 304;
+function formatCacheControl(policy: HttpCachePolicy) {
+  if ("revalidate" in policy) return "private, no-cache";
 
-  if (cacheable)
-    context.res.headers.set(
-      "Cache-Control",
-      "private, max-age=300, stale-while-revalidate=86400",
+  const directives = ["private", `max-age=${policy.maxAgeSeconds}`];
+  if (policy.staleWhileRevalidateSeconds !== undefined) {
+    directives.push(
+      `stale-while-revalidate=${policy.staleWhileRevalidateSeconds}`,
     );
-});
+  }
+  return directives.join(", ");
+}
 
-export function useHttpCache(router: Hono<BlankEnv, BlankSchema, "/">) {
-  router.use("*", addCacheHeaders);
-  router.use("*", etag()); // Finalize the ETag and 200/304 status before adding cache headers.
+export function httpCache(policy: HttpCachePolicy) {
+  const applyEtag = etag();
+  const cacheControl = formatCacheControl(policy);
+
+  return createMiddleware(async (context, next) => {
+    await applyEtag(context, next); // Let ETag finalize 200/304 before adding Cache-Control.
+
+    const cacheable = context.res.status === 200 || context.res.status === 304;
+    if (cacheable) context.res.headers.set("Cache-Control", cacheControl);
+  });
 }
