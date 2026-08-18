@@ -212,6 +212,30 @@ describe("GET /conversations/:conversationId/messages", () => {
     });
   });
 
+  it("revalidates unchanged message history with an ETag", async () => {
+    mockFindConversationMessages.mockResolvedValue([userRow, assistantRow]);
+    const app = await createApp();
+    const cookie = await sessionCookieHeader(userId);
+    const url = `http://localhost/conversations/${conversationId}/messages`;
+
+    const first = await app.request(url, {
+      headers: { Cookie: cookie },
+    });
+    const etag = first.headers.get("ETag");
+
+    expect(first.status).toBe(200);
+    expect(etag).toBeTruthy();
+    expect(first.headers.get("Cache-Control")).toBe("private, no-cache");
+
+    const second = await app.request(url, {
+      headers: { Cookie: cookie, "If-None-Match": etag as string },
+    });
+
+    expect(second.status).toBe(304);
+    expect(await second.text()).toBe("");
+    expect(second.headers.get("Cache-Control")).toBe("private, no-cache");
+  });
+
   it("returns each user turn's attachments", async () => {
     mockFindConversationMessages.mockResolvedValueOnce([userRow, assistantRow]);
     mockResolveMessageImages.mockResolvedValueOnce(

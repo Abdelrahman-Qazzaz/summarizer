@@ -10,12 +10,14 @@ import {
   messageReqParamSchema,
   messageCreateBodySchema,
 } from "../schema/messages.schema";
+import { httpCache } from "../middleware/cache.middleware";
 
 export const messagesRouter = new Hono();
 
 messagesRouter.get(
   "/",
   validateReqParams(conversationReqParamSchema),
+  httpCache({ revalidate: true }),
   messagesController.handleListMessages,
 );
 
