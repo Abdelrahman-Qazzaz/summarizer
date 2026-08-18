@@ -1,0 +1,9 @@
+# The repo-root .dockerignore does not apply here: the build context is this
+# directory, so Docker looks for this file. Without it `COPY . .` ships
+# node_modules — 300MB+ of context for a build that reinstalls it anyway.
+node_modules
+dist
+.env
+.env.*
+!.env.example
+*.log
