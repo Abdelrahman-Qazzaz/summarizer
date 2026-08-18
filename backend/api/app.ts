@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
+import { csrf } from "hono/csrf";
 import { getApiEnv } from "../shared/env";
 import { jobsRouter } from "./src/routes/jobs.router";
 import { uploadRouter } from "./src/routes/upload.router";
@@ -16,6 +17,12 @@ export async function createApp() {
   const env = getApiEnv();
   const app = new Hono();
   app.use("*", cors({ origin: env.CLIENT_URL, credentials: true }));
+  // The session cookie is SameSite=None in production (see cookies/session.ts),
+  // so the browser attaches it to cross-site requests too. CORS alone does not
+  // cover that: multipart/form-data is a safelisted content type, so POSTs to
+  // /upload are sent without a preflight and any site could forge one. This
+  // rejects the form-style content types unless the Origin is the client.
+  app.use("*", csrf({ origin: env.CLIENT_URL }));
   // The model catalog is ~335KB of JSON and every client downloads it; gzip
   // takes that to ~40KB. Streamed chat replies are left alone: hono skips
   // text/event-stream by content type, and streamSSE sets Transfer-Encoding,

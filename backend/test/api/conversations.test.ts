@@ -59,7 +59,7 @@ import { desc } from "drizzle-orm";
 // Resolves to the mocked module above, so these are the stub column names.
 import { Conversations, ImageUploads } from "../../shared/db";
 import { createApp } from "../../api/app";
-import { sessionCookieHeader } from "../helpers/session";
+import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
 const userId = "user_01OWNER";
@@ -108,7 +108,7 @@ describe("GET /conversations", () => {
     const res = await (
       await createApp()
     ).request("http://localhost/conversations", {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ conversations: [row] });
@@ -127,7 +127,7 @@ describe("GET /conversations/:conversationId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(row);
@@ -137,7 +137,7 @@ describe("GET /conversations/:conversationId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(404);
   });
@@ -145,7 +145,7 @@ describe("GET /conversations/:conversationId", () => {
     const res = await (
       await createApp()
     ).request("http://localhost/conversations/not-a-uuid", {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(400);
     expect(mockSelect).not.toHaveBeenCalled();
@@ -177,7 +177,7 @@ describe("POST /conversations", () => {
       await createApp()
     ).request("http://localhost/conversations", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ ...row, title: "New conversation" });
@@ -256,7 +256,7 @@ describe("DELETE /conversations/:conversationId", () => {
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}`, {
       method: "DELETE",
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ message: "Conversation deleted" });
@@ -268,7 +268,7 @@ describe("DELETE /conversations/:conversationId", () => {
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}`, {
       method: "DELETE",
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(404);
   });
@@ -283,7 +283,7 @@ describe("DELETE /conversations/:conversationId", () => {
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}`, {
       method: "DELETE",
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
 
     expect(res.status).toBe(409);

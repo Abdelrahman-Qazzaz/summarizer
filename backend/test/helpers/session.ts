@@ -16,3 +16,19 @@ export async function sessionCookieHeader(
   );
   return `${COOKIE_KEYS.session}=${token}`;
 }
+
+/**
+ * Browsers always send Origin on unsafe methods, and csrf() in app.ts rejects
+ * form-style requests that arrive without one. Tests have to model that, or
+ * every POST and DELETE comes back 403 for reasons unrelated to what they
+ * are asserting.
+ */
+export async function authedHeaders(
+  userId: string,
+  sessionId?: string,
+): Promise<Record<string, string>> {
+  return {
+    Origin: process.env.CLIENT_URL!,
+    Cookie: await sessionCookieHeader(userId, sessionId),
+  };
+}

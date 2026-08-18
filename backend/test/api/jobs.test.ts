@@ -70,7 +70,7 @@ vi.mock("../../shared/bucket", () => ({
 }));
 
 import { createApp } from "../../api/app";
-import { sessionCookieHeader } from "../helpers/session";
+import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 
 const uploadId = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -98,7 +98,7 @@ describe("GET /jobs/summarize/:uploadId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/summarize/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(404);
   });
@@ -115,7 +115,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -137,7 +137,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -188,7 +188,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { transcript: null }).transcript).toBeNull();
@@ -201,7 +201,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -219,7 +219,7 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01OTHER") },
+      headers: await authedHeaders("user_01OTHER"),
     });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Job not found" });
@@ -240,7 +240,7 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
       method: "DELETE",
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBeNull();
@@ -258,7 +258,7 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       await createApp()
     ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
       method: "DELETE",
-      headers: { Cookie: await sessionCookieHeader("user_01INTRUDER") },
+      headers: await authedHeaders("user_01INTRUDER"),
     });
     expect(res.status).toBe(200);
     expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith("user_01INTRUDER", [
@@ -322,7 +322,7 @@ describe("GET /jobs", () => {
     const res = await (
       await createApp()
     ).request("http://localhost/jobs", {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -342,7 +342,7 @@ describe("GET /jobs", () => {
     const res = await (
       await createApp()
     ).request("http://localhost/jobs", {
-      headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
+      headers: await authedHeaders("user_01OWNER"),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {

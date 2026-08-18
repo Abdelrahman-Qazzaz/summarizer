@@ -48,7 +48,7 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
 }));
 
 import { createApp } from "../../api/app";
-import { sessionCookieHeader } from "../helpers/session";
+import { authedHeaders } from "../helpers/session";
 import { loadSampleFile, SAMPLE_AUDIO_NAME } from "../helpers/sampleFiles";
 
 beforeEach(() => {
@@ -72,7 +72,7 @@ describe("POST /upload/audio with sample file", () => {
       await createApp()
     ).request("http://localhost/upload/audio", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
+      headers: await authedHeaders("user_01"),
       body: formData,
     });
 

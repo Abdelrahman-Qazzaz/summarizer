@@ -70,7 +70,7 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
 }));
 
 import { createApp } from "../../api/app";
-import { sessionCookieHeader } from "../helpers/session";
+import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 
 function audioUploadBody(
   sizeBytes: number,
@@ -95,7 +95,7 @@ describe("POST /upload/text", () => {
       await createApp()
     ).request("http://localhost/upload/text", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
+      headers: await authedHeaders("user_01"),
       body: new FormData(),
     });
     expect(res.status).toBe(404);
@@ -118,7 +118,7 @@ describe("POST /upload/audio", () => {
       await createApp()
     ).request("http://localhost/upload/audio", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
+      headers: await authedHeaders("user_01"),
       body: new FormData(),
     });
     expect(res.status).toBe(400);
@@ -131,7 +131,7 @@ describe("POST /upload/audio", () => {
       await createApp()
     ).request("http://localhost/upload/audio", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
+      headers: await authedHeaders("user_01"),
       body: audioUploadBody(MAX_AUDIO_BYTES + 1),
     });
     expect(res.status).toBe(413);
@@ -146,7 +146,7 @@ describe("POST /upload/audio", () => {
       await createApp()
     ).request("http://localhost/upload/audio", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
+      headers: await authedHeaders("user_01"),
       body: audioUploadBody(100, { source: "invalid" }),
     });
     expect(res.status).toBe(400);
@@ -160,7 +160,7 @@ describe("POST /upload/audio", () => {
       await createApp()
     ).request("http://localhost/upload/audio", {
       method: "POST",
-      headers: { Cookie: await sessionCookieHeader("user_01") },
+      headers: await authedHeaders("user_01"),
       body: audioUploadBody(100, { source: "video", fileName: "clip.mp3" }),
     });
     expect(res.status).toBe(200);
@@ -179,6 +179,25 @@ describe("POST /upload/audio", () => {
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe", {
       uploadId: body.uploadId,
     });
+  });
+
+  it("rejects a multipart upload from a foreign origin", async () => {
+    // multipart/form-data is CORS-safelisted, so this request is sent without
+    // a preflight and carries the session cookie (SameSite=None in
+    // production). csrf() is the only thing standing between a hostile page
+    // and an upload made as the signed-in user.
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/audio", {
+      method: "POST",
+      headers: {
+        ...(await authedHeaders("user_01")),
+        Origin: "https://evil.example",
+      },
+      body: audioUploadBody(100, { source: "audio", fileName: "clip.mp3" }),
+    });
+    expect(res.status).toBe(403);
+    expect(mockUploadAudioToBucket).not.toHaveBeenCalled();
   });
 });
 

@@ -11,11 +11,11 @@ const {
   mockRevokeAuthSession,
   mockInsert,
 } = vi.hoisted(() => ({
-    mockGetRiderctUrl: vi.fn(),
-    mockGetAuthSessionFromCode: vi.fn(),
-    mockRevokeAuthSession: vi.fn(),
-    mockInsert: vi.fn(),
-  }));
+  mockGetRiderctUrl: vi.fn(),
+  mockGetAuthSessionFromCode: vi.fn(),
+  mockRevokeAuthSession: vi.fn(),
+  mockInsert: vi.fn(),
+}));
 
 vi.mock("../../api/src/auth/auth", async (importOriginal) => {
   const actual =
@@ -34,7 +34,7 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 import { createApp } from "../../api/app";
-import { sessionCookieHeader } from "../helpers/session";
+import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 import { WORKOS_REDIRECT_URI } from "../../api/src/auth/auth";
 import { COOKIE_KEYS } from "../../shared/keys";
 
@@ -57,7 +57,7 @@ describe("GET /auth/me", () => {
     const res = await (
       await createApp()
     ).request("http://localhost/auth/me", {
-      headers: { Cookie: await sessionCookieHeader("user_01TEST") },
+      headers: await authedHeaders("user_01TEST"),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ userId: "user_01TEST" });
@@ -141,9 +141,7 @@ describe("POST /auth/logout", () => {
       await createApp()
     ).request("http://localhost/auth/logout", {
       method: "POST",
-      headers: {
-        Cookie: await sessionCookieHeader("user_01TEST", sessionId),
-      },
+      headers: await authedHeaders("user_01TEST", sessionId),
     });
     expect(res.status).toBe(200);
     expect(mockRevokeAuthSession).toHaveBeenCalledWith(sessionId);
@@ -155,7 +153,10 @@ describe("POST /auth/logout", () => {
   it("remains successful without a session cookie", async () => {
     const res = await (
       await createApp()
-    ).request("http://localhost/auth/logout", { method: "POST" });
+    ).request("http://localhost/auth/logout", {
+      method: "POST",
+      headers: { Origin: process.env.CLIENT_URL! },
+    });
 
     expect(res.status).toBe(200);
     expect(mockRevokeAuthSession).not.toHaveBeenCalled();
@@ -165,15 +166,15 @@ describe("POST /auth/logout", () => {
   });
 
   it("still clears the local session when WorkOS revocation fails", async () => {
-    mockRevokeAuthSession.mockRejectedValueOnce(new Error("WorkOS unavailable"));
+    mockRevokeAuthSession.mockRejectedValueOnce(
+      new Error("WorkOS unavailable"),
+    );
 
     const res = await (
       await createApp()
     ).request("http://localhost/auth/logout", {
       method: "POST",
-      headers: {
-        Cookie: await sessionCookieHeader("user_01TEST", sessionId),
-      },
+      headers: await authedHeaders("user_01TEST", sessionId),
     });
 
     expect(res.status).toBe(200);

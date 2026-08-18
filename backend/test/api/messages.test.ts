@@ -110,7 +110,7 @@ import {
   MAX_CONTEXT_CHARS,
   MAX_RESPONSE_TOKENS,
 } from "../../api/src/controllers/messages.controller";
-import { sessionCookieHeader } from "../helpers/session";
+import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 import type { ContextMessage } from "../../api/src/data/messages.data";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
@@ -200,7 +200,7 @@ describe("GET /conversations/:conversationId/messages", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}/messages`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -261,7 +261,7 @@ describe("GET /conversations/:conversationId/messages", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}/messages`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
 
     expect(res.status).toBe(200);
@@ -290,7 +290,7 @@ describe("GET /conversations/:conversationId/messages", () => {
     const res = await (
       await createApp()
     ).request(`http://localhost/conversations/${conversationId}/messages`, {
-      headers: { Cookie: await sessionCookieHeader(userId) },
+      headers: await authedHeaders(userId),
     });
     expect(res.status).toBe(404);
   });
@@ -618,9 +618,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         ],
       }),
     ]);
-    mockFindTranscripts.mockResolvedValueOnce(
-      new Map([["audio-fits", "T"]]),
-    );
+    mockFindTranscripts.mockResolvedValueOnce(new Map([["audio-fits", "T"]]));
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
@@ -631,9 +629,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     await res.text();
 
     // The dropped turn's body is never fetched — only the admitted one's.
-    expect(mockFindTranscripts).toHaveBeenCalledWith(userId, [
-      "audio-fits",
-    ]);
+    expect(mockFindTranscripts).toHaveBeenCalledWith(userId, ["audio-fits"]);
     // The over-budget turn didn't make the prompt.
     const [, turns] = mockChatAI.mock.calls[0];
     expect(turns).toHaveLength(2);
@@ -1047,7 +1043,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       `http://localhost/conversations/${conversationId}/messages/${messageId}`,
       {
         method: "DELETE",
-        headers: { Cookie: await sessionCookieHeader(userId) },
+        headers: await authedHeaders(userId),
       },
     );
     expect(res.status).toBe(200);
@@ -1070,7 +1066,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       `http://localhost/conversations/${conversationId}/messages/${messageId}`,
       {
         method: "DELETE",
-        headers: { Cookie: await sessionCookieHeader(userId) },
+        headers: await authedHeaders(userId),
       },
     );
 
@@ -1090,7 +1086,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       `http://localhost/conversations/${conversationId}/messages/${messageId}`,
       {
         method: "DELETE",
-        headers: { Cookie: await sessionCookieHeader(userId) },
+        headers: await authedHeaders(userId),
       },
     );
     expect(res.status).toBe(404);
@@ -1106,7 +1102,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       `http://localhost/conversations/${conversationId}/messages/${messageId}`,
       {
         method: "DELETE",
-        headers: { Cookie: await sessionCookieHeader(userId) },
+        headers: await authedHeaders(userId),
       },
     );
 
@@ -1124,7 +1120,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
       `http://localhost/conversations/${conversationId}/messages/not-a-uuid`,
       {
         method: "DELETE",
-        headers: { Cookie: await sessionCookieHeader(userId) },
+        headers: await authedHeaders(userId),
       },
     );
     expect(res.status).toBe(400);

@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { getCookie, setCookie } from "hono/cookie";
+import { getCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 
 import { getApiEnv } from "../../../shared/env";
@@ -8,7 +8,7 @@ import {
   getRiderctUrl,
   revokeAuthSession,
 } from "../auth/auth";
-import { clearSessionToken } from "../cookies/session";
+import { clearSessionToken, setSessionToken } from "../cookies/session";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../shared/keys";
 import { ensureUser } from "../data/users.data";
@@ -32,11 +32,7 @@ export async function handleLogout(c: Context) {
 
   let sessionId: string | undefined;
   try {
-    const payload = await verify(
-      token,
-      getApiEnv().SESSION_SECRET,
-      "HS256",
-    );
+    const payload = await verify(token, getApiEnv().SESSION_SECRET, "HS256");
     if (typeof payload.sid === "string") sessionId = payload.sid;
   } catch {
     return c.json(null, 200);
@@ -74,12 +70,7 @@ export async function handleCallback(c: Context) {
     ),
   ]);
 
-  setCookie(c, COOKIE_KEYS.session, token, {
-    httpOnly: true,
-    secure: getApiEnv().NODE_ENV === "production",
-    sameSite: "Lax",
-    path: "/",
-  });
+  setSessionToken(c, token);
 
   return c.redirect(getApiEnv().CLIENT_URL);
 }
