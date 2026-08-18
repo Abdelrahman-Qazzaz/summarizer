@@ -5,12 +5,17 @@
   "packageManager": "npm@11.14.1",
   "scripts": {
     "browser:auth": "npm run --silent doppler -- tsx scripts/createBrowserAuthState.ts",
+    "build": "tsx scripts/build.ts",
+    "start:api": "node dist/api.js",
+    "start:transcribe-worker": "node dist/transcribe-worker.js",
     "dev": "npm run --silent doppler -- concurrently -k -n api,transcribe-worker \"tsx watch --inspect=9229 api/index.ts\" \"tsx watch --inspect=9230 transcribe-worker/index.ts\"",
     "dev:api": "npm run --silent doppler -- tsx watch --inspect=9229 api/index.ts",
     "dev:transcribe-worker": "npm run --silent doppler -- tsx watch --inspect=9230 transcribe-worker/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db": "npm run --silent doppler -- drizzle-kit push",
+    "db:generate": "npm run --silent doppler -- drizzle-kit generate",
+    "db:migrate": "npm run --silent doppler -- drizzle-kit migrate",
     "test": "npm run --silent doppler -- vitest run",
     "test:watch": "npm run --silent doppler -- vitest",
     "doppler": "set -a; [ -f .env ] && . ./.env; set +a; exec mise exec -- doppler run --"
@@ -36,11 +41,15 @@
     "@types/node": "25.6.0",
     "concurrently": "9.2.1",
     "drizzle-kit": "0.31.10",
+    "esbuild": "^0.28.2",
     "eslint": "9.39.4",
     "mise": "2026.8.6",
     "tsx": "4.20.5",
     "typescript": "5.7.3",
     "typescript-eslint": "8.57.0",
     "vitest": "4.1.5"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

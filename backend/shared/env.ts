@@ -9,10 +9,15 @@ const ANSI_RESET = "\x1b[0m";
  * the values below came from .env instead. That fallback is legitimate but
  * silent, and a stale .env URL points the app at the wrong host in ways that
  * are painful to trace — so say so loudly, once.
+ *
+ * Not in production: there the environment comes from the platform and Doppler
+ * is never in the picture, so the warning would fire on every boot and mean
+ * nothing.
  */
 let warnedAboutDopplerFallback = false;
 function warnIfNotRunningUnderDoppler(): void {
   if (warnedAboutDopplerFallback) return;
+  if (process.env.NODE_ENV === "production") return;
   if (process.env.DOPPLER_PROJECT && process.env.DOPPLER_CONFIG) return;
   warnedAboutDopplerFallback = true;
   console.error(
