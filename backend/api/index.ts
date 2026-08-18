@@ -5,6 +5,7 @@ import { startSocketServer } from "./src/sockets/socketManager";
 
 import { mq } from "../shared/message-queue/messageQueue";
 import { failAudioJobById } from "../shared/data/jobs.data";
+import { onShutdown } from "../shared/shutdown";
 
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
@@ -16,17 +17,34 @@ export const port = env.PORT;
 
 export const io = await startSocketServer();
 
-await mq.consume(mq.queues.TRANSCRIBE_DONE, ({ uploadId, userId }) => {
-  io.to(userId).emit("jobUpdated", { uploadId });
-});
-// youtube-fetcher couldn't download/upload the audio: mark the job failed and
-// notify the user. The row was created by POST /upload/youtube.
-await mq.consume(
-  mq.queues.YT_FETCH_FAILED,
-  async ({ uploadId, userId, error }) => {
+const cancelConsumers = await Promise.all([
+  mq.consume(mq.queues.TRANSCRIBE_DONE, ({ uploadId, userId }) => {
+    io.to(userId).emit("jobUpdated", { uploadId });
+  }),
+  // youtube-fetcher couldn't download/upload the audio: mark the job failed and
+  // notify the user. The row was created by POST /upload/youtube.
+  mq.consume(mq.queues.YT_FETCH_FAILED, async ({ uploadId, userId, error }) => {
     await failAudioJobById(uploadId, error ?? "Failed to fetch YouTube audio");
     io.to(userId).emit("jobUpdated", { uploadId });
-  },
-);
+  }),
+]);
 
-serve({ fetch: app.fetch, port });
+const server = serve({ fetch: app.fetch, port });
+
+/**
+ * Stop taking work, then let go of the connections.
+ *
+ * A reply streaming when this fires is not lost: the model run is deliberately
+ * decoupled from the response stream, so the turn still completes and is
+ * stored, and the client refetches it. The conversation claim it holds is
+ * covered by its lease, so even a hard kill frees the conversation rather than
+ * locking it.
+ */
+onShutdown(async () => {
+  await Promise.all(cancelConsumers.map((cancel) => cancel()));
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  await io.close();
+  await mq.close();
+});
