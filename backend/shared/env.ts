@@ -65,7 +65,6 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CLIENT_URL: z.string().url(),
   API_BASE_URL: z.string().url(),
   PORT: z.coerce.number().int().positive().default(3001),
-  WS_PORT: z.coerce.number().int().positive().default(4000),
   UPSTASH_REDIS_REST_URL: z
     .string()
     .url()

@@ -1,3 +1,4 @@
+import type { ServerType } from "@hono/node-server";
 import { Server } from "socket.io";
 import { parse } from "hono/utils/cookie";
 import { verify } from "hono/jwt";
@@ -6,9 +7,18 @@ import { getApiEnv } from "../../../shared/env";
 import { logger } from "../../../shared/logger";
 
 const log = logger.child({ component: "socket" });
-const port = getApiEnv().WS_PORT;
-export function startSocketServer() {
-  const io = new Server(port, {
+
+/**
+ * Attaches to the API's own HTTP server rather than listening on a port of its
+ * own. Socket.IO claims the /socket.io/ path and the upgrade handshake; Hono
+ * keeps everything else.
+ *
+ * One port is what nearly every host routes to a service, and it puts the
+ * socket on the same origin as the API — so the browser needs no second URL,
+ * and the session cookie authenticating the handshake is already in scope.
+ */
+export function startSocketServer(server: ServerType) {
+  const io = new Server(server, {
     cors: {
       origin: getApiEnv().CLIENT_URL,
       credentials: true,

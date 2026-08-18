@@ -15,7 +15,10 @@ import { createApp } from "./app";
 const app = await createApp();
 export const port = env.PORT;
 
-export const io = await startSocketServer();
+// Listening starts here; the socket server then attaches to this same server,
+// so the API and the websocket share one port.
+const server = serve({ fetch: app.fetch, port });
+export const io = startSocketServer(server);
 
 const cancelConsumers = await Promise.all([
   mq.consume(mq.queues.TRANSCRIBE_DONE, ({ uploadId, userId }) => {
@@ -29,8 +32,6 @@ const cancelConsumers = await Promise.all([
   }),
 ]);
 
-const server = serve({ fetch: app.fetch, port });
-
 /**
  * Stop taking work, then let go of the connections.
  *
@@ -42,9 +43,10 @@ const server = serve({ fetch: app.fetch, port });
  */
 onShutdown(async () => {
   await Promise.all(cancelConsumers.map((cancel) => cancel()));
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
-  await io.close();
+  // io owns the HTTP server it was attached to, so closing it closes both.
+  // The second close is a belt-and-braces no-op and must not reject on
+  // "server is not running".
+  await new Promise<void>((resolve) => io.close(() => resolve()));
+  await new Promise<void>((resolve) => server.close(() => resolve()));
   await mq.close();
 });

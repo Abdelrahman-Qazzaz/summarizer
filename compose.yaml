@@ -46,10 +46,8 @@ services:
       - UPSTASH_REDIS_REST_URL
       - UPSTASH_REDIS_REST_TOKEN
       - PORT
-      - WS_PORT
     ports:
       - "${PORT:-3001}:${PORT:-3001}"
-      - "${WS_PORT:-4000}:${WS_PORT:-4000}"
     depends_on:
       migrate:
         condition: service_completed_successfully

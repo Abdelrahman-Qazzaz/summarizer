@@ -62,20 +62,11 @@ export function uploadYoutubeEndpoint(): string {
   return `${apiBase}/upload/youtube`;
 }
 
-/** WebSocket URL for job notifications (forward WS_PORT in dev containers). */
-function wsUrl(): string {
-  const fromEnv = import.meta.env.VITE_WS_URL;
-  if (typeof fromEnv === "string" && fromEnv.trim()) {
-    return fromEnv.trim();
-  }
-  return `ws://${DEV_HOST}:4000`;
-}
-
-/** Socket.IO server URL (HTTP origin — Engine.IO handshake). */
+/**
+ * Socket.IO lives on the API's own origin — the server attaches it to the same
+ * HTTP server, so there is no second URL to configure and the session cookie
+ * that authenticates the handshake is already in scope.
+ */
 export function socketIoUrl(): string {
-  const ws = wsUrl();
-  if (ws.startsWith("ws://")) return `http://${ws.slice("ws://".length)}`;
-  if (ws.startsWith("wss://")) return `https://${ws.slice("wss://".length)}`;
-  if (/^https?:\/\//i.test(ws)) return ws.replace(/\/$/, "");
-  return `http://${DEV_HOST}:4000`;
+  return apiBase;
 }
