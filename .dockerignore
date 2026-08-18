@@ -4,3 +4,8 @@
 **/dist
 output
 test_data
+senior_project
+frontend_screenshots
+**/__pycache__
+**/*.log
+.sbx

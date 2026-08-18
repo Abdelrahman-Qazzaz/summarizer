@@ -1,0 +1,71 @@
+# Runs the whole backend locally, and doubles as the reference topology for
+# whichever platform this is deployed to: one migrate one-shot that must finish
+# first, then the API, the worker (scale this one), and the YouTube fetcher.
+#
+# Postgres, Redis and object storage are managed services (Supabase, Upstash)
+# and are not started here. RabbitMQ is whatever MQ_URL points at.
+#
+# Secrets come from the same .env files the dev scripts already use — nothing
+# is baked into an image.
+
+name: summarizer
+
+services:
+  # Must complete before anything that touches the database starts. Needs only
+  # DATABASE_URL, not the application's other secrets.
+  migrate:
+    build:
+      context: ./backend
+    command: ["node", "dist/migrate.js"]
+    env_file: [./backend/.env]
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+    command: ["node", "dist/api.js"]
+    env_file: [./backend/.env]
+    ports:
+      - "${PORT:-3001}:${PORT:-3001}"
+      - "${WS_PORT:-4000}:${WS_PORT:-4000}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # `node -e` rather than curl: the alpine image has no curl, and fetch is
+      # global on Node 22.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # Competing consumers on one queue: `docker compose up --scale
+  # transcribe-worker=3` is the whole scaling story.
+  transcribe-worker:
+    build:
+      context: ./backend
+    command: ["node", "dist/transcribe-worker.js"]
+    env_file: [./backend/.env]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Reads queue and bucket names from the API's /contract at boot, so it waits
+  # for the API to be healthy rather than merely started.
+  youtube-fetcher:
+    build:
+      context: ./youtube-fetcher
+    env_file: [./youtube-fetcher/.env]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
