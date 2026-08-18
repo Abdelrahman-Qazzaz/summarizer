@@ -16,6 +16,10 @@ import { build } from "esbuild";
 const ENTRYPOINTS = {
   api: "api/index.ts",
   "transcribe-worker": "transcribe-worker/index.ts",
+  // Operational one-shots, bundled so they can be run from the same image
+  // without drizzle-kit (a devDependency) being present at runtime.
+  migrate: "scripts/migrate.ts",
+  baseline: "scripts/baseline.ts",
 } as const;
 
 const results = await Promise.all(

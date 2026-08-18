@@ -16,6 +16,7 @@
     "db": "npm run --silent doppler -- drizzle-kit push",
     "db:generate": "npm run --silent doppler -- drizzle-kit generate",
     "db:migrate": "npm run --silent doppler -- drizzle-kit migrate",
+    "db:baseline": "npm run --silent doppler -- tsx scripts/baseline.ts",
     "test": "npm run --silent doppler -- vitest run",
     "test:watch": "npm run --silent doppler -- vitest",
     "doppler": "set -a; [ -f .env ] && . ./.env; set +a; exec mise exec -- doppler run --"
