@@ -13,6 +13,7 @@ import {
   jobsListQuerySchema,
   jobTranscribeRerunBodySchema,
 } from "../schema/jobs.schema";
+import { httpCache } from "../middleware/cache.middleware";
 
 export const jobsRouter = new Hono();
 
@@ -21,6 +22,7 @@ jobsRouter.use("*", requireAuth, jobRateLimiter);
 jobsRouter.get(
   `/transcribe/:${CTX_KEYS.uploadId}`,
   validateReqParams(jobReqParamSchema),
+  httpCache({ revalidate: true }),
   jobsController.handleGetTranscribeJob,
 );
 

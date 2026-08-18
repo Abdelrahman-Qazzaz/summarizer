@@ -153,6 +153,33 @@ describe("GET /jobs/transcribe/:uploadId", () => {
     ]);
   });
 
+  it("revalidates an unchanged completed transcript with an ETag", async () => {
+    mockFindAudioJob.mockResolvedValue(audioJob);
+    mockFindTranscripts.mockResolvedValue(
+      new Map([[uploadId, "the full transcript text"]]),
+    );
+    const app = await createApp();
+    const cookie = await sessionCookieHeader("user_01OWNER");
+    const url = `http://localhost/jobs/transcribe/${uploadId}`;
+
+    const first = await app.request(url, {
+      headers: { Cookie: cookie },
+    });
+    const etag = first.headers.get("ETag");
+
+    expect(first.status).toBe(200);
+    expect(etag).toBeTruthy();
+    expect(first.headers.get("Cache-Control")).toBe("private, no-cache");
+
+    const second = await app.request(url, {
+      headers: { Cookie: cookie, "If-None-Match": etag as string },
+    });
+
+    expect(second.status).toBe(304);
+    expect(await second.text()).toBe("");
+    expect(second.headers.get("Cache-Control")).toBe("private, no-cache");
+  });
+
   it("reports no transcript while the job hasn't produced one", async () => {
     // A re-run drops the row, so a job that isn't completed has no transcript.
     mockFindAudioJob.mockResolvedValueOnce({ ...audioJob, status: "queued" });
@@ -216,6 +243,8 @@ describe("DELETE /jobs/transcribe/:uploadId", () => {
       headers: { Cookie: await sessionCookieHeader("user_01OWNER") },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBeNull();
+    expect(res.headers.get("ETag")).toBeNull();
     expect(mockDeleteAudioJob).toHaveBeenCalledWith("user_01OWNER", uploadId);
     expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith("user_01OWNER", [
       uploadId,
