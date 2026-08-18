@@ -126,6 +126,20 @@ def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
             # A stalled connection shouldn't hold the (prefetch-1) worker
             # hostage; yt-dlp retries after a timeout.
             "socket_timeout": 30,
+            # YouTube signs its media URLs with an `n` parameter that has to be
+            # descrambled by running their player JS. yt-dlp only enables deno
+            # by default; naming node as well means whichever exists is used.
+            # Without a runtime (and the yt-dlp-ejs solver) metadata still
+            # resolves and the download 403s, which reads as a network fault
+            # and is not one.
+            "js_runtimes": {"deno": {}, "node": {}},
+            # The media servers also want a proof-of-origin token, minted by
+            # the bgutil provider in requirements.txt. Client choice is not
+            # cosmetic here: web and web_safari now return SABR-only formats
+            # carrying no URL, and android_vr is refused even with a valid
+            # token. web_embedded is the one whose formats have URLs *and*
+            # accept the token.
+            "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
         }
         with yt_dlp.YoutubeDL(options) as ydl:
             # Probe metadata first so oversized audio is rejected before any

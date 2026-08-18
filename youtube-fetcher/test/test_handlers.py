@@ -271,3 +271,27 @@ class TestFetchWithRetries:
             handlers._fetch_with_retries("u1", "https://youtu.be/x", "usr")
 
         assert fetch.call_count == 1
+
+
+class TestYoutubeAccess:
+    """The options that decide whether YouTube serves us at all. Each of these
+    fails the same way when wrong — metadata resolves, then the media download
+    returns 403 — so they are asserted rather than left to be rediscovered."""
+
+    def test_names_node_alongside_deno_as_a_js_runtime(self, ydl, upload):
+        # The `n` parameter in a media URL is descrambled by running YouTube's
+        # player JS; yt-dlp enables only deno by default.
+        handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
+
+        assert set(ydl.last.options["js_runtimes"]) == {"deno", "node"}
+
+    def test_uses_the_one_client_whose_formats_are_downloadable(
+        self, ydl, upload
+    ):
+        # web and web_safari return SABR-only formats with no URL; android_vr
+        # is refused even holding a valid proof-of-origin token.
+        handlers._fetch_and_upload("u1", "https://youtu.be/x", "usr")
+
+        assert ydl.last.options["extractor_args"] == {
+            "youtube": {"player_client": ["web_embedded"]}
+        }
