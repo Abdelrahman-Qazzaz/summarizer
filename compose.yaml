@@ -2,11 +2,17 @@
 # whichever platform this is deployed to: one migrate one-shot that must finish
 # first, then the API, the worker (scale this one), and the YouTube fetcher.
 #
-# Postgres, Redis and object storage are managed services (Supabase, Upstash)
-# and are not started here. RabbitMQ is whatever MQ_URL points at.
+#   doppler run -- docker compose up --build
 #
-# Secrets come from the same .env files the dev scripts already use — nothing
-# is baked into an image.
+# Secrets are passed through from the environment rather than read from a file:
+# the .env files only carry DOPPLER_TOKEN, and this keeps plaintext secrets off
+# disk. Each service lists exactly what it needs, which is also the list to
+# paste into whichever host you deploy to.
+#
+# Postgres, Redis and object storage are managed services (Supabase, Upstash)
+# and are not started here. RabbitMQ is whatever MQ_URL points at — if that is
+# a broker on your own machine, use host.docker.internal rather than localhost,
+# which inside a container means the container.
 
 name: summarizer
 
@@ -17,14 +23,30 @@ services:
     build:
       context: ./backend
     command: ["node", "dist/migrate.js"]
-    env_file: [./backend/.env]
+    environment:
+      - DATABASE_URL
     restart: "no"
 
   api:
     build:
       context: ./backend
     command: ["node", "dist/api.js"]
-    env_file: [./backend/.env]
+    environment:
+      - DATABASE_URL
+      - MQ_URL
+      - SUPABASE_URL
+      - SUPABASE_SERVICE_ROLE_KEY
+      - OPENROUTER_API_KEY
+      - DEEPGRAM_API_KEY
+      - SESSION_SECRET
+      - WORKOS_API_KEY
+      - WORKOS_CLIENT_ID
+      - CLIENT_URL
+      - API_BASE_URL
+      - UPSTASH_REDIS_REST_URL
+      - UPSTASH_REDIS_REST_TOKEN
+      - PORT
+      - WS_PORT
     ports:
       - "${PORT:-3001}:${PORT:-3001}"
       - "${WS_PORT:-4000}:${WS_PORT:-4000}"
@@ -53,7 +75,13 @@ services:
     build:
       context: ./backend
     command: ["node", "dist/transcribe-worker.js"]
-    env_file: [./backend/.env]
+    environment:
+      - DATABASE_URL
+      - MQ_URL
+      - SUPABASE_URL
+      - SUPABASE_SERVICE_ROLE_KEY
+      - OPENROUTER_API_KEY
+      - DEEPGRAM_API_KEY
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -64,7 +92,14 @@ services:
   youtube-fetcher:
     build:
       context: ./youtube-fetcher
-    env_file: [./youtube-fetcher/.env]
+    environment:
+      - MQ_URL
+      - SUPABASE_URL
+      - SUPABASE_SERVICE_ROLE_KEY
+      # Deliberately not the API_BASE_URL the API itself uses: that one is the
+      # public URL WorkOS redirects back to, while this is one container
+      # calling another over the compose network.
+      - API_BASE_URL=http://api:${PORT:-3001}
     depends_on:
       api:
         condition: service_healthy
