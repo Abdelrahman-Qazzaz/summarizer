@@ -137,6 +137,13 @@ export const Conversations = pgTable(
 
     lastMessageId: uuid("last_message_id"),
     activeTurnClaimToken: uuid("active_turn_claim_token"),
+    // When the active turn was claimed. Without it a claim is only ever
+    // cleared by a clean release, so a process that dies mid-turn — an
+    // ordinary deploy — leaves the conversation answering 409 forever. The
+    // claim is treated as expired past CLAIM_LEASE_MS.
+    activeTurnClaimedAt: timestamp("active_turn_claimed_at", {
+      withTimezone: true,
+    }),
 
     userId: text("user_id")
       .notNull()

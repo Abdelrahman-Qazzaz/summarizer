@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN "active_turn_claimed_at" timestamp with time zone;

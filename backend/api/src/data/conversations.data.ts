@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import {
   Conversations,
   DEFAULT_CONVERSATION_TITLE,
@@ -55,6 +55,35 @@ export async function findOwnedConversation(
   return row ?? null;
 }
 
+/**
+ * How long a claimed turn may be held before another claim may take it.
+ *
+ * A claim is normally cleared by an explicit release, but a process that dies
+ * mid-turn never gets to release — and an ordinary deploy kills processes
+ * mid-turn. Without an expiry that conversation returns 409 for good.
+ *
+ * Comfortably longer than any single completion can run: replies are capped at
+ * MAX_RESPONSE_TOKENS (4,000) and the model call is the only slow step.
+ */
+export const CLAIM_LEASE_MS = 10 * 60 * 1000;
+
+/**
+ * No turn is holding this conversation: either nothing claimed it, or the
+ * claim is old enough to assume the process holding it is gone. A row
+ * predating this column has no timestamp and counts as expired — nobody can
+ * release it either.
+ */
+function claimIsFreeOrExpired(): SQL | undefined {
+  return or(
+    isNull(Conversations.activeTurnClaimToken),
+    isNull(Conversations.activeTurnClaimedAt),
+    lt(
+      Conversations.activeTurnClaimedAt,
+      new Date(Date.now() - CLAIM_LEASE_MS),
+    ),
+  );
+}
+
 export async function claimConversationTurn(
   userId: string,
   conversationId: string,
@@ -63,11 +92,11 @@ export async function claimConversationTurn(
   const claimToken = randomUUID();
   const [row] = await db
     .update(Conversations)
-    .set({ activeTurnClaimToken: claimToken })
+    .set({ activeTurnClaimToken: claimToken, activeTurnClaimedAt: new Date() })
     .where(
       and(
         ownedBy(userId, conversationId),
-        isNull(Conversations.activeTurnClaimToken),
+        claimIsFreeOrExpired(),
         expectedLastMessageId === null
           ? isNull(Conversations.lastMessageId)
           : eq(Conversations.lastMessageId, expectedLastMessageId),
@@ -86,7 +115,7 @@ export async function releaseConversationTurn(
 ) {
   await executor
     .update(Conversations)
-    .set({ activeTurnClaimToken: null })
+    .set({ activeTurnClaimToken: null, activeTurnClaimedAt: null })
     .where(
       and(
         ownedBy(userId, conversationId),
@@ -108,6 +137,7 @@ export async function completeConversationTurn(
     .set({
       lastMessageId,
       activeTurnClaimToken: null,
+      activeTurnClaimedAt: null,
       updatedAt: new Date(),
       ...(conversationTitle
         ? {
@@ -157,12 +187,7 @@ export async function deleteOwnedConversation(
 ) {
   const [row] = await db
     .delete(Conversations)
-    .where(
-      and(
-        ownedBy(userId, conversationId),
-        isNull(Conversations.activeTurnClaimToken),
-      ),
-    )
+    .where(and(ownedBy(userId, conversationId), claimIsFreeOrExpired()))
     .returning({ id: Conversations.id });
 
   return row ?? null;

@@ -40,6 +40,7 @@ describe("conversation turn claims", () => {
     );
     expect(mockSet).toHaveBeenCalledWith({
       activeTurnClaimToken: claimToken,
+      activeTurnClaimedAt: expect.any(Date),
     });
   });
 
@@ -54,7 +55,10 @@ describe("conversation turn claims", () => {
   it("releases only the caller's claim token", async () => {
     await releaseConversationTurn("user-1", "conversation-1", "claim-1");
 
-    expect(mockSet).toHaveBeenCalledWith({ activeTurnClaimToken: null });
+    expect(mockSet).toHaveBeenCalledWith({
+      activeTurnClaimToken: null,
+      activeTurnClaimedAt: null,
+    });
     expect(mockWhere).toHaveBeenCalledOnce();
   });
 
@@ -73,6 +77,7 @@ describe("conversation turn claims", () => {
     expect(mockSet).toHaveBeenCalledWith(
       expect.objectContaining({
         activeTurnClaimToken: null,
+        activeTurnClaimedAt: null,
         lastMessageId: "assistant-message-1",
         title: expect.anything(),
       }),
