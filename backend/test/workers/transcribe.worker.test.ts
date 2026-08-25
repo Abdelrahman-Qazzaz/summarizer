@@ -47,7 +47,7 @@ vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   saveCompletedTranscript: mockSaveCompletedTranscript,
 }));
 
-// Mock the Deepgram SDK called by transcribe().
+// Mock the Deepgram SDK called by transcribeAI().
 vi.mock("@deepgram/sdk", () => ({
   DeepgramClient: class {
     listen = { v1: { media: { transcribeUrl: mockTranscribeUrl } } };

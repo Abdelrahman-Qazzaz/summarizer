@@ -17,7 +17,7 @@ export async function pingTranscribeAI(): Promise<void> {
   await deepgram.auth.v1.tokens.grant();
 }
 
-export async function transcribe(
+export async function transcribeAI(
   model: string,
   audioUrl: string,
 ): Promise<string> {

@@ -1,6 +1,6 @@
 import {
   DEFAULT_TRANSCRIBE_MODEL,
-  transcribe,
+  transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
 import { generateTitle } from "../shared/ai/ai_chat_client";
 import { AUDIO_URL_TTL_SECONDS, createSignedUrl } from "../shared/bucket";
@@ -33,7 +33,7 @@ export async function handleTranscribeJob(
       AUDIO_URL_TTL_SECONDS,
     );
     const model = job.transcriptModelId ?? DEFAULT_TRANSCRIBE_MODEL;
-    const transcript = await transcribe(model, audioUrl);
+    const transcript = await transcribeAI(model, audioUrl);
     if (!transcript.trim()) {
       throw new Error("Transcription produced no text");
     }
