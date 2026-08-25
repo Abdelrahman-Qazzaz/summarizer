@@ -61,7 +61,12 @@ export async function handleYoutubeUpload(c: Context) {
     transcriptModelId,
   });
 
-  await mq.publish(mq.queues.YT_FETCH, { uploadId, url, userId });
+  await mq.publish(mq.queues.YT_FETCH, {
+    uploadId,
+    url,
+    userId,
+    useCaptionsIfAvailable: false, // TODO: implement as an option,
+  });
   return c.json({
     message: "Queued",
     uploadId,

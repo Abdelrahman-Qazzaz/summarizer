@@ -276,6 +276,7 @@ describe("POST /upload/youtube", () => {
       uploadId: body.uploadId,
       url: YT_URL,
       userId: "user_01",
+      useCaptionsIfAvailable: false,
     });
   });
 });

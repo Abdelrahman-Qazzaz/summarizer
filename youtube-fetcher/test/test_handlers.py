@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -157,6 +158,12 @@ class TestFetchAndUpload:
 
 
 class TestHandleYtFetch:
+    @pytest.fixture(autouse=True)
+    def no_captions(self, monkeypatch):
+        monkeypatch.setattr(
+            handlers, "_create_transcript_via_captions", MagicMock(return_value=None)
+        )
+
     def test_success_queues_transcribe(self, publish, monkeypatch):
         monkeypatch.setattr(handlers, "_fetch_and_upload", MagicMock())
 
@@ -166,7 +173,32 @@ class TestHandleYtFetch:
 
         publish.assert_called_once_with(
             QueueName("transcribe"),
-            {"uploadId": "u1"},
+            {
+                "uploadId": "u1",
+                "existingTranscriptUploadId": None,
+            },
+        )
+
+    def test_caption_upload_skips_audio_download(self, publish, monkeypatch):
+        caption_fetch = MagicMock(return_value="u1")
+        audio_fetch = MagicMock()
+        monkeypatch.setattr(
+            handlers, "_create_transcript_via_captions", caption_fetch
+        )
+        monkeypatch.setattr(handlers, "_fetch_with_retries", audio_fetch)
+
+        handlers.handle_yt_fetch(
+            {"uploadId": "u1", "url": "https://youtu.be/x", "userId": "usr"}
+        )
+
+        caption_fetch.assert_called_once_with("u1", "https://youtu.be/x", "usr")
+        audio_fetch.assert_not_called()
+        publish.assert_called_once_with(
+            QueueName("transcribe"),
+            {
+                "uploadId": "u1",
+                "existingTranscriptUploadId": "u1",
+            },
         )
 
     def test_failure_notifies_api_and_reraises(self, publish, monkeypatch):
@@ -217,6 +249,78 @@ class TestHandleYtFetch:
             handlers.handle_yt_fetch({})
 
         publish.assert_not_called()
+
+
+class TestFetchTranscriptViaCaptions:
+    def test_uploads_first_available_caption_track(self, upload, monkeypatch):
+        fetched_transcript = [
+            SimpleNamespace(text="First caption"),
+            SimpleNamespace(text="  Second caption  "),
+        ]
+        selected_transcript = SimpleNamespace(
+            language_code="en",
+            fetch=MagicMock(return_value=fetched_transcript),
+        )
+        transcript_api = MagicMock()
+        transcript_api.list.return_value = [selected_transcript]
+        monkeypatch.setattr(
+            handlers, "YouTubeTranscriptApi", MagicMock(return_value=transcript_api)
+        )
+
+        uploaded_text = None
+
+        def capture_upload(_user_id, _upload_id, local_path, _content_type):
+            nonlocal uploaded_text
+            uploaded_text = Path(local_path).read_text(encoding="utf-8")
+
+        upload.side_effect = capture_upload
+
+        transcript_upload_id = handlers._create_transcript_via_captions(
+            "u1", "https://youtu.be/dQw4w9WgXcQ", "usr"
+        )
+
+        assert transcript_upload_id == "u1"
+        transcript_api.list.assert_called_once_with("dQw4w9WgXcQ")
+        assert uploaded_text == "First caption Second caption"
+        (user_id, upload_id, local_path, content_type), _ = upload.call_args
+        assert user_id == "usr"
+        assert upload_id == transcript_upload_id
+        assert local_path.endswith("captions.txt")
+        assert content_type == "text/plain; charset=utf-8"
+
+    def test_empty_caption_track_falls_back_to_audio(self, upload, monkeypatch):
+        selected_transcript = SimpleNamespace(
+            language_code="en",
+            fetch=MagicMock(return_value=[SimpleNamespace(text="  ")]),
+        )
+        transcript_api = MagicMock()
+        transcript_api.list.return_value = [selected_transcript]
+        monkeypatch.setattr(
+            handlers, "YouTubeTranscriptApi", MagicMock(return_value=transcript_api)
+        )
+
+        result = handlers._create_transcript_via_captions(
+            "u1", "https://youtu.be/dQw4w9WgXcQ", "usr"
+        )
+
+        assert result is None
+        upload.assert_not_called()
+
+    def test_unavailable_captions_fall_back_to_audio(self, upload, monkeypatch):
+        transcript_api = MagicMock()
+        transcript_api.list.side_effect = handlers.CouldNotRetrieveTranscript(
+            "dQw4w9WgXcQ"
+        )
+        monkeypatch.setattr(
+            handlers, "YouTubeTranscriptApi", MagicMock(return_value=transcript_api)
+        )
+
+        result = handlers._create_transcript_via_captions(
+            "u1", "https://youtu.be/dQw4w9WgXcQ", "usr"
+        )
+
+        assert result is None
+        upload.assert_not_called()
 
 
 class TestFetchWithRetries:

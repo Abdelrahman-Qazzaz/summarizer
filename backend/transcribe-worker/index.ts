@@ -1,27 +1,39 @@
-import { mq } from "../shared/message-queue/messageQueue";
+import {
+  mq,
+  type DeliveryMetadata,
+} from "../shared/message-queue/messageQueue";
 import { onShutdown } from "../shared/shutdown";
 import { verifyTranscribeWorkerServices } from "./startup";
 import { handleTranscribeJob } from "./transcribeJob";
 
 await verifyTranscribeWorkerServices();
 
-/**
- * The channel uses prefetch(1), so at most one job is ever in flight and this
- * is the whole of the worker's state.
- */
-let inFlight: Promise<void> | null = null;
+const inFlightJobs = new Set<Promise<void>>();
 
-const cancelConsumer = await mq.consume(
-  mq.queues.TRANSCRIBE,
-  async (payload, delivery) => {
-    inFlight = Promise.resolve(handleTranscribeJob(payload, delivery));
-    try {
-      await inFlight;
-    } finally {
-      inFlight = null;
-    }
-  },
-);
+async function runJob(
+  input: Parameters<typeof handleTranscribeJob>[0],
+  delivery: DeliveryMetadata,
+) {
+  const job = Promise.resolve(handleTranscribeJob(input, delivery));
+  inFlightJobs.add(job);
+
+  try {
+    await job;
+  } finally {
+    inFlightJobs.delete(job);
+  }
+}
+
+const cancelConsumers = await Promise.all([
+  mq.consume(mq.queues.TRANSCRIBE, (payload, delivery) =>
+    runJob({ ...payload, existingTranscriptId: null }, delivery),
+  ),
+  mq.consume(
+    mq.queues.CAPTION_TRANSCRIPT,
+    ({ uploadId }, delivery) =>
+      runJob({ uploadId: null, existingTranscriptId: uploadId }, delivery),
+  ),
+]);
 
 /**
  * Cancel first so the broker stops delivering, then let the job in progress
@@ -34,8 +46,8 @@ const cancelConsumer = await mq.consume(
  */
 onShutdown(
   async () => {
-    await cancelConsumer();
-    if (inFlight) await inFlight;
+    await Promise.all(cancelConsumers.map((cancel) => cancel()));
+    await Promise.all(inFlightJobs);
     await mq.close();
   },
   { graceMs: 30_000 },

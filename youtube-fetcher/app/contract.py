@@ -12,6 +12,7 @@ class _Queues:
     YT_FETCH: QueueName
     YT_FETCH_FAILED: QueueName
     TRANSCRIBE: QueueName
+    CAPTION_TRANSCRIPT: QueueName
 
 class _Contract:
     queues: _Queues
@@ -31,6 +32,7 @@ class _Contract:
             YT_FETCH=QueueName(queues["YT_FETCH"]),
             YT_FETCH_FAILED=QueueName(queues["YT_FETCH_FAILED"]),
             TRANSCRIBE=QueueName(queues["TRANSCRIBE"]),
+            CAPTION_TRANSCRIPT=queues["CAPTION_TRANSCRIPT"]
         )
         self.bucket = body["bucket"]
         self.maxAudioBytes = body["maxAudioBytes"]

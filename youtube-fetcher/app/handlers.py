@@ -1,13 +1,15 @@
-"""Event handlers: download the YouTube audio and upload it to the bucket so
-the job flows on exactly like a normal audio upload."""
+"""Event handlers: fetch YouTube captions or audio and queue transcription."""
 import logging
 import tempfile
 import time
 from pathlib import Path
+
 import bucket
 from contract import contract
 import yt_dlp
 from message_queue import mq
+from youtube_transcript_api import CouldNotRetrieveTranscript, YouTubeTranscriptApi
+from yt_dlp.extractor.youtube import YoutubeIE
 
 
 log = logging.getLogger(__name__)
@@ -77,12 +79,70 @@ def _fetch_with_retries(upload_id: str, url: str, user_id: str) -> None:
             time.sleep(backoff)
 
 
+def _create_transcript_via_captions(
+    upload_id: str, url: str, user_id: str
+) -> str | None:
+    video_id = YoutubeIE.extract_id(url)
+
+    try:
+        transcripts = YouTubeTranscriptApi().list(video_id)
+        selected_transcript = next(iter(transcripts), None)
+        if selected_transcript is None:
+            return None
+        fetched_transcript = selected_transcript.fetch()
+    except CouldNotRetrieveTranscript as error:
+        log.info("No usable captions for %s: %s", video_id, error)
+        return None
+
+    transcript_text = " ".join(
+        snippet.text.strip()
+        for snippet in fetched_transcript
+        if snippet.text.strip()
+    )
+    if not transcript_text:
+        log.info("Caption track for %s was empty", video_id)
+        return None
+
+    with tempfile.TemporaryDirectory() as tmp:
+        transcript_path = Path(tmp) / "captions.txt"
+        transcript_path.write_text(transcript_text, encoding="utf-8")
+        bucket.upload_file(
+            user_id,
+            upload_id,
+            str(transcript_path),
+            "text/plain; charset=utf-8",
+        )
+
+    log.info(
+        "Fetched %s captions for %s: %d characters",
+        selected_transcript.language_code,
+        video_id,
+        len(transcript_text),
+    )
+    return upload_id
+
+
 def handle_yt_fetch(event: dict) -> None:
     try:
         upload_id: str = event["uploadId"]
         url: str = event["url"]
         user_id: str = event["userId"]
-        _fetch_with_retries(upload_id, url, user_id)
+        use_captions_if_available = event["useCaptionsIfAvailable"]
+
+        transcript_upload_id: str | None = None
+
+        if use_captions_if_available:
+            transcript_upload_id = _create_transcript_via_captions(
+                upload_id, url, user_id
+            ) 
+            if transcript_upload_id:
+                mq.publish_threadsafe(
+                    contract.queues.CAPTION_TRANSCRIPT,
+                    {"uploadId": transcript_upload_id},
+                )
+                return
+        if not transcript_upload_id:
+            _fetch_with_retries(upload_id, url, user_id)
     except Exception as error:
         # Tell the API so it can mark the job row failed — a malformed
         # payload (missing url/userId) must still fail the job if we know

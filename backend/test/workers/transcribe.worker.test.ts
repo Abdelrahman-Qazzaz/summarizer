@@ -9,6 +9,7 @@ const {
   mockSet,
   mockUpdate,
   mockCreateSignedUrl,
+  mockGetTextFromBucket,
   mockTranscribeUrl,
   mockGenerateTitle,
   mockSaveCompletedTranscript,
@@ -19,6 +20,7 @@ const {
   mockSet: vi.fn(),
   mockUpdate: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
+  mockGetTextFromBucket: vi.fn(),
   mockTranscribeUrl: vi.fn(),
   mockGenerateTitle: vi.fn(),
   mockSaveCompletedTranscript: vi.fn(),
@@ -33,6 +35,7 @@ function deepgramResponse(transcript: string) {
 
 vi.mock("../../shared/bucket", () => ({
   createSignedUrl: mockCreateSignedUrl,
+  getTextFromBucket: mockGetTextFromBucket,
   AUDIO_URL_TTL_SECONDS: 3600,
 }));
 
@@ -92,10 +95,13 @@ const claimedJob = {
   status: "queued",
 };
 
+const audioInput = { uploadId, existingTranscriptId: null } as const;
+
 describe("handleTranscribeJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
+    mockGetTextFromBucket.mockResolvedValue("caption transcript");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
     mockGenerateTitle.mockResolvedValue("Sample recording");
     mockSaveCompletedTranscript.mockResolvedValue(true);
@@ -104,7 +110,7 @@ describe("handleTranscribeJob", () => {
   });
 
   it("transcribes audio, stores the transcript, and announces completion", async () => {
-    await handleTranscribeJob({ uploadId });
+    await handleTranscribeJob(audioInput);
 
     expect(mockCreateSignedUrl).toHaveBeenCalledWith(
       "user_01",
@@ -127,9 +133,31 @@ describe("handleTranscribeJob", () => {
     });
   });
 
+  it("stores an existing caption transcript without transcribing audio", async () => {
+    await handleTranscribeJob({
+      uploadId: null,
+      existingTranscriptId: uploadId,
+    });
+
+    expect(mockGetTextFromBucket).toHaveBeenCalledWith("user_01", uploadId);
+    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
+    expect(mockTranscribeUrl).not.toHaveBeenCalled();
+    expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
+      "user_01",
+      uploadId,
+      "caption transcript",
+      "Sample recording",
+      expect.any(String),
+    );
+    expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
+      uploadId,
+      userId: "user_01",
+    });
+  });
+
   it("no-ops when no queued job is claimed", async () => {
     setupUpdateChain([]);
-    await handleTranscribeJob({ uploadId });
+    await handleTranscribeJob(audioInput);
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
@@ -138,13 +166,13 @@ describe("handleTranscribeJob", () => {
   it("does not announce a result after the worker loses its claim", async () => {
     mockSaveCompletedTranscript.mockResolvedValueOnce(false);
 
-    await handleTranscribeJob({ uploadId });
+    await handleTranscribeJob(audioInput);
 
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
   it("processes a broker-redelivered job under a fresh claim token", async () => {
-    await handleTranscribeJob({ uploadId }, { redelivered: true });
+    await handleTranscribeJob(audioInput, { redelivered: true });
 
     expect(mockSet).toHaveBeenNthCalledWith(1, {
       status: "processing",
@@ -162,7 +190,7 @@ describe("handleTranscribeJob", () => {
   it("uses the filename when title generation fails", async () => {
     mockGenerateTitle.mockRejectedValueOnce(new Error("title model failed"));
 
-    await handleTranscribeJob({ uploadId });
+    await handleTranscribeJob(audioInput);
 
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
@@ -175,7 +203,7 @@ describe("handleTranscribeJob", () => {
 
   it("rejects an empty transcript", async () => {
     mockTranscribeUrl.mockResolvedValueOnce(deepgramResponse("   "));
-    await expect(handleTranscribeJob({ uploadId })).rejects.toThrow(
+    await expect(handleTranscribeJob(audioInput)).rejects.toThrow(
       "Transcription produced no text",
     );
     expect(mockSaveCompletedTranscript).not.toHaveBeenCalled();
@@ -184,7 +212,7 @@ describe("handleTranscribeJob", () => {
 
   it("marks the job failed and rethrows when transcription fails", async () => {
     mockTranscribeUrl.mockRejectedValueOnce(new Error("transcription failed"));
-    await expect(handleTranscribeJob({ uploadId })).rejects.toThrow(
+    await expect(handleTranscribeJob(audioInput)).rejects.toThrow(
       "transcription failed",
     );
     expect(mockUpdate).toHaveBeenCalledTimes(2); // claim + fail
