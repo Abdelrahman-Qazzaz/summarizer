@@ -1,11 +1,16 @@
 import tseslint from "typescript-eslint";
 import { defineConfig, globalIgnores } from "eslint/config";
 import { fileURLToPath } from "node:url";
+import directoryImportBoundary from "./eslint-rules/directoryImportBoundary.js";
 import helperImportOwner from "./eslint-rules/helperImportOwner.js";
 import publicModuleEntry from "./eslint-rules/publicModuleEntry.js";
 
+const apiDirectory = fileURLToPath(new URL("./api", import.meta.url));
 const messageQueueDirectory = fileURLToPath(
   new URL("./shared/message-queue", import.meta.url),
+);
+const transcribeWorkerDirectory = fileURLToPath(
+  new URL("./transcribe-worker", import.meta.url),
 );
 
 /**
@@ -31,6 +36,7 @@ export default defineConfig([
     plugins: {
       local: {
         rules: {
+          "directory-import-boundary": directoryImportBoundary,
           "helper-import-owner": helperImportOwner,
           "public-module-entry": publicModuleEntry,
         },
@@ -43,6 +49,10 @@ export default defineConfig([
     },
     rules: {
       "no-restricted-imports": ["error", dbClientRestriction],
+      "local/directory-import-boundary": [
+        "error",
+        { directories: [apiDirectory, transcribeWorkerDirectory] },
+      ],
       "local/helper-import-owner": "error",
       "local/public-module-entry": [
         "error",
