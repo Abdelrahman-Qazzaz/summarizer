@@ -279,4 +279,26 @@ describe("POST /upload/youtube", () => {
       useCaptionsIfAvailable: false,
     });
   });
+
+  it("forwards the caption preference to the fetcher", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/youtube", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: await sessionCookieHeader("user_01"),
+      },
+      body: JSON.stringify({
+        youtubeUrl: YT_URL,
+        useCaptionsIfAvailable: true,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockSendEvent).toHaveBeenCalledWith(
+      "yt_fetch",
+      expect.objectContaining({ useCaptionsIfAvailable: true }),
+    );
+  });
 });

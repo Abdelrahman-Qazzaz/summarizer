@@ -3,6 +3,7 @@ const audioSource = "audioSource";
 const chosenModelId = "chosenModelId";
 const transcriptModelId = "transcriptModelId";
 const youtubeUrl = "youtubeUrl";
+const useCaptionsIfAvailable = "useCaptionsIfAvailable";
 
 export const CTX_KEYS = {
   userId: "userId",
@@ -27,6 +28,7 @@ export const CTX_KEYS = {
   transcriptModelId,
   audioSource,
   youtubeUrl,
+  useCaptionsIfAvailable,
 } as const;
 
 export const FORM_KEYS = {

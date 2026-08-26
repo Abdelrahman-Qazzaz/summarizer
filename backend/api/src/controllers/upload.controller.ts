@@ -43,6 +43,7 @@ export async function handleYoutubeUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const url = c.get(CTX_KEYS.youtubeUrl);
   const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
+  const useCaptionsIfAvailable = c.get(CTX_KEYS.useCaptionsIfAvailable);
 
   const uploadId: UploadId = randomUUID();
 
@@ -65,7 +66,7 @@ export async function handleYoutubeUpload(c: Context) {
     uploadId,
     url,
     userId,
-    useCaptionsIfAvailable: false, // TODO: implement as an option,
+    useCaptionsIfAvailable,
   });
   return c.json({
     message: "Queued",

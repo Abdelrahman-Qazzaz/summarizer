@@ -94,6 +94,7 @@ export const youtubeUploadSchema = z
   .object({
     [CTX_KEYS.youtubeUrl]: z.string().url(),
     [FORM_KEYS.transcriptModelId]: transcriptionModelField,
+    [CTX_KEYS.useCaptionsIfAvailable]: z.boolean().optional().default(false),
   })
   .superRefine(async (data, ctx) => {
     if (!isYoutubeUrl(data[CTX_KEYS.youtubeUrl])) {
@@ -108,4 +109,5 @@ export const youtubeUploadSchema = z
   .transform((data) => ({
     [CTX_KEYS.youtubeUrl]: data[CTX_KEYS.youtubeUrl],
     [CTX_KEYS.transcriptModelId]: data[FORM_KEYS.transcriptModelId],
+    [CTX_KEYS.useCaptionsIfAvailable]: data[CTX_KEYS.useCaptionsIfAvailable],
   }));
