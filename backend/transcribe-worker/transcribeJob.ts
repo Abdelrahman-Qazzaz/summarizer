@@ -23,130 +23,88 @@ type handleTranscribeJobInput =
   | { uploadId: UploadId | null; existingTranscriptId: UploadId }
   | { uploadId: UploadId; existingTranscriptId: UploadId | null };
 
+type AudioJob = Awaited<ReturnType<typeof claimAudioJob>> & {};
+
+async function resolveTitle(
+  transcript: string,
+  fallback: string,
+  uploadId: string,
+): Promise<string> {
+  try {
+    return await generateTitle("transcript", transcript);
+  } catch (error) {
+    log.warn("Transcript title generation failed", {
+      uploadId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallback;
+  }
+}
+
+async function runTranscriptionJob(
+  uploadId: UploadId,
+  redelivered: boolean,
+  getTranscript: (job: NonNullable<AudioJob>) => Promise<string>,
+): Promise<void> {
+  let claimToken: string | null = null;
+
+  try {
+    const job = await claimAudioJob(uploadId, redelivered);
+    if (!job) return;
+    claimToken = job.claimToken;
+
+    const transcript = await getTranscript(job);
+    if (!transcript.trim()) throw new Error("Transcription produced no text");
+
+    log.debug("Transcription produced", {
+      uploadId,
+      length: transcript.length,
+    });
+
+    const title = await resolveTitle(transcript, job.fileName, uploadId);
+
+    const saved = await saveCompletedTranscript(
+      job.userId,
+      uploadId,
+      transcript,
+      title,
+      claimToken,
+    );
+    if (!saved) {
+      log.debug("Discarded result from superseded claim", { uploadId });
+      return;
+    }
+
+    await mq.publish(mq.queues.TRANSCRIBE_DONE, {
+      uploadId,
+      userId: job.userId,
+    });
+  } catch (error) {
+    log.error("Transcription job failed", error, { uploadId });
+    if (claimToken) await failAudioJob(uploadId, claimToken);
+    throw error;
+  }
+}
+
 export async function handleTranscribeJob(
   { uploadId, existingTranscriptId }: handleTranscribeJobInput,
   deliveryMetadata: DeliveryMetadata = { redelivered: false },
 ) {
-  // TODO: refactor to remove code dupliation between the two conditionals
+  const { redelivered } = deliveryMetadata;
+
   if (uploadId) {
-    let claimToken: string | null = null;
-
-    try {
-      const job = await claimAudioJob(uploadId, deliveryMetadata.redelivered);
-
-      if (!job) return;
-      claimToken = job.claimToken;
-
+    await runTranscriptionJob(uploadId, redelivered, async (job) => {
       const audioUrl = await createSignedUrl(
         job.userId,
         uploadId,
         AUDIO_URL_TTL_SECONDS,
       );
       const model = job.transcriptModelId ?? DEFAULT_TRANSCRIBE_MODEL;
-      const transcript = await transcribeAI(model, audioUrl);
-      if (!transcript.trim()) {
-        throw new Error("Transcription produced no text");
-      }
-      log.debug("Transcription produced", {
-        uploadId,
-        length: transcript.length,
-      });
-
-      let title = job.fileName;
-      try {
-        title = await generateTitle("transcript", transcript);
-      } catch (error) {
-        log.warn("Transcript title generation failed", {
-          uploadId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        title = job.fileName;
-      }
-
-      const saved = await saveCompletedTranscript(
-        job.userId,
-        uploadId,
-        transcript,
-        title,
-        claimToken,
-      );
-      if (!saved) {
-        log.debug("Discarded result from superseded claim", { uploadId });
-        return;
-      }
-
-      await mq.publish(mq.queues.TRANSCRIBE_DONE, {
-        uploadId,
-        userId: job.userId,
-      });
-    } catch (error) {
-      log.error("Transcription job failed", error, { uploadId });
-      if (claimToken) await failAudioJob(uploadId, claimToken);
-
-      throw error;
-    }
+      return transcribeAI(model, audioUrl);
+    });
   } else if (existingTranscriptId) {
-    let claimToken: string | null = null;
-
-    try {
-      const job = await claimAudioJob(
-        existingTranscriptId,
-        deliveryMetadata.redelivered,
-      );
-
-      if (!job) return;
-      claimToken = job.claimToken;
-
-      const transcript = await getTextFromBucket(
-        job.userId,
-        existingTranscriptId,
-      );
-      if (!transcript.trim()) {
-        throw new Error("Transcription produced no text");
-      }
-      log.debug("Transcription produced", {
-        uploadId: existingTranscriptId,
-        length: transcript.length,
-      });
-
-      let title = job.fileName;
-      try {
-        title = await generateTitle("transcript", transcript);
-      } catch (error) {
-        log.warn("Transcript title generation failed", {
-          uploadId: existingTranscriptId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        title = job.fileName;
-      }
-
-      const saved = await saveCompletedTranscript(
-        job.userId,
-        existingTranscriptId,
-        transcript,
-        title,
-        claimToken,
-      );
-      if (!saved) {
-        log.debug("Discarded result from superseded claim", {
-          uploadId: existingTranscriptId,
-        });
-        return;
-      }
-
-      await mq.publish(mq.queues.TRANSCRIBE_DONE, {
-        uploadId: existingTranscriptId,
-        userId: job.userId,
-      });
-    } catch (error) {
-      log.error("Transcription job failed", error, {
-        uploadId: existingTranscriptId,
-      });
-      if (claimToken) {
-        await failAudioJob(existingTranscriptId, claimToken);
-      }
-
-      throw error;
-    }
+    await runTranscriptionJob(existingTranscriptId, redelivered, (job) =>
+      getTextFromBucket(job.userId, existingTranscriptId),
+    );
   }
 }
