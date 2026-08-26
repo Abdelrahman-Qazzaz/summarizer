@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
-import { sign, verify } from "hono/jwt";
 
 import { getApiEnv } from "../../../shared/env";
 import {
@@ -8,6 +7,7 @@ import {
   getRiderctUrl,
   revokeAuthSession,
 } from "../auth/auth";
+import { createSessionToken, verifySessionToken } from "../auth/sessionToken";
 import { clearSessionToken, setSessionToken } from "../cookies/session";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../shared/keys";
@@ -32,8 +32,7 @@ export async function handleLogout(c: Context) {
 
   let sessionId: string | undefined;
   try {
-    const payload = await verify(token, getApiEnv().SESSION_SECRET, "HS256");
-    if (typeof payload.sid === "string") sessionId = payload.sid;
+    ({ sessionId } = await verifySessionToken(token));
   } catch {
     return c.json(null, 200);
   }
@@ -60,14 +59,11 @@ export async function handleCallback(c: Context) {
   // both must still succeed before the cookie is issued.
   const [, token] = await Promise.all([
     ensureUser(userId),
-    sign(
-      {
-        sub: userId,
-        sid: sessionId,
-        exp: Math.floor(Date.now() / 1000) + week,
-      },
-      getApiEnv().SESSION_SECRET,
-    ),
+    createSessionToken({
+      userId,
+      sessionId,
+      expiresAtEpochSeconds: Math.floor(Date.now() / 1000) + week,
+    }),
   ]);
 
   setSessionToken(c, token);

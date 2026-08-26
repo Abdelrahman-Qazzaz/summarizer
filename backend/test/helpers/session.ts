@@ -1,19 +1,15 @@
-// test/helpers/session.ts
-import { sign } from "hono/jwt";
+import { createSessionToken } from "../../api/src/auth/sessionToken";
 import { COOKIE_KEYS } from "../../shared/keys";
 
 export async function sessionCookieHeader(
   userId: string,
   sessionId?: string,
 ): Promise<string> {
-  const token = await sign(
-    {
-      sub: userId,
-      ...(sessionId ? { sid: sessionId } : {}),
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    },
-    process.env.SESSION_SECRET!,
-  );
+  const token = await createSessionToken({
+    userId,
+    sessionId,
+    expiresAtEpochSeconds: Math.floor(Date.now() / 1000) + 3600,
+  });
   return `${COOKIE_KEYS.session}=${token}`;
 }
 

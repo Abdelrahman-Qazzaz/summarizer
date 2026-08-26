@@ -1,21 +1,15 @@
 import { createMiddleware } from "hono/factory";
 import { getCookie } from "hono/cookie";
-import { verify } from "hono/jwt";
-import { getApiEnv } from "../../../shared/env";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../shared/keys";
 import { logger } from "../../../shared/logger";
+import { verifySessionToken } from "../auth/sessionToken";
 
 export const requireAuth = createMiddleware(async (c, next) => {
   const token = getCookie(c, COOKIE_KEYS.session);
   if (!token) return c.json({ message: "Unauthorized" }, 401);
   try {
-    // TODO: create const var for "HS256" and replace hard-coded strings with it.
-    const payload = await verify(token, getApiEnv().SESSION_SECRET, "HS256");
-    const userId = payload.sub;
-    if (typeof userId !== "string") {
-      return c.json({ message: "Unauthorized" }, 401);
-    }
+    const { userId } = await verifySessionToken(token);
     c.set(CTX_KEYS.userId, userId);
     await next();
   } catch (error) {

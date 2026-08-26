@@ -1,10 +1,10 @@
 import type { ServerType } from "@hono/node-server";
 import { Server } from "socket.io";
 import { parse } from "hono/utils/cookie";
-import { verify } from "hono/jwt";
 import { COOKIE_KEYS } from "../../../shared/keys";
 import { getApiEnv } from "../../../shared/env";
 import { logger } from "../../../shared/logger";
+import { verifySessionToken } from "../auth/sessionToken";
 
 const log = logger.child({ component: "socket" });
 
@@ -30,9 +30,7 @@ export function startSocketServer(server: ServerType) {
     const token = parse(raw)[COOKIE_KEYS.session];
     if (!token) return next(new Error("Unauthorized"));
     try {
-      const payload = await verify(token, getApiEnv().SESSION_SECRET, "HS256");
-      const userId = payload.sub;
-      if (typeof userId !== "string") return next(new Error("Unauthorized"));
+      const { userId } = await verifySessionToken(token);
       // socket.data.userId = userId;
       socket.join(userId);
       next();
