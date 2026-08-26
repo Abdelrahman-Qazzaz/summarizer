@@ -6,8 +6,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { uploadAudio, uploadImage } from "../api/uploads";
-import { requestYoutubeTranscript } from "../api/uploads";
+import {
+  deleteImage,
+  requestYoutubeTranscript,
+  uploadAudio,
+  uploadImage,
+} from "../api/uploads";
 import { errorMessage } from "../api/http";
 import {
   DEFAULT_TRANSCRIPTION_MODEL,
@@ -122,12 +126,15 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
 
   useTranscriptWatcher(drafts, patchByUploadId);
 
-  const appendSources = useCallback((draftKey: string, added: StagedSource[]) => {
-    setDrafts((current) => ({
-      ...current,
-      [draftKey]: [...(current[draftKey] ?? []), ...added],
-    }));
-  }, []);
+  const appendSources = useCallback(
+    (draftKey: string, added: StagedSource[]) => {
+      setDrafts((current) => ({
+        ...current,
+        [draftKey]: [...(current[draftKey] ?? []), ...added],
+      }));
+    },
+    [],
+  );
 
   const runFileUpload = useCallback(
     async (draftKey: string, localId: string, file: File, kind: FileKind) => {
@@ -174,7 +181,10 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
         });
         patch({ status: "transcribing", uploadId: uploaded.uploadId });
       } catch (error) {
-        patch({ status: "failed", error: errorMessage(error, "Upload failed.") });
+        patch({
+          status: "failed",
+          error: errorMessage(error, "Upload failed."),
+        });
       }
     },
     [patchSource],
@@ -257,7 +267,12 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
         accepted.map((entry) => entry.source),
       );
       for (const entry of accepted) {
-        void runFileUpload(draftKey, entry.source.localId, entry.file, entry.kind);
+        void runFileUpload(
+          draftKey,
+          entry.source.localId,
+          entry.file,
+          entry.kind,
+        );
       }
     },
     [appendSources, runFileUpload, toast],
@@ -301,18 +316,38 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
     [appendSources, toast],
   );
 
-  const removeSource = useCallback((draftKey: string, localId: string) => {
-    setDrafts((current) => {
-      const draft = current[draftKey];
-      if (!draft) return current;
-      const removed = draft.find((source) => source.localId === localId);
-      if (removed) releasePreview(removed);
-      return {
-        ...current,
-        [draftKey]: draft.filter((source) => source.localId !== localId),
-      };
-    });
-  }, []);
+  const removeSource = useCallback(
+    (draftKey: string, localId: string) => {
+      const removed = draftsRef.current[draftKey]?.find(
+        (source) => source.localId === localId,
+      );
+      if (!removed) return;
+
+      releasePreview(removed);
+      if (
+        removed.kind === "image" &&
+        removed.status === "ready" &&
+        removed.uploadId
+      ) {
+        void deleteImage(removed.uploadId).catch((error) => {
+          toast.show({
+            kind: "error",
+            message: errorMessage(error, "Image cleanup failed."),
+          });
+        });
+      }
+
+      setDrafts((current) => {
+        const draft = current[draftKey];
+        if (!draft) return current;
+        return {
+          ...current,
+          [draftKey]: draft.filter((source) => source.localId !== localId),
+        };
+      });
+    },
+    [toast],
+  );
 
   const retrySource = useCallback(
     (draftKey: string, localId: string) => {

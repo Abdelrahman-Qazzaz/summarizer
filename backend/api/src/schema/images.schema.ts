@@ -36,7 +36,7 @@ export const imageUploadSchema = z
     [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
   }));
 
-/** GET /upload/image/:uploadId — re-sign a previously uploaded image's URL. */
-export const imageFetchParamSchema = z.object({
+/** Identifies an uploaded image for read or deletion. */
+export const imageReqParamSchema = z.object({
   [CTX_KEYS.uploadId]: z.string().uuid(),
 });

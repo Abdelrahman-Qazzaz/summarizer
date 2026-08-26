@@ -231,7 +231,10 @@ export async function resolveMessageImages(
   return imagesByMessageId;
 }
 
-async function findImageUploadIds(userId: string, filter: SQL | undefined) {
+async function findImageUploadIdsWhere(
+  userId: string,
+  filter: SQL | undefined,
+) {
   const rows = await db
     .select({ uploadId: ImageUploads.uploadId })
     .from(ImageUploads)
@@ -250,7 +253,7 @@ export async function findMessageImageUploadIds(
   userId: string,
   messageId: string,
 ) {
-  return findImageUploadIds(userId, eq(ImageUploads.messageId, messageId));
+  return findImageUploadIdsWhere(userId, eq(ImageUploads.messageId, messageId));
 }
 
 /** Same, for every message in a conversation about to be deleted. */
@@ -258,7 +261,7 @@ export async function findConversationImageUploadIds(
   userId: string,
   conversationId: string,
 ) {
-  return findImageUploadIds(
+  return findImageUploadIdsWhere(
     userId,
     inArray(
       ImageUploads.messageId,
@@ -268,6 +271,32 @@ export async function findConversationImageUploadIds(
         .where(eq(ChatMessages.conversationId, conversationId)),
     ),
   );
+}
+
+export async function findOwnedUnattachedImageUploadId(
+  userId: string,
+  uploadId: string,
+) {
+  const [ownedUploadId] = await findImageUploadIdsWhere(
+    userId,
+    and(eq(ImageUploads.uploadId, uploadId), isNull(ImageUploads.messageId)),
+  );
+  return ownedUploadId ?? null;
+}
+
+export async function deleteOwnedUnattachedImageUpload(
+  userId: string,
+  uploadId: string,
+) {
+  await db
+    .delete(ImageUploads)
+    .where(
+      and(
+        eq(ImageUploads.userId, userId),
+        eq(ImageUploads.uploadId, uploadId),
+        isNull(ImageUploads.messageId),
+      ),
+    );
 }
 
 /**

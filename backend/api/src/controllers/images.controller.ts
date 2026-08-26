@@ -2,10 +2,16 @@ import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import {
   createSignedUrl,
+  deleteFilesFromBucket,
   IMAGE_URL_TTL_SECONDS,
   uploadImageToBucket,
 } from "../../../shared/bucket";
-import { createImageUpload, resolveImages } from "../data/images.data";
+import {
+  createImageUpload,
+  deleteOwnedUnattachedImageUpload,
+  findOwnedUnattachedImageUploadId,
+  resolveImages,
+} from "../data/images.data";
 import { CTX_KEYS } from "../../../shared/keys";
 import type { UploadId } from "../../../shared/types";
 
@@ -56,4 +62,22 @@ export async function handleGetImage(c: Context) {
   if (!image) return c.json({ message: "Image not found" }, 404);
 
   return c.json(image);
+}
+
+/** DELETE /upload/image/:uploadId — delete an unused image. */
+export async function handleDeleteImage(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const uploadId = c.get(CTX_KEYS.uploadId);
+  const ownedUploadId = await findOwnedUnattachedImageUploadId(
+    userId,
+    uploadId,
+  );
+
+  if (!ownedUploadId) return c.json({ message: "Image deleted" });
+
+  // Keep rows available for a retry if the external storage call fails.
+  await deleteFilesFromBucket(userId, [ownedUploadId]);
+  await deleteOwnedUnattachedImageUpload(userId, ownedUploadId);
+
+  return c.json({ message: "Image deleted" });
 }

@@ -11,7 +11,7 @@ import {
 } from "../middleware/validate.middleware";
 import {
   imageUploadSchema,
-  imageFetchParamSchema,
+  imageReqParamSchema,
 } from "../schema/images.schema";
 import { requireAuth } from "../middleware/auth.middleware";
 
@@ -35,8 +35,13 @@ imagesRouter.post(
 imagesRouter.get(
   `/:${CTX_KEYS.uploadId}`,
   imageReadRateLimiter,
-  validateReqParams(imageFetchParamSchema),
+  validateReqParams(imageReqParamSchema),
   imagesController.handleGetImage,
 );
 
-//TODO: add DELETE route, triggered either by user removing an image from the message input, or from a dashboard (batched)
+imagesRouter.delete(
+  `/:${CTX_KEYS.uploadId}`,
+  imageReadRateLimiter,
+  validateReqParams(imageReqParamSchema),
+  imagesController.handleDeleteImage,
+);

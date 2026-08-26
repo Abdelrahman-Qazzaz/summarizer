@@ -28,7 +28,17 @@ export type UploadedImage = {
 export async function uploadImage(file: File): Promise<UploadedImage> {
   const body = new FormData();
   body.append(FORM_KEYS.uploadFile, file);
-  return apiJson<UploadedImage>(uploadImageEndpoint(), { method: "POST", body });
+  return apiJson<UploadedImage>(uploadImageEndpoint(), {
+    method: "POST",
+    body,
+  });
+}
+
+/** Deletes a resolved image removed from a draft. */
+export async function deleteImage(uploadId: string): Promise<void> {
+  await apiJson<{ message: string }>(`${uploadImageEndpoint()}/${uploadId}`, {
+    method: "DELETE",
+  });
 }
 
 type UploadedAudio = {
@@ -52,7 +62,10 @@ export async function uploadAudio(upload: {
   body.append(FORM_KEYS.uploadFile, upload.file);
   body.append(FORM_KEYS.audioSource, upload.source);
   body.append(FORM_KEYS.transcriptModelId, upload.transcriptModelId);
-  return apiJson<UploadedAudio>(uploadAudioEndpoint(), { method: "POST", body });
+  return apiJson<UploadedAudio>(uploadAudioEndpoint(), {
+    method: "POST",
+    body,
+  });
 }
 
 type QueuedYoutube = {
