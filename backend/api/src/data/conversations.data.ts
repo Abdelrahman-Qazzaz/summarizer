@@ -92,7 +92,11 @@ export async function claimConversationTurn(
   const claimToken = randomUUID();
   const [row] = await db
     .update(Conversations)
-    .set({ activeTurnClaimToken: claimToken, activeTurnClaimedAt: new Date() })
+    .set({
+      activeTurnClaimToken: claimToken,
+      activeTurnClaimedAt: new Date(),
+      updatedAt: sql`${Conversations.updatedAt}`,
+    })
     .where(
       and(
         ownedBy(userId, conversationId),
@@ -115,7 +119,11 @@ export async function releaseConversationTurn(
 ) {
   await executor
     .update(Conversations)
-    .set({ activeTurnClaimToken: null, activeTurnClaimedAt: null })
+    .set({
+      activeTurnClaimToken: null,
+      activeTurnClaimedAt: null,
+      updatedAt: sql`${Conversations.updatedAt}`,
+    })
     .where(
       and(
         ownedBy(userId, conversationId),

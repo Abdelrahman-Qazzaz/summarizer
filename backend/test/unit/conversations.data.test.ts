@@ -41,6 +41,7 @@ describe("conversation turn claims", () => {
     expect(mockSet).toHaveBeenCalledWith({
       activeTurnClaimToken: claimToken,
       activeTurnClaimedAt: expect.any(Date),
+      updatedAt: expect.anything(),
     });
   });
 
@@ -58,6 +59,7 @@ describe("conversation turn claims", () => {
     expect(mockSet).toHaveBeenCalledWith({
       activeTurnClaimToken: null,
       activeTurnClaimedAt: null,
+      updatedAt: expect.anything(),
     });
     expect(mockWhere).toHaveBeenCalledOnce();
   });
