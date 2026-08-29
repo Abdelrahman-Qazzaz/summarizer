@@ -1,7 +1,8 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
+  AttachmentUploads,
   AudioTranscriptionJobs,
-  ChatMessageTranscriptions,
+  ChatMessageAttachments,
   TranscriptContents,
   db,
   type Executor,
@@ -17,20 +18,22 @@ import type { UploadId } from "../types";
  * of a row means a valid transcript is ready.
  */
 
-/** Worker write: replace on a re-run (the same uploadId transcribed again). */
+/** Worker write: replace on a re-run (the same audioUploadId transcribed again). */
 export async function upsertTranscript(
-  userId: string,
-  uploadId: UploadId,
+  audioUploadId: UploadId,
   content: string,
-  title: string,
   executor: Executor = db,
 ) {
   await executor
     .insert(TranscriptContents)
-    .values({ uploadId, userId, content, charCount: content.length, title })
+    .values({
+      audioUploadId,
+      content,
+      charCount: content.length,
+    })
     .onConflictDoUpdate({
-      target: TranscriptContents.uploadId,
-      set: { content, charCount: content.length, title },
+      target: TranscriptContents.audioUploadId,
+      set: { content, charCount: content.length },
     });
 }
 
@@ -40,48 +43,53 @@ export async function upsertTranscript(
  * (or a completed job with none).
  */
 export async function saveCompletedTranscript(
-  userId: string,
-  uploadId: UploadId,
+  audioUploadId: UploadId,
   content: string,
-  title: string,
   claimToken: string,
 ) {
   return db.transaction(async (tx) => {
-    const ownsJob = await completeAudioJob(uploadId, claimToken, tx);
+    const ownsJob = await completeAudioJob(audioUploadId, claimToken, tx);
     if (!ownsJob) return false;
 
-    await upsertTranscript(userId, uploadId, content, title, tx);
+    await upsertTranscript(audioUploadId, content, tx);
     return true;
   });
 }
 
-/** Bodies for a set of turns at once, keyed by uploadId — the batched context read. */
+/** Bodies for a set of turns at once, keyed by audioUploadId — the batched context read. */
 export async function findTranscripts(
   userId: string,
-  uploadIds: readonly string[],
+  audioUploadIds: readonly string[],
 ): Promise<Map<string, string>> {
-  if (uploadIds.length === 0) return new Map();
+  if (audioUploadIds.length === 0) return new Map();
 
   const rows = await db
     .select({
-      uploadId: TranscriptContents.uploadId,
+      audioUploadId: TranscriptContents.audioUploadId,
       content: TranscriptContents.content,
     })
     .from(TranscriptContents)
+    .innerJoin(
+      AttachmentUploads,
+      eq(
+        AttachmentUploads.attachmentUploadId,
+        TranscriptContents.audioUploadId,
+      ),
+    )
     .where(
       and(
-        eq(TranscriptContents.userId, userId),
-        inArray(TranscriptContents.uploadId, [...uploadIds]),
+        eq(AttachmentUploads.userId, userId),
+        eq(AttachmentUploads.kind, "audio"),
+        inArray(TranscriptContents.audioUploadId, [...audioUploadIds]),
       ),
     );
 
-  return new Map(rows.map((row) => [row.uploadId, row.content]));
+  return new Map(rows.map((row) => [row.audioUploadId, row.content]));
 }
 
 export type StoredTranscriptAttachment = {
-  uploadId: string;
+  audioUploadId: string;
   fileName: string;
-  title: string | null;
   source: string;
   charCount: number | null;
 };
@@ -99,35 +107,44 @@ export async function findMessageTranscriptAttachments(
 
   const rows = await db
     .select({
-      messageId: ChatMessageTranscriptions.messageId,
-      uploadId: AudioTranscriptionJobs.uploadId,
-      fileName: AudioTranscriptionJobs.fileName,
-      title: TranscriptContents.title,
+      messageId: ChatMessageAttachments.messageId,
+      audioUploadId: AudioTranscriptionJobs.audioUploadId,
+      fileName: AttachmentUploads.fileName,
       source: AudioTranscriptionJobs.source,
       charCount: TranscriptContents.charCount,
     })
-    .from(ChatMessageTranscriptions)
+    .from(ChatMessageAttachments)
     .innerJoin(
-      AudioTranscriptionJobs,
+      AttachmentUploads,
       and(
         eq(
-          AudioTranscriptionJobs.uploadId,
-          ChatMessageTranscriptions.audioUploadId,
+          AttachmentUploads.attachmentUploadId,
+          ChatMessageAttachments.attachmentUploadId,
         ),
-        eq(AudioTranscriptionJobs.userId, userId),
+        eq(AttachmentUploads.userId, userId),
+        eq(AttachmentUploads.kind, "audio"),
+      ),
+    )
+    .innerJoin(
+      AudioTranscriptionJobs,
+      eq(
+        AudioTranscriptionJobs.audioUploadId,
+        ChatMessageAttachments.attachmentUploadId,
       ),
     )
     .leftJoin(
       TranscriptContents,
       and(
-        eq(TranscriptContents.uploadId, AudioTranscriptionJobs.uploadId),
-        eq(TranscriptContents.userId, userId),
+        eq(
+          TranscriptContents.audioUploadId,
+          AudioTranscriptionJobs.audioUploadId,
+        ),
       ),
     )
-    .where(inArray(ChatMessageTranscriptions.messageId, [...messageIds]))
+    .where(inArray(ChatMessageAttachments.messageId, [...messageIds]))
     .orderBy(
-      asc(ChatMessageTranscriptions.messageId),
-      asc(ChatMessageTranscriptions.position),
+      asc(ChatMessageAttachments.messageId),
+      asc(ChatMessageAttachments.position),
     );
 
   for (const { messageId, ...transcription } of rows) {
@@ -139,25 +156,9 @@ export async function findMessageTranscriptAttachments(
   return transcriptionsByMessageId;
 }
 
-export async function attachTranscriptionsToMessage(
-  messageId: string,
-  audioUploadIds: readonly string[],
-  executor: Executor = db,
-) {
-  if (audioUploadIds.length === 0) return;
-
-  await executor.insert(ChatMessageTranscriptions).values(
-    audioUploadIds.map((audioUploadId, position) => ({
-      messageId,
-      audioUploadId,
-      position,
-    })),
-  );
-}
-
 /** A re-run drops the old transcript; the worker upserts the new one on completion. */
-export async function deleteTranscript(uploadId: string) {
+export async function deleteTranscript(audioUploadId: string) {
   await db
     .delete(TranscriptContents)
-    .where(eq(TranscriptContents.uploadId, uploadId));
+    .where(eq(TranscriptContents.audioUploadId, audioUploadId));
 }

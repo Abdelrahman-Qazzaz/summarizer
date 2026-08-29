@@ -1,9 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
+  AttachmentUploads,
   AudioTranscriptionJobs,
-  TranscriptContents,
   db,
   type Executor,
 } from "../db";
@@ -20,36 +30,53 @@ import type { UploadId } from "../types";
  */
 type JobStatus = (typeof jobStatusEnum.enumValues)[number];
 
-type AudioRow = typeof AudioTranscriptionJobs.$inferSelect;
+type AudioJobRow = typeof AudioTranscriptionJobs.$inferSelect;
 
 /* ---------------------------------------------------------------- API reads */
 
 /** Ownership scopes every request-path query; the worker deliberately skips it. */
-function ownedBy(userId: string, uploadId: string) {
+function ownedBy(userId: string, audioUploadId: string) {
   return and(
-    eq(AudioTranscriptionJobs.uploadId, uploadId),
-    eq(AudioTranscriptionJobs.userId, userId),
+    eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
+    inArray(
+      AudioTranscriptionJobs.audioUploadId,
+      db
+        .select({ attachmentUploadId: AttachmentUploads.attachmentUploadId })
+        .from(AttachmentUploads)
+        .where(
+          and(
+            eq(AttachmentUploads.attachmentUploadId, audioUploadId),
+            eq(AttachmentUploads.userId, userId),
+            eq(AttachmentUploads.kind, "audio"),
+          ),
+        ),
+    ),
   );
 }
 
-export async function findAudioJob(userId: string, uploadId: string) {
+export async function findAudioJob(userId: string, audioUploadId: string) {
   const [row] = await db
     .select({
-      uploadId: AudioTranscriptionJobs.uploadId,
-      fileName: AudioTranscriptionJobs.fileName,
-      title: TranscriptContents.title,
+      audioUploadId: AudioTranscriptionJobs.audioUploadId,
+      captionUploadId: AudioTranscriptionJobs.captionUploadId,
+      fileName: AttachmentUploads.fileName,
       status: AudioTranscriptionJobs.status,
       error: AudioTranscriptionJobs.error,
     })
     .from(AudioTranscriptionJobs)
-    .leftJoin(
-      TranscriptContents,
-      and(
-        eq(TranscriptContents.uploadId, AudioTranscriptionJobs.uploadId),
-        eq(TranscriptContents.userId, userId),
+    .innerJoin(
+      AttachmentUploads,
+      eq(
+        AttachmentUploads.attachmentUploadId,
+        AudioTranscriptionJobs.audioUploadId,
       ),
     )
-    .where(ownedBy(userId, uploadId))
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
+        eq(AttachmentUploads.userId, userId),
+      ),
+    )
     .limit(1);
 
   return row ?? null;
@@ -57,38 +84,43 @@ export async function findAudioJob(userId: string, uploadId: string) {
 
 /* --------------------------------------------------------- API job listing */
 
-export type JobCursor = { createdAt: string; uploadId: string };
+export type JobCursor = { createdAt: string; audioUploadId: string };
 
-export type JobSummary = Pick<
-  AudioRow,
-  "uploadId" | "fileName" | "status" | "error" | "createdAt"
-> & { title: string | null };
+export type JobSummary = {
+  audioUploadId: string;
+  fileName: string;
+  status: JobStatus;
+  error: string | null;
+  createdAt: Date;
+};
 
 /** The projection behind JobSummary — the list page needs no more. */
 const audioJobColumns = {
-  uploadId: AudioTranscriptionJobs.uploadId,
-  fileName: AudioTranscriptionJobs.fileName,
-  title: TranscriptContents.title,
+  audioUploadId: AudioTranscriptionJobs.audioUploadId,
+  fileName: AttachmentUploads.fileName,
   status: AudioTranscriptionJobs.status,
-  createdAt: AudioTranscriptionJobs.createdAt,
+  createdAt: AttachmentUploads.createdAt,
   error: AudioTranscriptionJobs.error,
 };
 
 /**
- * Keyset predicate: rows strictly "after" the cursor in (createdAt, uploadId)
+ * Keyset predicate: rows strictly "after" the cursor in (createdAt, audioUploadId)
  * DESC order. Casts the cursor timestamp in SQL so it works regardless of the
  * column's driver read mode.
  */
 function afterCursor(
   createdAtCol: AnyPgColumn,
-  uploadIdCol: AnyPgColumn,
+  audioUploadIdCol: AnyPgColumn,
   cursor: JobCursor | null,
 ) {
   if (!cursor) return undefined;
   const cursorCreatedAt = sql`${cursor.createdAt}::timestamptz`;
   return or(
     lt(createdAtCol, cursorCreatedAt),
-    and(eq(createdAtCol, cursorCreatedAt), lt(uploadIdCol, cursor.uploadId)),
+    and(
+      eq(createdAtCol, cursorCreatedAt),
+      lt(audioUploadIdCol, cursor.audioUploadId),
+    ),
   );
 }
 
@@ -103,7 +135,7 @@ type JobsPageFilters = {
 /**
  * One page of the user's history, newest first. Returns whatever `fetchCount`
  * yields — the caller over-fetches to detect a next page, and owns the cursor
- * encoding. The uploadId tiebreak in the ordering is what makes the keyset
+ * encoding. The audioUploadId tiebreak in the ordering is what makes the keyset
  * cursor deterministic.
  */
 export async function findUserJobsPage(
@@ -114,33 +146,31 @@ export async function findUserJobsPage(
   return db
     .select(audioJobColumns)
     .from(AudioTranscriptionJobs)
-    .leftJoin(
-      TranscriptContents,
-      and(
-        eq(TranscriptContents.uploadId, AudioTranscriptionJobs.uploadId),
-        eq(TranscriptContents.userId, userId),
+    .innerJoin(
+      AttachmentUploads,
+      eq(
+        AttachmentUploads.attachmentUploadId,
+        AudioTranscriptionJobs.audioUploadId,
       ),
     )
     .where(
       and(
-        eq(AudioTranscriptionJobs.userId, userId),
+        eq(AttachmentUploads.userId, userId),
+        eq(AttachmentUploads.kind, "audio"),
         status ? eq(AudioTranscriptionJobs.status, status) : undefined,
         searchQuery
-          ? or(
-              ilike(AudioTranscriptionJobs.fileName, `%${searchQuery}%`),
-              ilike(TranscriptContents.title, `%${searchQuery}%`),
-            )
+          ? ilike(AttachmentUploads.fileName, `%${searchQuery}%`)
           : undefined,
         afterCursor(
-          AudioTranscriptionJobs.createdAt,
-          AudioTranscriptionJobs.uploadId,
+          AttachmentUploads.createdAt,
+          AudioTranscriptionJobs.audioUploadId,
           cursor,
         ),
       ),
     )
     .orderBy(
-      desc(AudioTranscriptionJobs.createdAt),
-      desc(AudioTranscriptionJobs.uploadId),
+      desc(AttachmentUploads.createdAt),
+      desc(AudioTranscriptionJobs.audioUploadId),
     )
     .limit(fetchCount);
 }
@@ -148,27 +178,59 @@ export async function findUserJobsPage(
 /* --------------------------------------------------------------- API writes */
 
 export async function createAudioJob(job: {
-  uploadId: UploadId;
+  audioUploadId: UploadId;
+  captionUploadId: UploadId | null;
   userId: string;
-  source: AudioRow["source"];
+  source: AudioJobRow["source"];
   fileName: string;
   mimeType: string | null;
   sizeBytes: number;
   transcriptModelId: string;
   youtubeSourceUrl?: string;
 }) {
-  const { youtubeSourceUrl, ...columns } = job;
+  const {
+    audioUploadId,
+    captionUploadId,
+    userId,
+    source,
+    fileName,
+    mimeType,
+    sizeBytes,
+    transcriptModelId,
+    youtubeSourceUrl,
+  } = job;
 
-  await db.insert(AudioTranscriptionJobs).values({
-    ...columns,
-    ...(youtubeSourceUrl !== undefined
-      ? { YT_sourceUrl: youtubeSourceUrl }
-      : {}),
+  await db.transaction(async (tx) => {
+    await tx.insert(AttachmentUploads).values({
+      attachmentUploadId: audioUploadId,
+      kind: "audio",
+      userId,
+      fileName,
+      mimeType,
+      sizeBytes,
+    });
+    await tx.insert(AudioTranscriptionJobs).values({
+      audioUploadId,
+      captionUploadId,
+      source,
+      transcriptModelId,
+      ...(youtubeSourceUrl !== undefined
+        ? { YT_sourceUrl: youtubeSourceUrl }
+        : {}),
+    });
   });
 }
 
-export async function deleteAudioJob(userId: string, uploadId: string) {
-  await db.delete(AudioTranscriptionJobs).where(ownedBy(userId, uploadId));
+export async function deleteAudioJob(userId: string, audioUploadId: string) {
+  await db
+    .delete(AttachmentUploads)
+    .where(
+      and(
+        eq(AttachmentUploads.attachmentUploadId, audioUploadId),
+        eq(AttachmentUploads.userId, userId),
+        eq(AttachmentUploads.kind, "audio"),
+      ),
+    );
 }
 
 /**
@@ -178,7 +240,7 @@ export async function deleteAudioJob(userId: string, uploadId: string) {
  */
 export async function requeueAudioJob(
   userId: string,
-  uploadId: string,
+  audioUploadId: string,
   transcriptModelId: string,
 ) {
   const [row] = await db
@@ -191,12 +253,12 @@ export async function requeueAudioJob(
     })
     .where(
       and(
-        ownedBy(userId, uploadId),
+        ownedBy(userId, audioUploadId),
         inArray(AudioTranscriptionJobs.status, ["completed", "failed"]),
       ),
     )
-    // Only whether a row matched; the response echoes the request's uploadId.
-    .returning({ uploadId: AudioTranscriptionJobs.uploadId });
+    // Only whether a row matched; the response echoes the request's audioUploadId.
+    .returning({ audioUploadId: AudioTranscriptionJobs.audioUploadId });
 
   return row ?? null;
 }
@@ -205,11 +267,57 @@ export async function requeueAudioJob(
  * Out-of-band failure reported by youtube-fetcher over the broker. Not
  * user-scoped: the event carries no session, only the id it was given.
  */
-export async function failAudioJobById(uploadId: string, error: string) {
+export async function failAudioJobById(audioUploadId: string, error: string) {
   await db
     .update(AudioTranscriptionJobs)
     .set({ status: "failed", error })
-    .where(eq(AudioTranscriptionJobs.uploadId, uploadId));
+    .where(eq(AudioTranscriptionJobs.audioUploadId, audioUploadId));
+}
+
+export async function findTerminalCaptionUpload(
+  audioUploadId: string,
+  userId?: string,
+) {
+  const [row] = await db
+    .select({
+      audioUploadId: AudioTranscriptionJobs.audioUploadId,
+      captionUploadId: AudioTranscriptionJobs.captionUploadId,
+      userId: AttachmentUploads.userId,
+    })
+    .from(AudioTranscriptionJobs)
+    .innerJoin(
+      AttachmentUploads,
+      eq(
+        AttachmentUploads.attachmentUploadId,
+        AudioTranscriptionJobs.audioUploadId,
+      ),
+    )
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
+        userId ? eq(AttachmentUploads.userId, userId) : undefined,
+        isNotNull(AudioTranscriptionJobs.captionUploadId),
+        inArray(AudioTranscriptionJobs.status, ["completed", "failed"]),
+      ),
+    )
+    .limit(1);
+
+  return row ?? null;
+}
+
+export async function clearCaptionUploadId(
+  audioUploadId: string,
+  captionUploadId: UploadId,
+) {
+  await db
+    .update(AudioTranscriptionJobs)
+    .set({ captionUploadId: null })
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
+        eq(AudioTranscriptionJobs.captionUploadId, captionUploadId),
+      ),
+    );
 }
 
 /* ------------------------------------------------------------ worker writes */
@@ -221,16 +329,16 @@ export async function failAudioJobById(uploadId: string, error: string) {
  * worker out of every terminal write if it later finishes.
  */
 export async function claimAudioJob(
-  uploadId: UploadId,
+  audioUploadId: UploadId,
   allowProcessingRecovery = false,
 ) {
   const claimToken = randomUUID();
-  const [row] = await db
+  const [job] = await db
     .update(AudioTranscriptionJobs)
     .set({ status: "processing", claimToken })
     .where(
       and(
-        eq(AudioTranscriptionJobs.uploadId, uploadId),
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
         allowProcessingRecovery
           ? inArray(AudioTranscriptionJobs.status, ["queued", "processing"])
           : eq(AudioTranscriptionJobs.status, "queued"),
@@ -238,7 +346,18 @@ export async function claimAudioJob(
     )
     .returning();
 
-  return row ? { ...row, claimToken } : null;
+  if (!job) return null;
+
+  const [upload] = await db
+    .select({
+      userId: AttachmentUploads.userId,
+      fileName: AttachmentUploads.fileName,
+    })
+    .from(AttachmentUploads)
+    .where(eq(AttachmentUploads.attachmentUploadId, audioUploadId))
+    .limit(1);
+
+  return upload ? { ...job, ...upload, claimToken } : null;
 }
 
 /**
@@ -246,7 +365,7 @@ export async function claimAudioJob(
  * this worker lost ownership, so its caller can discard the stale result.
  */
 export async function completeAudioJob(
-  uploadId: UploadId,
+  audioUploadId: UploadId,
   claimToken: string,
   executor: Executor = db,
 ) {
@@ -255,23 +374,26 @@ export async function completeAudioJob(
     .set({ status: "completed" })
     .where(
       and(
-        eq(AudioTranscriptionJobs.uploadId, uploadId),
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
         eq(AudioTranscriptionJobs.status, "processing"),
         eq(AudioTranscriptionJobs.claimToken, claimToken),
       ),
     )
-    .returning({ uploadId: AudioTranscriptionJobs.uploadId });
+    .returning({ audioUploadId: AudioTranscriptionJobs.audioUploadId });
 
   return Boolean(row);
 }
 
-export async function failAudioJob(uploadId: UploadId, claimToken: string) {
+export async function failAudioJob(
+  audioUploadId: UploadId,
+  claimToken: string,
+) {
   await db
     .update(AudioTranscriptionJobs)
     .set({ status: "failed" })
     .where(
       and(
-        eq(AudioTranscriptionJobs.uploadId, uploadId),
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
         eq(AudioTranscriptionJobs.status, "processing"),
         eq(AudioTranscriptionJobs.claimToken, claimToken),
       ),

@@ -12,28 +12,29 @@ export type Queue = (typeof QUEUES)[keyof typeof QUEUES];
 export type DeliveryMetadata = { redelivered: boolean };
 export type QueuePayloads = {
   [QUEUES.TRANSCRIBE]: {
-    uploadId: UploadId;
+    audioUploadId: UploadId;
   };
 
   [QUEUES.TRANSCRIBE_DONE]: {
-    uploadId: UploadId;
+    audioUploadId: UploadId;
     userId: string;
   };
 
   [QUEUES.YT_FETCH]: {
-    uploadId: UploadId;
+    audioUploadId: UploadId;
+    captionUploadId: UploadId | null;
     userId: string;
     url: string;
     useCaptionsIfAvailable: boolean;
   };
 
   [QUEUES.YT_FETCH_FAILED]: {
-    uploadId: UploadId;
+    audioUploadId: UploadId;
     userId: string;
     error?: string;
   };
 
   [QUEUES.CAPTION_TRANSCRIPT]: {
-    uploadId: UploadId;
+    audioUploadId: UploadId;
   };
 };

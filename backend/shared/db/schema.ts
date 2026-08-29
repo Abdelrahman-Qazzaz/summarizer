@@ -10,6 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
+import type { UploadId } from "../types";
 
 export const jobStatusEnum = pgEnum("job_status", [
   "queued",
@@ -17,110 +18,86 @@ export const jobStatusEnum = pgEnum("job_status", [
   "completed",
   "failed",
 ] as const);
+export const attachmentKindEnum = pgEnum("attachment_kind", [
+  "image",
+  "audio",
+] as const);
+export const DEFAULT_CONVERSATION_TITLE = "New conversation";
+export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant"] as const);
 
-/** Speech jobs after audio upload (transcription pipeline). */
-export const AudioTranscriptionJobs = pgTable(
-  "audio_transcription_jobs",
+export const users = pgTable("users", {
+  // WorkOS user id (eg "user_01...")
+  id: text("id").primaryKey(),
+
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Durable user uploads that can be attached to one or more chat messages. */
+export const AttachmentUploads = pgTable(
+  "attachment_uploads",
   {
-    uploadId: text("upload_id").notNull().primaryKey(),
-    source: text("source").notNull(), // 'video' | 'audio' | 'youtube'
-    // Origin URL for 'youtube' jobs; null for direct uploads. Stored for history
-    // display and to enable transcript caching by video id later.
-    YT_sourceUrl: text("YT_source_url"),
+    attachmentUploadId: text("attachment_upload_id").notNull().primaryKey(),
+    kind: attachmentKindEnum("kind").notNull(),
     fileName: text("file_name").notNull(),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-    status: jobStatusEnum("status").notNull().default("queued"),
-    // queued | processing | completed | failed
-    error: text("error"),
-    // RabbitMQ redelivers an unACKed message after its consumer connection closes,
-    // but that worker may still finish its AI call after a network split. Every
-    // claim replaces this fencing token, and terminal writes must still own it so
-    // a disconnected worker cannot commit after its replacement has taken over.
-    claimToken: uuid("claim_token"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id),
-
-    // Model used to transcribe the audio. Null falls back to the default
-    transcriptModelId: text("transcription_model_id"),
-  },
-  (table) => [
-    // Matches findUserJobsPage: owner filter + the (created_at, upload_id) keyset
-    // ordering, so a page is served from the index without a scan-and-sort.
-    index("audio_jobs_user_created_upload_idx").on(
-      table.userId,
-      table.createdAt,
-      table.uploadId,
-    ),
-  ],
-);
-
-/**
- * The transcript text a completed job produced, out of the job row so it isn't
- * pulled by the job list. A row exists only while a valid transcript does — the
- * worker upserts it on completion, a re-run deletes it — so its presence means
- * "ready". `charCount` lets a chat turn be budgeted without reading the body.
- */
-export const TranscriptContents = pgTable("transcript_contents", {
-  // The audio job this transcript belongs to (1:1).
-  uploadId: text("upload_id")
-    .primaryKey()
-    .references(() => AudioTranscriptionJobs.uploadId, { onDelete: "cascade" }),
-  content: text("content").notNull(),
-  charCount: integer("char_count").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-
-  title: text("title").notNull(),
-});
-
-export const ImageUploads = pgTable(
-  "image_uploads",
-  {
-    uploadId: text("upload_id").notNull().primaryKey(),
-    fileName: text("file_name").notNull(),
-    mimeType: text("mime_type").notNull(),
-    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-
-    // Signed once at upload — while the user is still typing — so sending a
-    // message never signs. Nullable: rows predating this, and any kind of upload
-    // that isn't fetched by a third party, simply have none.
     signedUrl: text("signed_url"),
     signedUrlExpiresAt: timestamp("signed_url_expires_at", {
       withTimezone: true,
     }),
-
-    // The chat message this image was sent with. Null while the image is only
-    // uploaded — it is stored the moment it's dropped in, which is before the
-    // message it belongs to exists (and it may never be sent at all).
-    messageId: uuid("message_id").references(() => ChatMessages.id, {
-      onDelete: "cascade",
-    }),
-
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
   },
   (table) => [
-    // resolveMessageImages / findMessageImageUploadIds look images up by the
-    // message they hang off; message_id is highly selective (few per message).
-    index("image_uploads_message_idx").on(table.messageId),
+    index("attachment_uploads_user_kind_created_idx").on(
+      table.userId,
+      table.kind,
+      table.createdAt,
+      table.attachmentUploadId,
+    ),
   ],
 );
 
-export const DEFAULT_CONVERSATION_TITLE = "New conversation";
+/** Transcription processing state for an audio attachment upload. */
+export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
+  audioUploadId: text("audio_upload_id")
+    .notNull()
+    .primaryKey()
+    .references(() => AttachmentUploads.attachmentUploadId, {
+      onDelete: "cascade",
+    }),
+  // Reserved for the temporary caption object of a caption-enabled YouTube job.
+  // Cleared only after that object has been deleted from storage.
+  captionUploadId: text("caption_upload_id").$type<UploadId>(),
+  source: text("source").notNull(), // 'video' | 'audio' | 'youtube'
+  // Origin URL for 'youtube' jobs; null for direct uploads. Stored for history
+  // display and to enable transcript caching by video id later.
+  YT_sourceUrl: text("YT_source_url"),
+  status: jobStatusEnum("status").notNull().default("queued"),
+  // queued | processing | completed | failed
+  error: text("error"),
+  // RabbitMQ redelivers an unACKed message after its consumer connection closes,
+  // but that worker may still finish its AI call after a network split. Every
+  // claim replaces this fencing token, and terminal writes must still own it so
+  // a disconnected worker cannot commit after its replacement has taken over.
+  claimToken: uuid("claim_token"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  // Model used to transcribe the audio. Null falls back to the default
+  transcriptModelId: text("transcription_model_id"),
+});
 
 /** Chat conversations owned by a user. */
 export const Conversations = pgTable(
@@ -133,6 +110,7 @@ export const Conversations = pgTable(
       .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
+      .$onUpdate(() => new Date())
       .notNull(),
 
     lastMessageId: uuid("last_message_id"),
@@ -160,8 +138,6 @@ export const Conversations = pgTable(
   ],
 );
 
-export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant"] as const);
-
 export const ChatMessages = pgTable(
   "chat_messages",
   {
@@ -178,6 +154,7 @@ export const ChatMessages = pgTable(
       .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
+      .$onUpdate(() => new Date())
       .notNull(),
 
     conversationId: uuid("conversation_id")
@@ -202,41 +179,43 @@ export const ChatMessages = pgTable(
   ],
 );
 
-export const ChatMessageTranscriptions = pgTable(
-  "chat_message_transcriptions",
+export const ChatMessageAttachments = pgTable(
+  "chat_message_attachments",
   {
     messageId: uuid("message_id")
       .notNull()
       .references(() => ChatMessages.id, { onDelete: "cascade" }),
-    audioUploadId: text("audio_upload_id")
+    attachmentUploadId: text("attachment_upload_id")
       .notNull()
-      .references(() => AudioTranscriptionJobs.uploadId, {
+      .references(() => AttachmentUploads.attachmentUploadId, {
         onDelete: "cascade",
       }),
     position: integer("position").notNull(),
   },
   (table) => [
     primaryKey({
-      columns: [table.messageId, table.audioUploadId],
+      columns: [table.messageId, table.attachmentUploadId],
     }),
-    uniqueIndex("chat_message_transcriptions_message_position_idx").on(
+    uniqueIndex("chat_message_attachments_message_position_idx").on(
       table.messageId,
       table.position,
     ),
-    index("chat_message_transcriptions_audio_upload_idx").on(
-      table.audioUploadId,
-    ),
+    index("chat_message_attachments_upload_idx").on(table.attachmentUploadId),
   ],
 );
-
-export const users = pgTable("users", {
-  // WorkOS user id (eg "user_01...")
-  id: text("id").primaryKey(),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+/**
+ * The transcript text a completed job produced, out of the job row so it isn't
+ * pulled by the job list. A row exists only while a valid transcript does — the
+ * worker upserts it on completion, a re-run deletes it — so its presence means
+ * "ready". `charCount` lets a chat turn be budgeted without reading the body.
+ */
+export const TranscriptContents = pgTable("transcript_contents", {
+  // The audio job this transcript belongs to (1:1).
+  audioUploadId: text("audio_upload_id")
+    .primaryKey()
+    .references(() => AudioTranscriptionJobs.audioUploadId, {
+      onDelete: "cascade",
+    }),
+  content: text("content").notNull(),
+  charCount: integer("char_count").notNull(),
 });

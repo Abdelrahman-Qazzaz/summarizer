@@ -7,7 +7,8 @@ const useCaptionsIfAvailable = "useCaptionsIfAvailable";
 
 export const CTX_KEYS = {
   userId: "userId",
-  uploadId: "uploadId",
+  imageUploadId: "imageUploadId",
+  audioUploadId: "audioUploadId",
   conversationId: "conversationId",
   messageId: "messageId",
 
@@ -19,8 +20,7 @@ export const CTX_KEYS = {
   conversationTitle: "conversationTitle",
 
   messageContent: "messageContent",
-  attachmentUploadIds: "attachmentUploadIds",
-  audioUploadIds: "audioUploadIds",
+  messageAttachments: "attachments",
   lastMessageId: "lastMessageId",
 
   uploadFile,

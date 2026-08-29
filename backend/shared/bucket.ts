@@ -42,14 +42,14 @@ export async function pingBucket(): Promise<void> {
 }
 
 /**
- * Storage key scoped under the owning user: `<userId>/<uploadId>`. Ownership
+ * Storage key scoped under the owning user: `<userId>/<storageObjectId>`. Ownership
  * is enforced structurally — every bucket operation needs the caller to name
  * the owner, and a wrong user yields a path that doesn't exist. This is what
- * makes the uploadId-keyed delete/read functions safe to call with untrusted
+ * makes the storageObjectId-keyed delete/read functions safe to call with untrusted
  * ids. (The youtube-fetcher builds the same key; keep them in sync.)
  */
-function objectPath(userId: string, uploadId: UploadId) {
-  return `${userId}/${uploadId}`;
+function objectPath(userId: string, storageObjectId: UploadId) {
+  return `${userId}/${storageObjectId}`;
 }
 
 /**
@@ -59,13 +59,13 @@ function objectPath(userId: string, uploadId: UploadId) {
  */
 async function uploadObject(
   userId: string,
-  uploadId: UploadId,
+  storageObjectId: UploadId,
   body: Blob,
   contentType: string,
   upsert = false,
 ) {
   const { data, error } = await bucket().upload(
-    objectPath(userId, uploadId),
+    objectPath(userId, storageObjectId),
     body, // File is a Blob, so callers can pass one directly
     { contentType, upsert },
   );
@@ -77,56 +77,60 @@ async function uploadObject(
 /** Upload speech audio. Rejects anything not declaring an `audio/*` type. */
 export async function uploadAudioToBucket(
   userId: string,
-  uploadId: UploadId,
+  storageObjectId: UploadId,
   file: File,
 ) {
   if (!file.type.startsWith("audio/")) {
     throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
   }
 
-  return uploadObject(userId, uploadId, file, file.type);
+  return uploadObject(userId, storageObjectId, file, file.type);
 }
 
 /** Upload an image. Rejects anything not declaring an `image/*` type. */
 export async function uploadImageToBucket(
   userId: string,
-  uploadId: UploadId,
+  storageObjectId: UploadId,
   file: File,
 ) {
   if (!file.type.startsWith("image/")) {
     throw new Error(`Expected an image file, got: ${file.type || "unknown"}`);
   }
 
-  return uploadObject(userId, uploadId, file, file.type);
+  return uploadObject(userId, storageObjectId, file, file.type);
 }
 
 /** Counterpart to uploadObject: fetch the object bytes or throw. */
-async function downloadObject(userId: string, uploadId: UploadId) {
-  const { data, error } = await bucket().download(objectPath(userId, uploadId));
+async function downloadObject(userId: string, storageObjectId: UploadId) {
+  const { data, error } = await bucket().download(
+    objectPath(userId, storageObjectId),
+  );
 
   if (error) throw error;
   return data; // Blob
 }
 
-export async function getAudioFile(userId: string, uploadId: UploadId) {
-  return downloadObject(userId, uploadId);
+export async function getAudioFile(userId: string, storageObjectId: UploadId) {
+  return downloadObject(userId, storageObjectId);
 }
 
 export async function getTextFromBucket(
   userId: string,
-  uploadId: UploadId,
+  storageObjectId: UploadId,
 ) {
-  return (await downloadObject(userId, uploadId)).text();
+  return (await downloadObject(userId, storageObjectId)).text();
 }
 /** One owner's objects in a single remove call. No-ops on an empty list. */
 export async function deleteFilesFromBucket(
   userId: string,
-  uploadIds: readonly string[],
+  storageObjectIds: readonly string[],
 ) {
-  if (uploadIds.length === 0) return [];
+  if (storageObjectIds.length === 0) return [];
 
   const { data, error } = await bucket().remove(
-    uploadIds.map((uploadId) => objectPath(userId, uploadId as UploadId)),
+    storageObjectIds.map((storageObjectId) =>
+      objectPath(userId, storageObjectId as UploadId),
+    ),
   );
 
   if (error) throw error;
@@ -144,11 +148,11 @@ and audio, which the transcription provider fetches for itself.
 */
 export async function createSignedUrl(
   userId: string,
-  uploadId: UploadId,
+  storageObjectId: UploadId,
   ttlSeconds: number,
 ) {
   const { data, error } = await bucket().createSignedUrl(
-    objectPath(userId, uploadId),
+    objectPath(userId, storageObjectId),
     ttlSeconds,
   );
 
@@ -157,18 +161,18 @@ export async function createSignedUrl(
 }
 
 /**
- * Signs many objects in one request. Returns uploadId → url, omitting any the
+ * Signs many objects in one request. Returns storageObjectId → url, omitting any the
  * storage API couldn't sign. Callers may span owners; the path carries the
  * owner, so no grouping is needed.
  */
 export async function createSignedUrls(
-  entries: readonly { userId: string; uploadId: string }[],
+  entries: readonly { userId: string; storageObjectId: string }[],
 ): Promise<Map<string, string>> {
   const urls = new Map<string, string>();
   if (entries.length === 0) return urls;
 
   const paths = entries.map((e) =>
-    objectPath(e.userId, e.uploadId as UploadId),
+    objectPath(e.userId, e.storageObjectId as UploadId),
   );
   const { data, error } = await bucket().createSignedUrls(
     paths,
@@ -181,7 +185,7 @@ export async function createSignedUrls(
   );
   entries.forEach((entry, i) => {
     const url = byPath.get(paths[i]);
-    if (url) urls.set(entry.uploadId, url);
+    if (url) urls.set(entry.storageObjectId, url);
   });
   return urls;
 }

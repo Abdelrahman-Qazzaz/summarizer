@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const uploadId = "550e8400-e29b-41d4-a716-446655440000";
+const audioUploadId = "550e8400-e29b-41d4-a716-446655440000";
 const claimToken = "8e517c2f-0e16-4a4b-99eb-b3906818b92e";
 
 const {
@@ -30,7 +30,7 @@ const {
 
 vi.mock("../../shared/db", () => ({
   db: { transaction: mockTransaction },
-  TranscriptContents: { uploadId: "upload_id" },
+  TranscriptContents: { audioUploadId: "audio_upload_id" },
 }));
 
 vi.mock("../../shared/data/jobs.data", () => ({
@@ -51,16 +51,14 @@ describe("saveCompletedTranscript", () => {
     mockCompleteAudioJob.mockResolvedValueOnce(false);
 
     const saved = await saveCompletedTranscript(
-      "user_01",
-      uploadId,
+      audioUploadId,
       "stale transcript",
-      "Stale transcript",
       claimToken,
     );
 
     expect(saved).toBe(false);
     expect(mockCompleteAudioJob).toHaveBeenCalledWith(
-      uploadId,
+      audioUploadId,
       claimToken,
       transactionExecutor,
     );
@@ -71,20 +69,16 @@ describe("saveCompletedTranscript", () => {
     mockCompleteAudioJob.mockResolvedValueOnce(true);
 
     const saved = await saveCompletedTranscript(
-      "user_01",
-      uploadId,
+      audioUploadId,
       "current transcript",
-      "Current transcript",
       claimToken,
     );
 
     expect(saved).toBe(true);
     expect(mockValues).toHaveBeenCalledWith({
-      uploadId,
-      userId: "user_01",
+      audioUploadId,
       content: "current transcript",
       charCount: 18,
-      title: "Current transcript",
     });
     expect(mockOnConflictDoUpdate).toHaveBeenCalled();
   });

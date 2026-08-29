@@ -11,26 +11,23 @@ export const tableStubs = {
   users: { id: "id", createdAt: "created_at", updatedAt: "updated_at" },
 
   AudioTranscriptionJobs: {
-    uploadId: "upload_id",
+    audioUploadId: "audio_upload_id",
+    captionUploadId: "caption_upload_id",
     source: "source",
-    fileName: "file_name",
     status: "status",
     error: "error",
     claimToken: "claim_token",
-    createdAt: "created_at",
     transcriptModelId: "transcription_model_id",
-    transcriptUploadId: "transcript_upload_id",
-    userId: "user_id",
   },
 
-  ImageUploads: {
-    uploadId: "upload_id",
+  AttachmentUploads: {
+    attachmentUploadId: "attachment_upload_id",
+    kind: "kind",
     fileName: "file_name",
     mimeType: "mime_type",
     sizeBytes: "size_bytes",
     signedUrl: "signed_url",
     signedUrlExpiresAt: "signed_url_expires_at",
-    messageId: "message_id",
     createdAt: "created_at",
     userId: "user_id",
   },
@@ -56,19 +53,19 @@ export const tableStubs = {
     userId: "user_id",
   },
 
-  ChatMessageTranscriptions: {
+  ChatMessageAttachments: {
     messageId: "message_id",
-    audioUploadId: "audio_upload_id",
+    attachmentUploadId: "attachment_upload_id",
     position: "position",
   },
 
   TranscriptContents: {
-    uploadId: "upload_id",
+    audioUploadId: "audio_upload_id",
     content: "content",
     charCount: "char_count",
-    title: "title",
-    userId: "user_id",
   },
+
+  attachmentKindEnum: { enumValues: ["image", "audio"] },
 
   jobStatusEnum: {
     enumValues: ["queued", "processing", "completed", "failed"],
