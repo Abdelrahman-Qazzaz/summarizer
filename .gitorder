@@ -1,0 +1,66 @@
+# Shared contracts and infrastructure
+.gitorder
+package.json
+mise.toml
+compose.yaml
+knip.json
+Dockerfile
+*.config.*
+*.env.example
+railway.json
+doppler.yaml
+tsconfig*.json
+requirements*.txt
+
+# Backend foundations before API consumers
+backend/shared/types.ts
+backend/shared/keys.ts
+backend/shared/env.ts
+backend/shared/message-queue/*
+backend/drizzle/*.sql
+backend/drizzle/meta/*
+backend/drizzle/*
+backend/shared/db/*
+backend/shared/data/*
+backend/shared/ai/*
+backend/shared/*
+backend/api/src/schema/*
+backend/api/src/auth/*
+backend/api/src/data/*
+backend/api/src/controllers/*
+backend/api/src/middleware/*
+backend/api/src/routes/*
+backend/api/src/sockets/*
+backend/api/src/utils/*
+backend/api/src/*
+backend/transcribe-worker/*
+backend/scripts/*
+backend/test/*
+backend/*
+
+# Fetcher implementation before its tests
+youtube-fetcher/app/*
+youtube-fetcher/scripts/*
+youtube-fetcher/test/*
+youtube-fetcher/*
+
+# Client data flow before UI
+client/src/config.ts
+client/src/api/*
+client/src/lib/*
+client/src/media/*
+client/src/sources/*
+client/src/hooks/*
+client/src/components/*
+client/src/*
+client/public/*
+client/*
+
+# Documentation, fixtures, generated files, and lockfiles last
+test_data/*
+senior_project/input/*
+senior_project/output/*
+*.md
+*.excalidraw
+package-lock.json
+skills-lock.json
