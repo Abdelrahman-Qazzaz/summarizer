@@ -24,10 +24,10 @@ describe("createPublisher", () => {
     const publish = createPublisher(channel, "main");
 
     const firstPublish = publish("transcribe", {
-      uploadId: "550e8400-e29b-41d4-a716-446655440000",
+      audioUploadId: "550e8400-e29b-41d4-a716-446655440000",
     });
     const secondPublish = publish("transcribe", {
-      uploadId: "c56a4180-65aa-42ec-a945-5fd21dec0538",
+      audioUploadId: "c56a4180-65aa-42ec-a945-5fd21dec0538",
     });
     const firstPublishResult = expect(firstPublish).rejects.toThrow(
       "first publish rejected",

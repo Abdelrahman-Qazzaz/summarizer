@@ -1,8 +1,8 @@
+from dataclasses import dataclass
+from typing import NewType
+
 import httpx
 from env import env
-from dataclasses import dataclass
-from typing import  NewType
-
 
 QueueName = NewType("QueueName", str)
 
@@ -13,6 +13,7 @@ class _Queues:
     YT_FETCH_FAILED: QueueName
     TRANSCRIBE: QueueName
     CAPTION_TRANSCRIPT: QueueName
+
 
 class _Contract:
     queues: _Queues
@@ -32,9 +33,10 @@ class _Contract:
             YT_FETCH=QueueName(queues["YT_FETCH"]),
             YT_FETCH_FAILED=QueueName(queues["YT_FETCH_FAILED"]),
             TRANSCRIBE=QueueName(queues["TRANSCRIBE"]),
-            CAPTION_TRANSCRIPT=queues["CAPTION_TRANSCRIPT"]
+            CAPTION_TRANSCRIPT=QueueName(queues["CAPTION_TRANSCRIPT"]),
         )
         self.bucket = body["bucket"]
         self.maxAudioBytes = body["maxAudioBytes"]
+
 
 contract = _Contract()

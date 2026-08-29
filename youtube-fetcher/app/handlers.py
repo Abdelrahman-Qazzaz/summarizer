@@ -1,16 +1,16 @@
 """Event handlers: fetch YouTube captions or audio and queue transcription."""
+
 import logging
 import tempfile
 import time
 from pathlib import Path
 
 import bucket
-from contract import contract
 import yt_dlp
+from contract import contract
 from message_queue import mq
 from youtube_transcript_api import CouldNotRetrieveTranscript, YouTubeTranscriptApi
 from yt_dlp.extractor.youtube import YoutubeIE
-
 
 log = logging.getLogger(__name__)
 
@@ -59,10 +59,10 @@ def _is_retryable(error: Exception) -> bool:
     return not any(marker in message for marker in PERMANENT_FAILURES)
 
 
-def _fetch_with_retries(upload_id: str, url: str, user_id: str) -> None:
+def _fetch_with_retries(audio_upload_id: str, url: str, user_id: str) -> None:
     for attempt in range(1, FETCH_ATTEMPTS + 1):
         try:
-            _fetch_and_upload(upload_id, url, user_id)
+            _fetch_and_upload(audio_upload_id, url, user_id)
             return
         except Exception as error:
             if attempt == FETCH_ATTEMPTS or not _is_retryable(error):
@@ -70,7 +70,7 @@ def _fetch_with_retries(upload_id: str, url: str, user_id: str) -> None:
             backoff = RETRY_BACKOFF_SECONDS * attempt
             log.warning(
                 "Fetch %s attempt %d/%d failed (%s); re-extracting in %ds",
-                upload_id,
+                audio_upload_id,
                 attempt,
                 FETCH_ATTEMPTS,
                 str(error)[:200],
@@ -79,36 +79,32 @@ def _fetch_with_retries(upload_id: str, url: str, user_id: str) -> None:
             time.sleep(backoff)
 
 
-def _create_transcript_via_captions(
-    upload_id: str, url: str, user_id: str
-) -> str | None:
+def _create_caption_upload(caption_upload_id: str, url: str, user_id: str) -> bool:
     video_id = YoutubeIE.extract_id(url)
 
     try:
         transcripts = YouTubeTranscriptApi().list(video_id)
         selected_transcript = next(iter(transcripts), None)
         if selected_transcript is None:
-            return None
+            return False
         fetched_transcript = selected_transcript.fetch()
     except CouldNotRetrieveTranscript as error:
         log.info("No usable captions for %s: %s", video_id, error)
-        return None
+        return False
 
     transcript_text = " ".join(
-        snippet.text.strip()
-        for snippet in fetched_transcript
-        if snippet.text.strip()
+        snippet.text.strip() for snippet in fetched_transcript if snippet.text.strip()
     )
     if not transcript_text:
         log.info("Caption track for %s was empty", video_id)
-        return None
+        return False
 
     with tempfile.TemporaryDirectory() as tmp:
         transcript_path = Path(tmp) / "captions.txt"
         transcript_path.write_text(transcript_text, encoding="utf-8")
         bucket.upload_file(
             user_id,
-            upload_id,
+            caption_upload_id,
             str(transcript_path),
             "text/plain; charset=utf-8",
         )
@@ -119,39 +115,38 @@ def _create_transcript_via_captions(
         video_id,
         len(transcript_text),
     )
-    return upload_id
+    return True
 
 
 def handle_yt_fetch(event: dict) -> None:
     try:
-        upload_id: str = event["uploadId"]
+        audio_upload_id: str = event["audioUploadId"]
         url: str = event["url"]
         user_id: str = event["userId"]
         use_captions_if_available = event["useCaptionsIfAvailable"]
+        caption_upload_id: str | None = event["captionUploadId"]
 
-        transcript_upload_id: str | None = None
+        _fetch_with_retries(audio_upload_id, url, user_id)
 
-        if use_captions_if_available:
-            transcript_upload_id = _create_transcript_via_captions(
-                upload_id, url, user_id
-            ) 
-            if transcript_upload_id:
-                mq.publish_threadsafe(
-                    contract.queues.CAPTION_TRANSCRIPT,
-                    {"uploadId": transcript_upload_id},
-                )
-                return
-        if not transcript_upload_id:
-            _fetch_with_retries(upload_id, url, user_id)
+        if (
+            use_captions_if_available
+            and caption_upload_id
+            and _create_caption_upload(caption_upload_id, url, user_id)
+        ):
+            mq.publish_threadsafe(
+                contract.queues.CAPTION_TRANSCRIPT,
+                {"audioUploadId": audio_upload_id},
+            )
+            return
     except Exception as error:
         # Tell the API so it can mark the job row failed — a malformed
         # payload (missing url/userId) must still fail the job if we know
         # which one it is. Re-raise so the dispatcher drops the message.
-        if isinstance(event, dict) and event.get("uploadId"):
+        if isinstance(event, dict) and event.get("audioUploadId"):
             mq.publish_threadsafe(
                 contract.queues.YT_FETCH_FAILED,
                 {
-                    "uploadId": event["uploadId"],
+                    "audioUploadId": event["audioUploadId"],
                     "userId": event.get("userId", ""),
                     "error": str(error)[:500],
                 },
@@ -160,12 +155,12 @@ def handle_yt_fetch(event: dict) -> None:
 
     mq.publish_threadsafe(
         contract.queues.TRANSCRIBE,
-        {"uploadId": upload_id},
+        {"audioUploadId": audio_upload_id},
     )
-    log.info("Fetched %s, queued transcribe", upload_id)
+    log.info("Fetched %s, queued transcribe", audio_upload_id)
 
 
-def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
+def _fetch_and_upload(audio_upload_id: str, url: str, user_id: str) -> None:
     max_bytes = contract.maxAudioBytes
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -205,16 +200,14 @@ def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
             # Probe metadata first so oversized audio is rejected before any
             # bytes are downloaded.
             info = ydl.extract_info(url, download=False)
-            if info and isinstance(info,dict):
+            if info and isinstance(info, dict):
                 formats = info.get("requested_formats") or [info]
                 expected = sum(
-                    f.get("filesize") or f.get("filesize_approx") or 0
-                    for f in formats
+                    f.get("filesize") or f.get("filesize_approx") or 0 for f in formats
                 )
                 if expected > max_bytes:
                     raise RuntimeError(
-                        f"audio is ~{expected} bytes,"
-                        f" over the {max_bytes}-byte limit"
+                        f"audio is ~{expected} bytes, over the {max_bytes}-byte limit"
                     )
 
             ydl.download([url])
@@ -245,8 +238,8 @@ def _fetch_and_upload(upload_id: str, url: str, user_id: str) -> None:
         content_type = EXT_CONTENT_TYPES.get(
             audio.suffix.removeprefix(".").lower(), "audio/mpeg"
         )
-        log.info("Downloaded %s: %d bytes, %s", upload_id, size, content_type)
-        # upload_file builds the user-scoped "<userId>/<uploadId>" key (same
+        log.info("Downloaded %s: %d bytes, %s", audio_upload_id, size, content_type)
+        # upload_file builds the user-scoped "<userId>/<storageObjectId>" key (same
         # convention as direct uploads, backend/shared/bucket.ts objectPath),
         # so the transcribe worker finds it and ownership stays structural.
-        bucket.upload_file(user_id, upload_id, str(audio), content_type)
+        bucket.upload_file(user_id, audio_upload_id, str(audio), content_type)

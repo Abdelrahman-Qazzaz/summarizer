@@ -77,9 +77,9 @@ def test_listen_acks_after_successful_handling(monkeypatch):
     mq = make_mq()
     seen = []
 
-    deliver(mq, monkeypatch, b'{"uploadId": "u1"}', seen.append)
+    deliver(mq, monkeypatch, b'{"audioUploadId": "u1"}', seen.append)
 
-    assert seen == [{"uploadId": "u1"}]
+    assert seen == [{"audioUploadId": "u1"}]
     mq.channel.basic_ack.assert_called_once_with(7)
     mq.channel.basic_nack.assert_not_called()
 

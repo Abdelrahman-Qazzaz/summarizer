@@ -1,8 +1,7 @@
 from unittest.mock import MagicMock
 
-import pytest
-
 import contract as contract_module
+import pytest
 from contract import _Contract
 
 # /contract serves every backend queue (backend/api/app.ts); the
@@ -13,6 +12,7 @@ FULL_CONTRACT = {
         "TRANSCRIBE_DONE": "transcribe_done",
         "YT_FETCH": "yt_fetch",
         "YT_FETCH_FAILED": "yt_fetch_failed",
+        "CAPTION_TRANSCRIPT": "caption_transcript",
     },
     "bucket": "uploads",
     "maxAudioBytes": 25 * 1024 * 1024,
@@ -35,6 +35,7 @@ def test_load_picks_used_queues_and_limits(monkeypatch):
     assert c.queues.YT_FETCH == "yt_fetch"
     assert c.queues.YT_FETCH_FAILED == "yt_fetch_failed"
     assert c.queues.TRANSCRIBE == "transcribe"
+    assert c.queues.CAPTION_TRANSCRIPT == "caption_transcript"
     assert c.bucket == "uploads"
     assert c.maxAudioBytes == 25 * 1024 * 1024
 
@@ -53,9 +54,7 @@ def test_load_normalises_trailing_slash_in_base_url(monkeypatch):
 def test_load_raises_on_http_error(monkeypatch):
     response = make_response({})
     response.raise_for_status.side_effect = RuntimeError("HTTP 500")
-    monkeypatch.setattr(
-        contract_module.httpx, "get", MagicMock(return_value=response)
-    )
+    monkeypatch.setattr(contract_module.httpx, "get", MagicMock(return_value=response))
 
     with pytest.raises(RuntimeError):
         _Contract().load()

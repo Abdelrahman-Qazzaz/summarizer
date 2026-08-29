@@ -26,12 +26,10 @@ async function runJob(
 
 const cancelConsumers = await Promise.all([
   mq.consume(mq.queues.TRANSCRIBE, (payload, delivery) =>
-    runJob({ ...payload, existingTranscriptId: null }, delivery),
+    runJob({ ...payload, useCaptionUpload: false }, delivery),
   ),
-  mq.consume(
-    mq.queues.CAPTION_TRANSCRIPT,
-    ({ uploadId }, delivery) =>
-      runJob({ uploadId: null, existingTranscriptId: uploadId }, delivery),
+  mq.consume(mq.queues.CAPTION_TRANSCRIPT, (payload, delivery) =>
+    runJob({ ...payload, useCaptionUpload: true }, delivery),
   ),
 ]);
 

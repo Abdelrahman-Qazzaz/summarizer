@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const uploadId = "550e8400-e29b-41d4-a716-446655440000";
+const audioUploadId = "550e8400-e29b-41d4-a716-446655440000";
+const captionUploadId = "650e8400-e29b-41d4-a716-446655440111";
 
 const {
   mockSendEvent,
@@ -9,6 +10,7 @@ const {
   mockSet,
   mockUpdate,
   mockCreateSignedUrl,
+  mockCleanupTerminalCaptionUpload,
   mockGetTextFromBucket,
   mockTranscribeUrl,
   mockGenerateTitle,
@@ -20,6 +22,7 @@ const {
   mockSet: vi.fn(),
   mockUpdate: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
+  mockCleanupTerminalCaptionUpload: vi.fn(),
   mockGetTextFromBucket: vi.fn(),
   mockTranscribeUrl: vi.fn(),
   mockGenerateTitle: vi.fn(),
@@ -37,6 +40,10 @@ vi.mock("../../shared/bucket", () => ({
   createSignedUrl: mockCreateSignedUrl,
   getTextFromBucket: mockGetTextFromBucket,
   AUDIO_URL_TTL_SECONDS: 3600,
+}));
+
+vi.mock("../../shared/captionUploads", () => ({
+  cleanupTerminalCaptionUpload: mockCleanupTerminalCaptionUpload,
 }));
 
 vi.mock("../../shared/ai/ai_chat_client", () => ({
@@ -89,18 +96,23 @@ function setupUpdateChain(claimedJobs: unknown[]) {
 }
 
 const claimedJob = {
-  uploadId,
+  audioUploadId,
+  captionUploadId: null,
   userId: "user_01",
   fileName: "clip.mp3",
   status: "queued",
 };
 
-const audioInput = { uploadId, existingTranscriptId: null } as const;
+const audioInput = {
+  audioUploadId,
+  useCaptionUpload: false,
+} as const;
 
 describe("handleTranscribeJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
+    mockCleanupTerminalCaptionUpload.mockResolvedValue(false);
     mockGetTextFromBucket.mockResolvedValue("caption transcript");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
     mockGenerateTitle.mockResolvedValue("Sample recording");
@@ -114,45 +126,65 @@ describe("handleTranscribeJob", () => {
 
     expect(mockCreateSignedUrl).toHaveBeenCalledWith(
       "user_01",
-      uploadId,
+      audioUploadId,
       expect.any(Number),
     );
     expect(mockTranscribeUrl).toHaveBeenCalled();
     // Transcript store + job-completion happen together (one transaction),
-    // keyed by the job's own uploadId.
+    // keyed by the job's own audioUploadId.
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
-      uploadId,
+      audioUploadId,
       "sample transcript",
       "Sample recording",
       expect.any(String),
     );
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
-      uploadId,
+      audioUploadId,
       userId: "user_01",
     });
   });
 
   it("stores an existing caption transcript without transcribing audio", async () => {
+    setupUpdateChain([{ ...claimedJob, captionUploadId }]);
+
     await handleTranscribeJob({
-      uploadId: null,
-      existingTranscriptId: uploadId,
+      audioUploadId,
+      useCaptionUpload: true,
     });
 
-    expect(mockGetTextFromBucket).toHaveBeenCalledWith("user_01", uploadId);
+    expect(mockGetTextFromBucket).toHaveBeenCalledWith(
+      "user_01",
+      captionUploadId,
+    );
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
-      uploadId,
+      audioUploadId,
       "caption transcript",
       "Sample recording",
       expect.any(String),
     );
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe_done", {
-      uploadId,
+      audioUploadId,
       userId: "user_01",
     });
+    expect(mockCleanupTerminalCaptionUpload).toHaveBeenCalledWith(
+      audioUploadId,
+    );
+  });
+
+  it("fails when a caption delivery has no persisted caption upload", async () => {
+    await expect(
+      handleTranscribeJob({ audioUploadId, useCaptionUpload: true }),
+    ).rejects.toThrow("Caption upload is missing");
+
+    expect(mockGetTextFromBucket).not.toHaveBeenCalled();
+    expect(mockSaveCompletedTranscript).not.toHaveBeenCalled();
+    expect(mockCleanupTerminalCaptionUpload).toHaveBeenCalledWith(
+      audioUploadId,
+    );
   });
 
   it("no-ops when no queued job is claimed", async () => {
@@ -180,7 +212,7 @@ describe("handleTranscribeJob", () => {
     });
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
-      uploadId,
+      audioUploadId,
       "sample transcript",
       "Sample recording",
       expect.any(String),
@@ -194,7 +226,7 @@ describe("handleTranscribeJob", () => {
 
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
-      uploadId,
+      audioUploadId,
       "sample transcript",
       "clip.mp3",
       expect.any(String),

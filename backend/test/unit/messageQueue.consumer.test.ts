@@ -29,7 +29,7 @@ describe("message queue consumer", () => {
     const message = {
       content: Buffer.from(
         JSON.stringify({
-          uploadId: "550e8400-e29b-41d4-a716-446655440000",
+          audioUploadId: "550e8400-e29b-41d4-a716-446655440000",
         }),
       ),
       fields: { redelivered: true },
@@ -37,7 +37,7 @@ describe("message queue consumer", () => {
     await deliveryCallback?.(message);
 
     expect(handler).toHaveBeenCalledWith(
-      { uploadId: "550e8400-e29b-41d4-a716-446655440000" },
+      { audioUploadId: "550e8400-e29b-41d4-a716-446655440000" },
       { redelivered: true },
     );
     expect(acknowledge).toHaveBeenCalledWith(message);
