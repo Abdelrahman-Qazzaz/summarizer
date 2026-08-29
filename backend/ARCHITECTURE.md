@@ -21,12 +21,13 @@ starting half-alive.
 
 Defined in `shared/message-queue/messageQueue.ts`:
 
-| Queue             | Producer → Consumer    | Payload                        |
-| ----------------- | ---------------------- | ------------------------------ |
-| `transcribe`      | api / fetcher → worker | `{ uploadId }`                 |
-| `transcribe_done` | worker → api           | `{ uploadId, userId }`         |
-| `yt_fetch`        | api → youtube-fetcher  | `{ uploadId, url, userId }`    |
-| `yt_fetch_failed` | youtube-fetcher → api  | `{ uploadId, userId, error? }` |
+| Queue                | Producer → Consumer    | Payload                                                                   |
+| -------------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `transcribe`         | api / fetcher → worker | `{ audioUploadId }`                                                       |
+| `caption_transcript` | fetcher → worker       | `{ audioUploadId }`                                                       |
+| `transcribe_done`    | worker → api           | `{ audioUploadId, userId }`                                               |
+| `yt_fetch`           | api → youtube-fetcher  | `{ audioUploadId, captionUploadId, url, userId, useCaptionsIfAvailable }` |
+| `yt_fetch_failed`    | youtube-fetcher → api  | `{ audioUploadId, userId, error? }`                                       |
 
 The channel uses `prefetch(1)` **per consumer**, so a single worker process
 handles at most one transcribe job at a time. Handlers are `await`ed before
@@ -49,14 +50,18 @@ handles at most one transcribe job at a time. Handlers are `await`ed before
 
 A YouTube upload takes the same path one step earlier: the API publishes
 `yt_fetch`, and the Python youtube-fetcher downloads the audio into the bucket
-under the job's `uploadId` before publishing `transcribe` itself.
+under the job's `audioUploadId` before publishing `transcribe` itself. When
+captions are preferred, the API reserves and persists a temporary
+`captionUploadId`. The fetcher writes available captions under that exact ID;
+the worker reads the ID from the job and clears it only after deleting the
+caption object. The audio remains available for reruns.
 
 **Transcripts are not summarized.** The transcript is stored in Postgres under
-the audio job's `uploadId`. The user feeds one or more completed jobs to a model
-through `chat_message_transcriptions`, which preserves their attachment order.
-There is no second job pipeline: the prompt contains the attached transcripts
-plus whatever the user types, and the reply streams over the same SSE endpoint
-every other chat turn uses.
+the audio job's `audioUploadId`. The user feeds one or more completed jobs to a
+model through `chat_message_transcriptions`, which preserves their attachment
+order. There is no second job pipeline: the prompt contains the attached
+transcripts plus whatever the user types, and the reply streams over the same
+SSE endpoint every other chat turn uses.
 
 Job state transitions are **claimed atomically**. A fresh delivery can claim
 only a queued job; a broker redelivery can reclaim a processing job. Every claim
