@@ -9,6 +9,7 @@ import { conversationReqParamSchema } from "../schema/conversations.schema";
 import {
   messageReqParamSchema,
   messageCreateBodySchema,
+  messagePatchBodySchema,
 } from "../schema/messages.schema";
 import { httpCache } from "../middleware/cache.middleware";
 
@@ -34,4 +35,9 @@ messagesRouter.delete(
   messagesController.handleDeleteMessage,
 );
 
-// TODO: add patch message
+messagesRouter.patch(
+  `/:${CTX_KEYS.messageId}`,
+  validateReqParams(messageReqParamSchema),
+  validateReqBody(messagePatchBodySchema),
+  messagesController.handlePatchMessage,
+);

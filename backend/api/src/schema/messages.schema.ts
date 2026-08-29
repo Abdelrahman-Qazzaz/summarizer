@@ -14,6 +14,25 @@ export const MAX_MESSAGE_LENGTH = 50_000;
  */
 const MAX_ATTACHMENTS = 6;
 
+const messageAttachmentSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("image"),
+    imageUploadId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal("transcript"),
+    audioUploadId: z.string().uuid(),
+  }),
+]);
+
+export type MessageAttachmentInput = z.infer<typeof messageAttachmentSchema>;
+
+function attachmentUploadId(attachment: MessageAttachmentInput) {
+  return attachment.type === "image"
+    ? attachment.imageUploadId
+    : attachment.audioUploadId;
+}
+
 export const messageReqParamSchema = z.object({
   [CTX_KEYS.conversationId]: z.string().uuid(),
   [CTX_KEYS.messageId]: z.string().uuid(),
@@ -28,19 +47,19 @@ export const messageCreateBodySchema = z
       .min(1, "Message must not be empty")
       .max(MAX_MESSAGE_LENGTH, "Message is too long"),
     [CTX_KEYS.chosenModelId]: z.string().min(1),
-    // ids from POST /upload/image. Deduped rather than rejected: the same image
-    // twice in one turn is a client slip, not something to fail the send over.
-    [CTX_KEYS.attachmentUploadIds]: z
-      .array(z.string().uuid())
-      .max(MAX_ATTACHMENTS, "Too many attachments")
+    [CTX_KEYS.messageAttachments]: z
+      .array(messageAttachmentSchema)
       .optional()
       .default([])
-      .transform((uploadIds) => [...new Set(uploadIds)]),
-    [CTX_KEYS.audioUploadIds]: z
-      .array(z.string().uuid())
-      .optional()
-      .default([])
-      .transform((audioUploadIds) => [...new Set(audioUploadIds)]),
+      .transform((attachments) => {
+        const seenUploadIds = new Set<string>();
+        return attachments.filter((attachment) => {
+          const uploadId = attachmentUploadId(attachment);
+          if (seenUploadIds.has(uploadId)) return false;
+          seenUploadIds.add(uploadId);
+          return true;
+        });
+      }),
     [CTX_KEYS.lastMessageId]: z.string().uuid().nullable(),
   })
   .superRefine(async (data, ctx) => {
@@ -53,14 +72,24 @@ export const messageCreateBodySchema = z
       });
       return;
     }
-    if (
-      data[CTX_KEYS.attachmentUploadIds].length > 0 &&
-      !(await validateChatModelInput(modelId, "image"))
-    ) {
+    const imageCount = data[CTX_KEYS.messageAttachments].filter(
+      (attachment) => attachment.type === "image",
+    ).length;
+    if (imageCount > MAX_ATTACHMENTS) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Too many attachments",
+        path: [CTX_KEYS.messageAttachments],
+      });
+    }
+    if (imageCount > 0 && !(await validateChatModelInput(modelId, "image"))) {
       ctx.addIssue({
         code: "custom",
         message: "Invalid model: must accept image input",
-        path: [CTX_KEYS.chosenModelId],
+        path: [CTX_KEYS.messageAttachments],
       });
     }
   });
+
+/** PATCH replaces a stored user turn but accepts the same complete turn input. */
+export const messagePatchBodySchema = messageCreateBodySchema;

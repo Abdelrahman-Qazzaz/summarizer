@@ -5,12 +5,14 @@ const {
   mockClaimConversationTurn,
   mockReleaseConversationTurn,
   mockFindRecentMessagesWithContext,
+  mockFindMessagePatchContext,
   mockPersistChatTurn,
+  mockPersistAssistantMessage,
+  mockPatchOwnedUserMessage,
   mockFindConversationMessages,
   mockDeleteOwnedMessage,
-  mockResolveUnattachedImages,
+  mockResolveImages,
   mockResolveMessageImages,
-  mockFindMessageImageUploadIds,
   mockResolveImageUploadUrls,
   mockFindMessageTranscriptAttachments,
   mockFindTranscripts,
@@ -24,12 +26,14 @@ const {
   mockClaimConversationTurn: vi.fn(),
   mockReleaseConversationTurn: vi.fn(),
   mockFindRecentMessagesWithContext: vi.fn(),
+  mockFindMessagePatchContext: vi.fn(),
   mockPersistChatTurn: vi.fn(),
+  mockPersistAssistantMessage: vi.fn(),
+  mockPatchOwnedUserMessage: vi.fn(),
   mockFindConversationMessages: vi.fn(),
   mockDeleteOwnedMessage: vi.fn(),
-  mockResolveUnattachedImages: vi.fn(),
+  mockResolveImages: vi.fn(),
   mockResolveMessageImages: vi.fn(),
-  mockFindMessageImageUploadIds: vi.fn(),
   mockResolveImageUploadUrls: vi.fn(),
   mockFindMessageTranscriptAttachments: vi.fn(),
   mockFindTranscripts: vi.fn(),
@@ -62,16 +66,18 @@ vi.mock("../../api/src/data/conversations.data", async (importActual) => ({
 vi.mock("../../api/src/data/messages.data", async (importActual) => ({
   ...(await importActual<typeof import("../../api/src/data/messages.data")>()),
   findRecentMessagesWithContext: mockFindRecentMessagesWithContext,
+  findMessagePatchContext: mockFindMessagePatchContext,
   persistChatTurn: mockPersistChatTurn,
+  persistAssistantMessage: mockPersistAssistantMessage,
+  patchOwnedUserMessage: mockPatchOwnedUserMessage,
   findConversationMessages: mockFindConversationMessages,
   deleteOwnedMessage: mockDeleteOwnedMessage,
 }));
 
 vi.mock("../../api/src/data/images.data", async (importActual) => ({
   ...(await importActual<typeof import("../../api/src/data/images.data")>()),
-  resolveUnattachedImages: mockResolveUnattachedImages,
+  resolveImages: mockResolveImages,
   resolveMessageImages: mockResolveMessageImages,
-  findMessageImageUploadIds: mockFindMessageImageUploadIds,
   resolveImageUploadUrls: mockResolveImageUploadUrls,
 }));
 
@@ -119,7 +125,7 @@ const userId = "user_01OWNER";
 const modelId = "openai/gpt-4o-mini";
 const createdAt = "2026-07-22T00:00:00.000Z";
 
-const uploadId = "850e8400-e29b-41d4-a716-446655440333";
+const imageUploadId = "850e8400-e29b-41d4-a716-446655440333";
 
 const ownedConversation = {
   id: conversationId,
@@ -148,7 +154,7 @@ const assistantRow = {
 };
 
 const resolvedImage = {
-  uploadId,
+  imageUploadId,
   fileName: "diagram.png",
   mimeType: "image/png",
   size: 1234,
@@ -174,12 +180,21 @@ beforeEach(() => {
   mockClaimConversationTurn.mockResolvedValue("claim-token");
   mockReleaseConversationTurn.mockResolvedValue(undefined);
   mockFindRecentMessagesWithContext.mockResolvedValue([]);
-  mockResolveUnattachedImages.mockResolvedValue([]);
+  mockFindMessagePatchContext.mockResolvedValue({
+    target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
+    history: [],
+  });
+  mockResolveImages.mockResolvedValue([]);
   mockResolveMessageImages.mockResolvedValue(new Map());
   mockResolveImageUploadUrls.mockResolvedValue(new Map());
   mockFindMessageTranscriptAttachments.mockResolvedValue(new Map());
   mockFindTranscripts.mockResolvedValue(new Map());
   mockPersistChatTurn.mockResolvedValue(assistantRow.id);
+  mockPersistAssistantMessage.mockResolvedValue(assistantRow.id);
+  mockPatchOwnedUserMessage.mockResolvedValue({
+    status: "patched",
+    imageUploadIds: [],
+  });
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
   mockGenerateTitle.mockResolvedValue("Friendly greeting");
@@ -247,7 +262,7 @@ describe("GET /conversations/:conversationId/messages", () => {
           messageId,
           [
             {
-              uploadId: "950e8400-e29b-41d4-a716-446655440444",
+              imageUploadId: "950e8400-e29b-41d4-a716-446655440444",
               fileName: "interview.mp3",
               title: "Customer interview",
               source: "audio",
@@ -273,7 +288,7 @@ describe("GET /conversations/:conversationId/messages", () => {
           attachments: [resolvedImage],
           transcriptAttachments: [
             {
-              uploadId: "950e8400-e29b-41d4-a716-446655440444",
+              imageUploadId: "950e8400-e29b-41d4-a716-446655440444",
               fileName: "interview.mp3",
               title: "Customer interview",
               source: "audio",
@@ -368,7 +383,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     await vi.waitFor(() => {
-      expect(mockResolveUnattachedImages).toHaveBeenCalled();
+      expect(mockResolveImages).toHaveBeenCalled();
       expect(mockFindRecentMessagesWithContext).toHaveBeenCalled();
     });
 
@@ -495,7 +510,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         content: "Hi there",
         assistantContent: "Hello world",
         chosenModelId: modelId,
-        attachmentUploadIds: [],
+        imageUploadIds: [],
         audioUploadIds: [],
         conversationTitle: "Friendly greeting",
         claimToken: "claim-token",
@@ -596,9 +611,8 @@ describe("POST /conversations/:conversationId/messages", () => {
         content: "Newer",
         transcripts: [
           {
-            uploadId: "audio-fits",
+            audioUploadId: "audio-fits",
             fileName: "fits.mp3",
-            title: null,
             source: "audio",
             charCount: 10,
           },
@@ -609,9 +623,8 @@ describe("POST /conversations/:conversationId/messages", () => {
         content: "Older",
         transcripts: [
           {
-            uploadId: "audio-huge",
+            audioUploadId: "audio-huge",
             fileName: "huge.mp3",
-            title: null,
             source: "audio",
             charCount: MAX_CONTEXT_CHARS,
           },
@@ -641,11 +654,11 @@ describe("POST /conversations/:conversationId/messages", () => {
         id: messageId,
         role: "user",
         content: "What is this?",
-        images: [{ uploadId, signedUrl: null, signedUrlExpiresAt: null }],
+        images: [{ imageUploadId, signedUrl: null, signedUrlExpiresAt: null }],
       }),
     ]);
     mockResolveImageUploadUrls.mockResolvedValueOnce(
-      new Map([[uploadId, resolvedImage.url]]),
+      new Map([[imageUploadId, resolvedImage.url]]),
     );
     mockChatAI.mockResolvedValueOnce("Hello world");
 
@@ -679,11 +692,11 @@ describe("POST /conversations/:conversationId/messages", () => {
         id: messageId,
         role: "user",
         content: "What is this?",
-        images: [{ uploadId, signedUrl: null, signedUrlExpiresAt: null }],
+        images: [{ imageUploadId, signedUrl: null, signedUrlExpiresAt: null }],
       }),
     ]);
     mockResolveImageUploadUrls.mockResolvedValueOnce(
-      new Map([[uploadId, resolvedImage.url]]),
+      new Map([[imageUploadId, resolvedImage.url]]),
     );
     mockValidateModelInput.mockResolvedValueOnce(false);
 
@@ -784,16 +797,14 @@ describe("POST /conversations/:conversationId/messages", () => {
           content: "Compare these",
           transcripts: [
             {
-              uploadId: firstAudioUploadId,
+              audioUploadId: firstAudioUploadId,
               fileName: "interview.mp3",
-              title: "Customer interview",
               source: "audio",
               charCount: firstTranscript.length,
             },
             {
-              uploadId: secondAudioUploadId,
+              audioUploadId: secondAudioUploadId,
               fileName: "Product demo",
-              title: "Product demonstration",
               source: "youtube",
               charCount: secondTranscript.length,
             },
@@ -913,13 +924,13 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("sends attachments as vision input and binds them to the user turn", async () => {
-    mockResolveUnattachedImages.mockResolvedValueOnce([resolvedImage]);
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: modelId,
-      attachmentUploadIds: [uploadId],
+      imageUploadIds: [imageUploadId],
     });
     expect(res.status).toBe(200);
     await res.text();
@@ -942,18 +953,18 @@ describe("POST /conversations/:conversationId/messages", () => {
     // by the user message it inserts.
     await vi.waitFor(() =>
       expect(mockPersistChatTurn).toHaveBeenCalledWith(
-        expect.objectContaining({ attachmentUploadIds: [uploadId] }),
+        expect.objectContaining({ imageUploadIds: [imageUploadId] }),
       ),
     );
   });
 
   it("rejects an attachment that is not the user's, or already sent", async () => {
-    mockResolveUnattachedImages.mockResolvedValueOnce([]); // no unattached match
+    mockResolveImages.mockResolvedValueOnce([]);
 
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: modelId,
-      attachmentUploadIds: [uploadId],
+      imageUploadIds: [imageUploadId],
     });
 
     expect(res.status).toBe(404);
@@ -964,7 +975,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
   it("releases once and returns the first of multiple validation errors", async () => {
     const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
-    mockResolveUnattachedImages.mockResolvedValueOnce([]);
+    mockResolveImages.mockResolvedValueOnce([]);
     mockFindTranscripts.mockResolvedValueOnce(
       new Map([[audioUploadId, "x".repeat(MAX_CONTEXT_CHARS + 1)]]),
     );
@@ -972,7 +983,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: modelId,
-      attachmentUploadIds: [uploadId],
+      imageUploadIds: [imageUploadId],
       audioUploadIds: [audioUploadId],
     });
 
@@ -988,7 +999,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     const res = await postMessage({
       messageContent: "Hi there",
       chosenModelId: modelId,
-      attachmentUploadIds: [uploadId],
+      imageUploadIds: [imageUploadId],
     });
 
     expect(res.status).toBe(400);
@@ -1030,12 +1041,284 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 });
 
+describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
+  const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
+
+  function patchMessage(body: unknown) {
+    return sessionCookieHeader(userId).then(async (cookie) =>
+      (await createApp()).request(
+        `http://localhost/conversations/${conversationId}/messages/${messageId}`,
+        {
+          method: "PATCH",
+          headers: { Cookie: cookie, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
+    );
+  }
+
+  it("rewinds, replaces the complete user turn, and streams a new answer", async () => {
+    mockFindMessagePatchContext.mockResolvedValueOnce({
+      target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
+      history: [
+        contextMessage({
+          id: assistantRow.id,
+          role: "assistant",
+          content: "Earlier answer",
+        }),
+        contextMessage({
+          id: "450e8400-e29b-41d4-a716-446655440999",
+          role: "user",
+          content: "Earlier question",
+        }),
+      ],
+    });
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
+    mockFindTranscripts.mockResolvedValueOnce(
+      new Map([[audioUploadId, "Edited transcript"]]),
+    );
+    mockPatchOwnedUserMessage.mockResolvedValueOnce({
+      status: "patched",
+      imageUploadIds: ["old-image"],
+    });
+    mockChatAI.mockImplementationOnce(
+      async (
+        _model: string,
+        _turns: unknown,
+        options: { onDelta: (delta: string) => void | Promise<void> },
+      ) => {
+        await options.onDelta("Replacement answer");
+        return "Replacement answer";
+      },
+    );
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+      audioUploadIds: [audioUploadId],
+      lastMessageId: assistantRow.id,
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("event: delta");
+    expect(body).toContain(JSON.stringify({ lastMessageId: assistantRow.id }));
+    expect(mockClaimConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      assistantRow.id,
+    );
+    expect(mockPatchOwnedUserMessage).toHaveBeenCalledWith({
+      userId,
+      conversationId,
+      messageId,
+      content: "Updated question",
+      imageUploadIds: [imageUploadId],
+      audioUploadIds: [audioUploadId],
+      claimToken: "claim-token",
+    });
+    expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith(userId, [
+      "old-image",
+    ]);
+    expect(mockChatAI).toHaveBeenCalledWith(
+      modelId,
+      [
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Edited transcript\n\nUpdated question",
+            },
+            { type: "image_url", imageUrl: { url: resolvedImage.url } },
+          ],
+        },
+      ],
+      expect.objectContaining({ onDelta: expect.any(Function) }),
+    );
+    expect(mockPersistAssistantMessage).toHaveBeenCalledWith({
+      userId,
+      conversationId,
+      chosenModelId: modelId,
+      assistantContent: "Replacement answer",
+      claimToken: "claim-token",
+    });
+  });
+
+  it("keeps the edited prompt and releases its claim when generation fails", async () => {
+    mockChatAI.mockRejectedValueOnce(new Error("provider unavailable"));
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [],
+      audioUploadIds: [],
+      lastMessageId: assistantRow.id,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("event: error");
+    expect(mockPatchOwnedUserMessage).toHaveBeenCalledOnce();
+    expect(mockPersistAssistantMessage).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+  });
+
+  it("rejects assistant-message edits before rewinding", async () => {
+    mockFindMessagePatchContext.mockResolvedValueOnce({
+      target: {
+        id: assistantRow.id,
+        role: "assistant",
+        createdAt: new Date(createdAt),
+      },
+      history: [],
+    });
+
+    const response = await patchMessage({
+      messageContent: "Updated answer",
+      chosenModelId: modelId,
+      imageUploadIds: [],
+      audioUploadIds: [],
+      lastMessageId: assistantRow.id,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      message: "Only user messages can be edited",
+    });
+    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+  });
+
+  it("returns 404 and releases the claim when the message is unavailable", async () => {
+    mockFindMessagePatchContext.mockResolvedValueOnce(null);
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [],
+      audioUploadIds: [],
+      lastMessageId: assistantRow.id,
+    });
+
+    expect(response.status).toBe(404);
+    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+  });
+
+  it("returns 409 when the submitted conversation head is stale", async () => {
+    mockClaimConversationTurn.mockResolvedValueOnce(null);
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [],
+      audioUploadIds: [],
+      lastMessageId: messageId,
+    });
+
+    expect(response.status).toBe(409);
+    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the conversation is unavailable", async () => {
+    mockClaimConversationTurn.mockResolvedValueOnce(null);
+    mockFindOwnedConversation.mockResolvedValueOnce(null);
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [],
+      audioUploadIds: [],
+      lastMessageId: assistantRow.id,
+    });
+
+    expect(response.status).toBe(404);
+    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not rewind when an exact attachment id is unavailable", async () => {
+    mockResolveImages.mockResolvedValueOnce([]);
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+      audioUploadIds: [],
+      lastMessageId: assistantRow.id,
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ message: "Attachment not found" });
+    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+  });
+
+  it("does not rewind when retained history needs image input", async () => {
+    mockFindMessagePatchContext.mockResolvedValueOnce({
+      target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
+      history: [
+        contextMessage({
+          images: [
+            {
+              imageUploadId,
+              signedUrl: null,
+              signedUrlExpiresAt: null,
+            },
+          ],
+        }),
+      ],
+    });
+    mockResolveImageUploadUrls.mockResolvedValueOnce(
+      new Map([[imageUploadId, resolvedImage.url]]),
+    );
+    mockValidateModelInput.mockResolvedValueOnce(false);
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [],
+      audioUploadIds: [],
+      lastMessageId: assistantRow.id,
+    });
+
+    expect(response.status).toBe(400);
+    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+  });
+
+  it("does not rewind when the edited turn exceeds the context budget", async () => {
+    mockFindTranscripts.mockResolvedValueOnce(
+      new Map([[audioUploadId, "x".repeat(MAX_CONTEXT_CHARS)]]),
+    );
+
+    const response = await patchMessage({
+      messageContent: "Updated question",
+      chosenModelId: modelId,
+      imageUploadIds: [],
+      audioUploadIds: [audioUploadId],
+      lastMessageId: assistantRow.id,
+    });
+
+    expect(response.status).toBe(413);
+    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+  });
+});
+
 describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
   it("deletes the message", async () => {
-    mockFindMessageImageUploadIds.mockResolvedValueOnce([]);
     mockDeleteOwnedMessage.mockResolvedValueOnce({
       status: "deleted",
-      id: messageId,
+      ids: [messageId],
+      imageUploadIds: [],
+      lastMessageId: null,
     });
     const res = await (
       await createApp()
@@ -1051,13 +1334,11 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
   });
 
   it("removes the message's images from the bucket", async () => {
-    mockFindMessageImageUploadIds.mockResolvedValueOnce([
-      uploadId,
-      "another-upload",
-    ]);
     mockDeleteOwnedMessage.mockResolvedValueOnce({
       status: "deleted",
-      id: messageId,
+      ids: [messageId, assistantRow.id],
+      imageUploadIds: [imageUploadId, "another-upload"],
+      lastMessageId: null,
     });
 
     const res = await (
@@ -1072,13 +1353,12 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
 
     expect(res.status).toBe(200);
     expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith(userId, [
-      uploadId,
+      imageUploadId,
       "another-upload",
     ]);
   });
 
   it("returns 404 when the message does not exist for the user", async () => {
-    mockFindMessageImageUploadIds.mockResolvedValueOnce([]);
     mockDeleteOwnedMessage.mockResolvedValueOnce(null);
     const res = await (
       await createApp()
@@ -1093,7 +1373,6 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
   });
 
   it("returns 409 without deleting files while a response is active", async () => {
-    mockFindMessageImageUploadIds.mockResolvedValueOnce([uploadId]);
     mockDeleteOwnedMessage.mockResolvedValueOnce({ status: "active" });
 
     const res = await (
