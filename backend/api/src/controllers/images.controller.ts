@@ -27,20 +27,20 @@ export async function handleImageUpload(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const file = c.get(CTX_KEYS.uploadFile);
 
-  const uploadId: UploadId = randomUUID();
+  const imageUploadId: UploadId = randomUUID();
 
-  await uploadImageToBucket(userId, uploadId, file);
+  await uploadImageToBucket(userId, imageUploadId, file);
   const signedUrl = await createSignedUrl(
     userId,
-    uploadId,
+    imageUploadId,
     IMAGE_URL_TTL_SECONDS,
   );
 
-  await createImageUpload({ userId, uploadId, file, signedUrl });
+  await createImageUpload({ userId, imageUploadId, file, signedUrl });
 
   return c.json({
     message: "File uploaded",
-    uploadId,
+    imageUploadId,
     fileName: file.name,
     size: file.size,
     mimeType: file.type,
@@ -50,34 +50,34 @@ export async function handleImageUpload(c: Context) {
 }
 
 /**
- * GET /upload/image/:uploadId — the URL for a previously uploaded image.
+ * GET /upload/image/:imageUploadId — the URL for a previously uploaded image.
  * Served from the cached signature; only re-signs once that nears expiry.
  */
 export async function handleGetImage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  const uploadId = c.get(CTX_KEYS.uploadId);
+  const imageUploadId = c.get(CTX_KEYS.imageUploadId);
 
-  const [image] = await resolveImages(userId, [uploadId]);
+  const [image] = await resolveImages(userId, [imageUploadId]);
 
   if (!image) return c.json({ message: "Image not found" }, 404);
 
   return c.json(image);
 }
 
-/** DELETE /upload/image/:uploadId — delete an unused image. */
+/** DELETE /upload/image/:imageUploadId — delete an unused image. */
 export async function handleDeleteImage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  const uploadId = c.get(CTX_KEYS.uploadId);
-  const ownedUploadId = await findOwnedUnattachedImageUploadId(
+  const imageUploadId = c.get(CTX_KEYS.imageUploadId);
+  const ownedImageUploadId = await findOwnedUnattachedImageUploadId(
     userId,
-    uploadId,
+    imageUploadId,
   );
 
-  if (!ownedUploadId) return c.json({ message: "Image deleted" });
+  if (!ownedImageUploadId) return c.json({ message: "Image deleted" });
 
   // Keep rows available for a retry if the external storage call fails.
-  await deleteFilesFromBucket(userId, [ownedUploadId]);
-  await deleteOwnedUnattachedImageUpload(userId, ownedUploadId);
+  await deleteFilesFromBucket(userId, [ownedImageUploadId]);
+  await deleteOwnedUnattachedImageUpload(userId, ownedImageUploadId);
 
   return c.json({ message: "Image deleted" });
 }

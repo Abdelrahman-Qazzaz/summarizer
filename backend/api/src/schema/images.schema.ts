@@ -38,5 +38,5 @@ export const imageUploadSchema = z
 
 /** Identifies an uploaded image for read or deletion. */
 export const imageReqParamSchema = z.object({
-  [CTX_KEYS.uploadId]: z.string().uuid(),
+  [CTX_KEYS.imageUploadId]: z.string().uuid(),
 });

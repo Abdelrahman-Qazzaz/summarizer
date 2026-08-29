@@ -33,14 +33,14 @@ imagesRouter.post(
 );
 
 imagesRouter.get(
-  `/:${CTX_KEYS.uploadId}`,
+  `/:${CTX_KEYS.imageUploadId}`,
   imageReadRateLimiter,
   validateReqParams(imageReqParamSchema),
   imagesController.handleGetImage,
 );
 
 imagesRouter.delete(
-  `/:${CTX_KEYS.uploadId}`,
+  `/:${CTX_KEYS.imageUploadId}`,
   imageReadRateLimiter,
   validateReqParams(imageReqParamSchema),
   imagesController.handleDeleteImage,

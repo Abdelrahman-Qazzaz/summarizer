@@ -29,11 +29,11 @@ vi.mock("../../api/src/data/images.data", async (importActual) => ({
 import { createApp } from "../../api/app";
 import { authedHeaders } from "../helpers/session";
 
-const uploadId = "550e8400-e29b-41d4-a716-446655440000";
+const imageUploadId = "550e8400-e29b-41d4-a716-446655440000";
 
 async function deleteImage(userId = "user_01OWNER") {
   return (await createApp()).request(
-    `http://localhost/upload/image/${uploadId}`,
+    `http://localhost/upload/image/${imageUploadId}`,
     {
       method: "DELETE",
       headers: await authedHeaders(userId),
@@ -48,9 +48,9 @@ beforeEach(() => {
   mockFindOwnedUnattachedImageUploadId.mockResolvedValue(null);
 });
 
-describe("DELETE /upload/image/:uploadId", () => {
+describe("DELETE /upload/image/:imageUploadId", () => {
   it("deletes an owned, unattached image", async () => {
-    mockFindOwnedUnattachedImageUploadId.mockResolvedValueOnce(uploadId);
+    mockFindOwnedUnattachedImageUploadId.mockResolvedValueOnce(imageUploadId);
 
     const response = await deleteImage();
 
@@ -58,14 +58,14 @@ describe("DELETE /upload/image/:uploadId", () => {
     expect(await response.json()).toEqual({ message: "Image deleted" });
     expect(mockFindOwnedUnattachedImageUploadId).toHaveBeenCalledWith(
       "user_01OWNER",
-      uploadId,
+      imageUploadId,
     );
     expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith("user_01OWNER", [
-      uploadId,
+      imageUploadId,
     ]);
     expect(mockDeleteOwnedUnattachedImageUpload).toHaveBeenCalledWith(
       "user_01OWNER",
-      uploadId,
+      imageUploadId,
     );
     expect(mockDeleteFilesFromBucket.mock.invocationCallOrder[0]).toBeLessThan(
       mockDeleteOwnedUnattachedImageUpload.mock.invocationCallOrder[0],
@@ -96,7 +96,7 @@ describe("DELETE /upload/image/:uploadId", () => {
   it("requires authentication", async () => {
     const response = await (
       await createApp()
-    ).request(`http://localhost/upload/image/${uploadId}`, {
+    ).request(`http://localhost/upload/image/${imageUploadId}`, {
       method: "DELETE",
       headers: { Origin: process.env.CLIENT_URL! },
     });
@@ -106,7 +106,7 @@ describe("DELETE /upload/image/:uploadId", () => {
   });
 
   it("keeps the database row retryable when storage deletion fails", async () => {
-    mockFindOwnedUnattachedImageUploadId.mockResolvedValueOnce(uploadId);
+    mockFindOwnedUnattachedImageUploadId.mockResolvedValueOnce(imageUploadId);
     mockDeleteFilesFromBucket.mockRejectedValueOnce(
       new Error("storage unavailable"),
     );
