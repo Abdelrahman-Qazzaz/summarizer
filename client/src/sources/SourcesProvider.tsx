@@ -43,7 +43,7 @@ function stageSource(
 ): StagedSource {
   return {
     localId: crypto.randomUUID(),
-    uploadId: null,
+    sourceUploadId: null,
     previewUrl: null,
     charCount: null,
     error: null,
@@ -106,14 +106,14 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const patchByUploadId = useCallback(
-    (uploadId: string, patch: Partial<StagedSource>) => {
+  const patchBySourceUploadId = useCallback(
+    (sourceUploadId: string, patch: Partial<StagedSource>) => {
       setDrafts((current) => {
         let touched = false;
         const next: Drafts = {};
         for (const [key, draft] of Object.entries(current)) {
           next[key] = draft.map((source) => {
-            if (source.uploadId !== uploadId) return source;
+            if (source.sourceUploadId !== sourceUploadId) return source;
             touched = true;
             return { ...source, ...patch };
           });
@@ -124,7 +124,7 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  useTranscriptWatcher(drafts, patchByUploadId);
+  useTranscriptWatcher(drafts, patchBySourceUploadId);
 
   const appendSources = useCallback(
     (draftKey: string, added: StagedSource[]) => {
@@ -152,7 +152,7 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
           );
           patch({
             status: "ready",
-            uploadId: uploaded.uploadId,
+            sourceUploadId: uploaded.imageUploadId,
             previewUrl: uploaded.signedUrl,
           });
           if (withBlobPreview) releasePreview(withBlobPreview);
@@ -179,7 +179,10 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
           transcriptModelId:
             transcriptModelRef.current ?? DEFAULT_TRANSCRIPTION_MODEL,
         });
-        patch({ status: "transcribing", uploadId: uploaded.uploadId });
+        patch({
+          status: "transcribing",
+          sourceUploadId: uploaded.audioUploadId,
+        });
       } catch (error) {
         patch({
           status: "failed",
@@ -200,7 +203,10 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
           url,
           transcriptModelRef.current ?? DEFAULT_TRANSCRIPTION_MODEL,
         );
-        patch({ status: "transcribing", uploadId: queued.uploadId });
+        patch({
+          status: "transcribing",
+          sourceUploadId: queued.audioUploadId,
+        });
       } catch (error) {
         patch({
           status: "failed",
@@ -295,7 +301,7 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
   const attachExisting = useCallback(
     (draftKey: string, job: ExistingSource) => {
       const alreadyStaged = (draftsRef.current[draftKey] ?? []).some(
-        (source) => source.uploadId === job.uploadId,
+        (source) => source.sourceUploadId === job.audioUploadId,
       );
       if (alreadyStaged) {
         toast.show({
@@ -309,7 +315,7 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
           kind: job.source === "youtube" ? "youtube" : "audio",
           name: job.fileName,
           status: "ready",
-          uploadId: job.uploadId,
+          sourceUploadId: job.audioUploadId,
         }),
       ]);
     },
@@ -327,9 +333,9 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
       if (
         removed.kind === "image" &&
         removed.status === "ready" &&
-        removed.uploadId
+        removed.sourceUploadId
       ) {
-        void deleteImage(removed.uploadId).catch((error) => {
+        void deleteImage(removed.sourceUploadId).catch((error) => {
           toast.show({
             kind: "error",
             message: errorMessage(error, "Image cleanup failed."),

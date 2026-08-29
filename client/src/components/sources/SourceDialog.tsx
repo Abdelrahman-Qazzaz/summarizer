@@ -9,16 +9,16 @@ import { Meter } from "../ui/Meter";
 import { useDraftKey } from "./useDraftKey";
 
 function TranscriptBody({
-  uploadId,
+  audioUploadId,
   onClose,
 }: {
-  uploadId: string;
+  audioUploadId: string;
   onClose: () => void;
 }) {
   const toast = useToast();
   const draftKey = useDraftKey();
   const { sources, attachExisting } = useSources(draftKey);
-  const jobQuery = useJobQuery(uploadId);
+  const jobQuery = useJobQuery(audioUploadId);
   const [copied, setCopied] = useState(false);
   const job = jobQuery.data;
 
@@ -26,11 +26,15 @@ function TranscriptBody({
     return <p className="p-5 text-sm text-faint">Loading transcript…</p>;
   }
   if (jobQuery.error || !job) {
-    return <p className="p-5 text-sm text-live">This source couldn't be loaded.</p>;
+    return (
+      <p className="p-5 text-sm text-live">This source couldn't be loaded.</p>
+    );
   }
 
   const ready = job.status === "completed" && !!job.transcript;
-  const alreadyStaged = sources.some((source) => source.uploadId === uploadId);
+  const alreadyStaged = sources.some(
+    (source) => source.sourceUploadId === audioUploadId,
+  );
 
   const copy = async () => {
     if (!job.transcript) return;
@@ -42,7 +46,7 @@ function TranscriptBody({
   const attach = () => {
     // The job view carries no source kind, so this stages as plain audio; the
     // sent turn shows what it really was once the server answers.
-    attachExisting({ uploadId, fileName: job.fileName, source: "audio" });
+    attachExisting({ audioUploadId, fileName: job.fileName, source: "audio" });
     toast.show({
       kind: "success",
       message: `${job.fileName} added to the message.`,
@@ -154,10 +158,7 @@ export function SourceDialog() {
   if (!openSource) return null;
 
   const close = () => setOpenSource(null);
-  const title =
-    openSource.kind === "transcript"
-      ? (openSource.title ?? openSource.fileName)
-      : openSource.fileName;
+  const title = openSource.fileName;
 
   return (
     <div
@@ -197,7 +198,10 @@ export function SourceDialog() {
             />
           </div>
         ) : (
-          <TranscriptBody uploadId={openSource.uploadId} onClose={close} />
+          <TranscriptBody
+            audioUploadId={openSource.audioUploadId}
+            onClose={close}
+          />
         )}
       </div>
     </div>

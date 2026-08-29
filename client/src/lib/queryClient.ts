@@ -16,7 +16,7 @@ export const queryKeys = {
   chatModels: ["models", "chat"] as const,
   transcriptionModels: ["models", "transcription"] as const,
   jobs: ["jobs"] as const,
-  job: (uploadId: string) => ["job", uploadId] as const,
+  job: (audioUploadId: string) => ["job", audioUploadId] as const,
   conversations: ["conversations"] as const,
   messages: (conversationId: string) =>
     ["conversations", conversationId, "messages"] as const,

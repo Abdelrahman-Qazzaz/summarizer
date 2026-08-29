@@ -6,18 +6,14 @@ export type SourceKind = "image" | "audio" | "video" | "youtube";
  * turn that names a transcript the worker hasn't written yet.
  */
 export type SourceStatus =
-  | "preparing"
-  | "uploading"
-  | "transcribing"
-  | "ready"
-  | "failed";
+  "preparing" | "uploading" | "transcribing" | "ready" | "failed";
 
 export type StagedSource = {
   localId: string;
   kind: SourceKind;
   name: string;
   status: SourceStatus;
-  uploadId: string | null;
+  sourceUploadId: string | null;
   /** Object URL for image previews; revoked when the source is dropped. */
   previewUrl: string | null;
   charCount: number | null;

@@ -2,7 +2,7 @@ import { conversationMessagesEndpoint } from "../config";
 import { apiFetch, apiJson, jsonRequest } from "./http";
 
 export type MessageImage = {
-  uploadId: string;
+  imageUploadId: string;
   fileName: string;
   mimeType: string;
   size: number;
@@ -11,9 +11,8 @@ export type MessageImage = {
 
 /** A transcript this turn was sent with, in the order it was attached. */
 export type MessageTranscript = {
-  uploadId: string;
+  audioUploadId: string;
   fileName: string;
-  title: string | null;
   source: string;
 };
 
@@ -41,14 +40,15 @@ export type MessagesResponse = {
  */
 export const MAX_CONTEXT_MESSAGES = 50;
 
+export type MessageAttachmentInput =
+  | { type: "image"; imageUploadId: string }
+  | { type: "transcript"; audioUploadId: string };
+
 export type SendMessageInput = {
   conversationId: string;
   messageContent: string;
   chosenModelId: string;
-  /** Image upload ids, in the order they were staged. */
-  attachmentUploadIds: string[];
-  /** Transcript upload ids — order decides the order they reach the model. */
-  audioUploadIds: string[];
+  attachments: MessageAttachmentInput[];
   lastMessageId: string | null;
 };
 
@@ -104,8 +104,7 @@ export async function streamMessage(
     jsonRequest("POST", {
       messageContent: input.messageContent,
       chosenModelId: input.chosenModelId,
-      attachmentUploadIds: input.attachmentUploadIds,
-      audioUploadIds: input.audioUploadIds,
+      attachments: input.attachments,
       lastMessageId: input.lastMessageId,
     }),
   );

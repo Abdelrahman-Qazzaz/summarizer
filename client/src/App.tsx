@@ -26,7 +26,10 @@ function App() {
       {/* Where the upload, history and job pages used to live. */}
       <Route path="/app" element={<Navigate to="/chat" replace />} />
       <Route path="/history" element={<Navigate to="/chat" replace />} />
-      <Route path="/jobs/:uploadId" element={<Navigate to="/chat" replace />} />
+      <Route
+        path="/jobs/:audioUploadId"
+        element={<Navigate to="/chat" replace />}
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -4,9 +4,8 @@ import { apiFetch, apiJson, jsonRequest } from "./http";
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
 export type Job = {
-  uploadId: string;
+  audioUploadId: string;
   fileName: string;
-  title: string | null;
   status: JobStatus;
   transcript: string | null;
   error: string | null;
@@ -14,9 +13,8 @@ export type Job = {
 
 /** What the paginated list returns — no transcript body. */
 export type JobSummary = {
-  uploadId: string;
+  audioUploadId: string;
   fileName: string;
-  title: string | null;
   status: JobStatus;
   createdAt: string;
   error: string | null;
@@ -32,9 +30,9 @@ export type JobsFilters = {
   q?: string | null;
 };
 
-export async function fetchJob(uploadId: string): Promise<Job> {
-  const data = await apiJson<Job>(jobEndpoint(uploadId));
-  if (!data?.uploadId) throw new Error("Invalid job response");
+export async function fetchJob(audioUploadId: string): Promise<Job> {
+  const data = await apiJson<Job>(jobEndpoint(audioUploadId));
+  if (!data?.audioUploadId) throw new Error("Invalid job response");
   return data;
 }
 
@@ -52,18 +50,18 @@ export async function fetchJobs(
   return { jobs: data.jobs, nextCursor: data.nextCursor ?? null };
 }
 
-export async function deleteJob(uploadId: string): Promise<void> {
-  await apiFetch(jobEndpoint(uploadId), { method: "DELETE" });
+export async function deleteJob(audioUploadId: string): Promise<void> {
+  await apiFetch(jobEndpoint(audioUploadId), { method: "DELETE" });
 }
 
 /** Transcribe the same audio again with another model, replacing the transcript. */
 export async function rerunJob(
-  uploadId: string,
+  audioUploadId: string,
   transcriptModelId: string,
 ): Promise<string> {
-  const data = await apiJson<{ uploadId: string }>(
-    jobRerunEndpoint(uploadId),
+  const data = await apiJson<{ audioUploadId: string }>(
+    jobRerunEndpoint(audioUploadId),
     jsonRequest("POST", { transcriptModelId }),
   );
-  return data.uploadId ?? uploadId;
+  return data.audioUploadId ?? audioUploadId;
 }

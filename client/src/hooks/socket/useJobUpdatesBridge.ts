@@ -6,7 +6,7 @@ import { useToast } from "../toast/useToast";
 import type { Job } from "../../api/jobs";
 
 type JobUpdatedPayload = {
-  uploadId: string;
+  audioUploadId: string;
 };
 
 /**
@@ -22,12 +22,14 @@ export function useJobUpdatesBridge(enabled: boolean) {
   useEffect(() => {
     if (!enabled || !socket) return;
 
-    const handler = async ({ uploadId }: JobUpdatedPayload) => {
-      if (!uploadId) return;
-      await queryClient.invalidateQueries({ queryKey: queryKeys.job(uploadId) });
+    const handler = async ({ audioUploadId }: JobUpdatedPayload) => {
+      if (!audioUploadId) return;
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.job(audioUploadId),
+      });
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
 
-      const job = queryClient.getQueryData<Job>(queryKeys.job(uploadId));
+      const job = queryClient.getQueryData<Job>(queryKeys.job(audioUploadId));
       if (job?.status === "failed") {
         toast.show({
           kind: "error",

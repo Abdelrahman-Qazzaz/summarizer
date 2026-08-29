@@ -49,12 +49,12 @@ export function SourceRow({
           className="min-w-0 flex-1 text-left"
         >
           <span className="block truncate font-mono text-[12px] text-ink">
-            {job.title ?? job.fileName}
+            {job.fileName}
           </span>
           <span className="mt-0.5 block truncate text-[11px] text-faint">
             {job.status === "failed"
               ? (job.error ?? "failed")
-              : `${job.title ? `${job.fileName} · ` : ""}${job.status} · ${dateFormat.format(new Date(job.createdAt))}`}
+              : `${job.status} · ${dateFormat.format(new Date(job.createdAt))}`}
           </span>
         </button>
 

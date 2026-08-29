@@ -5,6 +5,7 @@ import { ApiError, errorMessage } from "../../api/http";
 import {
   streamMessage,
   type ChatMessage,
+  type MessageAttachmentInput,
   type MessagesResponse,
 } from "../../api/messages";
 import { queryKeys } from "../../lib/queryClient";
@@ -15,11 +16,20 @@ import type { PendingTurn } from "./types";
 /** Deltas arrive faster than a long reply can be re-parsed; batch them. */
 const FLUSH_INTERVAL_MS = 80;
 
-const uploadIdsOf = (sources: StagedSource[], images: boolean) =>
-  sources
-    .filter((source) => (source.kind === "image") === images)
-    .map((source) => source.uploadId)
-    .filter((uploadId): uploadId is string => uploadId !== null);
+function messageAttachmentsOf(
+  sources: StagedSource[],
+): MessageAttachmentInput[] {
+  const attachments: MessageAttachmentInput[] = [];
+  for (const source of sources) {
+    if (!source.sourceUploadId) continue;
+    attachments.push(
+      source.kind === "image"
+        ? { type: "image", imageUploadId: source.sourceUploadId }
+        : { type: "transcript", audioUploadId: source.sourceUploadId },
+    );
+  }
+  return attachments;
+}
 
 /**
  * The turn as it will be stored, built from what the client already has: the
@@ -46,22 +56,19 @@ function toStoredTurns(
     conversationId,
     createdAt,
     attachments: input.sources
-      .filter((source) => source.kind === "image" && source.uploadId)
+      .filter((source) => source.kind === "image" && source.sourceUploadId)
       .map((source) => ({
-        uploadId: source.uploadId as string,
+        imageUploadId: source.sourceUploadId as string,
         fileName: source.name,
         mimeType: source.file?.type ?? "",
         size: source.file?.size ?? 0,
         url: source.previewUrl ?? "",
       })),
     transcriptAttachments: input.sources
-      .filter((source) => source.kind !== "image" && source.uploadId)
+      .filter((source) => source.kind !== "image" && source.sourceUploadId)
       .map((source) => ({
-        uploadId: source.uploadId as string,
+        audioUploadId: source.sourceUploadId as string,
         fileName: source.name,
-        // The generated title is a server-side field; null falls back to the
-        // file name, which is the label the composer chip was already showing.
-        title: null,
         source: source.kind,
       })),
   };
@@ -84,16 +91,15 @@ function toPendingTurn(content: string, sources: StagedSource[]): PendingTurn {
     images: sources
       .filter((source) => source.kind === "image")
       .map((source) => ({
-        uploadId: source.uploadId ?? source.localId,
+        imageUploadId: source.sourceUploadId ?? source.localId,
         fileName: source.name,
         url: source.previewUrl ?? "",
       })),
     transcripts: sources
       .filter((source) => source.kind !== "image")
       .map((source) => ({
-        uploadId: source.uploadId ?? source.localId,
+        audioUploadId: source.sourceUploadId ?? source.localId,
         fileName: source.name,
-        title: null,
         source: source.kind,
       })),
     assistantContent: "",
@@ -188,8 +194,7 @@ export function useChatSend() {
               conversationId: target,
               messageContent: input.content,
               chosenModelId: input.modelId,
-              attachmentUploadIds: uploadIdsOf(input.sources, true),
-              audioUploadIds: uploadIdsOf(input.sources, false),
+              attachments: messageAttachmentsOf(input.sources),
               lastMessageId: input.lastMessageId,
             },
             {

@@ -17,7 +17,7 @@ const FORM_KEYS = {
 } as const;
 
 export type UploadedImage = {
-  uploadId: string;
+  imageUploadId: string;
   fileName: string;
   mimeType: string;
   size: number;
@@ -35,14 +35,15 @@ export async function uploadImage(file: File): Promise<UploadedImage> {
 }
 
 /** Deletes a resolved image removed from a draft. */
-export async function deleteImage(uploadId: string): Promise<void> {
-  await apiJson<{ message: string }>(`${uploadImageEndpoint()}/${uploadId}`, {
-    method: "DELETE",
-  });
+export async function deleteImage(imageUploadId: string): Promise<void> {
+  await apiJson<{ message: string }>(
+    `${uploadImageEndpoint()}/${imageUploadId}`,
+    { method: "DELETE" },
+  );
 }
 
 type UploadedAudio = {
-  uploadId: string;
+  audioUploadId: string;
   fileName: string;
   size: number;
   mimeType: string | null;
@@ -69,7 +70,7 @@ export async function uploadAudio(upload: {
 }
 
 type QueuedYoutube = {
-  uploadId: string;
+  audioUploadId: string;
   source: "youtube";
   url: string;
 };

@@ -30,11 +30,11 @@ export function useJobsQuery(enabled: boolean, filters: JobsFilters = {}) {
 }
 
 /** One job with its transcript body — what the transcript view reads. */
-export function useJobQuery(uploadId: string | null) {
+export function useJobQuery(audioUploadId: string | null) {
   return useQuery({
-    queryKey: queryKeys.job(uploadId ?? ""),
-    queryFn: () => fetchJob(uploadId as string),
-    enabled: !!uploadId,
+    queryKey: queryKeys.job(audioUploadId ?? ""),
+    queryFn: () => fetchJob(audioUploadId as string),
+    enabled: !!audioUploadId,
   });
 }
 
@@ -43,9 +43,10 @@ export function useDeleteJobMutation() {
   const toast = useToast();
 
   return useMutation({
-    mutationFn: ({ uploadId }: { uploadId: string }) => deleteJob(uploadId),
-    onSuccess: (_result, { uploadId }) => {
-      queryClient.removeQueries({ queryKey: queryKeys.job(uploadId) });
+    mutationFn: ({ audioUploadId }: { audioUploadId: string }) =>
+      deleteJob(audioUploadId),
+    onSuccess: (_result, { audioUploadId }) => {
+      queryClient.removeQueries({ queryKey: queryKeys.job(audioUploadId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
       toast.show({ kind: "success", message: "Source deleted." });
     },
@@ -64,15 +65,17 @@ export function useRerunJobMutation() {
 
   return useMutation({
     mutationFn: ({
-      uploadId,
+      audioUploadId,
       transcriptModelId,
     }: {
-      uploadId: string;
+      audioUploadId: string;
       transcriptModelId: string;
-    }) => rerunJob(uploadId, transcriptModelId),
-    onSuccess: (uploadId) => {
+    }) => rerunJob(audioUploadId, transcriptModelId),
+    onSuccess: (audioUploadId) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.job(uploadId) });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.job(audioUploadId),
+      });
       toast.show({ kind: "success", message: "Transcribing again." });
     },
     onError: (error) => {

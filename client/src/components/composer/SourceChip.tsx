@@ -25,10 +25,10 @@ function readableSource(source: StagedSource) {
         } as const)
       : null;
   }
-  return source.uploadId
+  return source.sourceUploadId
     ? ({
         kind: "transcript",
-        uploadId: source.uploadId,
+        audioUploadId: source.sourceUploadId,
         fileName: source.name,
       } as const)
     : null;
@@ -89,7 +89,9 @@ export function SourceChip({
         />
       ) : (
         <Meter
-          state={failed ? "failed" : isSourceInFlight(source) ? "live" : "ready"}
+          state={
+            failed ? "failed" : isSourceInFlight(source) ? "live" : "ready"
+          }
           className="shrink-0"
         />
       )}

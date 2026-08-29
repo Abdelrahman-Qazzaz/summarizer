@@ -3,7 +3,7 @@ import type { StagedSource } from "./types";
 
 /** A completed job being attached from the library rather than uploaded again. */
 export type ExistingSource = {
-  uploadId: string;
+  audioUploadId: string;
   fileName: string;
   source: string;
 };

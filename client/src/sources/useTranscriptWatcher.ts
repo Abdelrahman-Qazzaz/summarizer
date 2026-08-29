@@ -19,26 +19,29 @@ const OFFLINE_POLL_MS = 20_000;
  */
 export function useTranscriptWatcher(
   drafts: Record<string, StagedSource[]>,
-  patchByUploadId: (uploadId: string, patch: Partial<StagedSource>) => void,
+  patchBySourceUploadId: (
+    sourceUploadId: string,
+    patch: Partial<StagedSource>,
+  ) => void,
 ) {
   const socketConnected = useSocketConnected();
 
-  const pendingUploadIds = useMemo(() => {
-    const uploadIds = new Set<string>();
+  const pendingAudioUploadIds = useMemo(() => {
+    const audioUploadIds = new Set<string>();
     for (const draft of Object.values(drafts)) {
       for (const source of draft) {
-        if (source.status === "transcribing" && source.uploadId) {
-          uploadIds.add(source.uploadId);
+        if (source.status === "transcribing" && source.sourceUploadId) {
+          audioUploadIds.add(source.sourceUploadId);
         }
       }
     }
-    return [...uploadIds].sort();
+    return [...audioUploadIds].sort();
   }, [drafts]);
 
   const results = useQueries({
-    queries: pendingUploadIds.map((uploadId) => ({
-      queryKey: queryKeys.job(uploadId),
-      queryFn: () => fetchJob(uploadId),
+    queries: pendingAudioUploadIds.map((audioUploadId) => ({
+      queryKey: queryKeys.job(audioUploadId),
+      queryFn: () => fetchJob(audioUploadId),
       refetchInterval: socketConnected ? (false as const) : OFFLINE_POLL_MS,
       staleTime: 0,
     })),
@@ -52,7 +55,7 @@ export function useTranscriptWatcher(
   // The patch effect keys off what actually changed, not the array identity
   // useQueries hands back on every render.
   const signature = settled
-    .map((job) => `${job.uploadId}:${job.status}`)
+    .map((job) => `${job.audioUploadId}:${job.status}`)
     .join("|");
   const settledRef = useRef<Job[]>(settled);
   useEffect(() => {
@@ -62,17 +65,17 @@ export function useTranscriptWatcher(
   useEffect(() => {
     for (const job of settledRef.current) {
       if (job.status === "completed") {
-        patchByUploadId(job.uploadId, {
+        patchBySourceUploadId(job.audioUploadId, {
           status: "ready",
           name: job.fileName,
           charCount: job.transcript?.length ?? null,
         });
       } else {
-        patchByUploadId(job.uploadId, {
+        patchBySourceUploadId(job.audioUploadId, {
           status: "failed",
           error: job.error ?? "Transcription failed.",
         });
       }
     }
-  }, [signature, patchByUploadId]);
+  }, [signature, patchBySourceUploadId]);
 }

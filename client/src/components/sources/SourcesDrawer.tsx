@@ -38,11 +38,11 @@ export function SourcesDrawer() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState<JobStatus | null>(null);
   const [rerunTarget, setRerunTarget] = useState<{
-    uploadId: string;
+    audioUploadId: string;
     fileName: string;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
-    uploadId: string;
+    audioUploadId: string;
     fileName: string;
   } | null>(null);
 
@@ -75,11 +75,14 @@ export function SourcesDrawer() {
 
   const jobs = jobsQuery.data?.pages.flatMap((page) => page.jobs) ?? [];
 
-  const attach = (uploadId: string, fileName: string) => {
+  const attach = (audioUploadId: string, fileName: string) => {
     // The list doesn't carry a source kind, so this stages as plain audio; the
     // sent turn shows what it really was once the server answers.
-    attachExisting({ uploadId, fileName, source: "audio" });
-    toast.show({ kind: "success", message: `${fileName} added to the message.` });
+    attachExisting({ audioUploadId, fileName, source: "audio" });
+    toast.show({
+      kind: "success",
+      message: `${fileName} added to the message.`,
+    });
   };
 
   return (
@@ -155,26 +158,25 @@ export function SourcesDrawer() {
               <ul>
                 {jobs.map((job) => (
                   <SourceRow
-                    key={job.uploadId}
+                    key={job.audioUploadId}
                     job={job}
                     onOpen={() =>
                       setOpenSource({
                         kind: "transcript",
-                        uploadId: job.uploadId,
+                        audioUploadId: job.audioUploadId,
                         fileName: job.fileName,
-                        title: job.title,
                       })
                     }
-                    onAttach={() => attach(job.uploadId, job.fileName)}
+                    onAttach={() => attach(job.audioUploadId, job.fileName)}
                     onRerun={() =>
                       setRerunTarget({
-                        uploadId: job.uploadId,
+                        audioUploadId: job.audioUploadId,
                         fileName: job.fileName,
                       })
                     }
                     onDelete={() =>
                       setDeleteTarget({
-                        uploadId: job.uploadId,
+                        audioUploadId: job.audioUploadId,
                         fileName: job.fileName,
                       })
                     }
@@ -202,7 +204,7 @@ export function SourcesDrawer() {
           currentModelId={transcriptModelId}
           onConfirm={(modelId) => {
             rerunJob.mutate({
-              uploadId: rerunTarget.uploadId,
+              audioUploadId: rerunTarget.audioUploadId,
               transcriptModelId: modelId,
             });
             setRerunTarget(null);
@@ -217,10 +219,10 @@ export function SourcesDrawer() {
           body={`“${deleteTarget.fileName}” and its transcript are removed. Messages already sent with it keep their copy.`}
           confirmLabel="Delete source"
           onConfirm={() => {
-            deleteJob.mutate({ uploadId: deleteTarget.uploadId });
+            deleteJob.mutate({ audioUploadId: deleteTarget.audioUploadId });
             if (
               openSource?.kind === "transcript" &&
-              openSource.uploadId === deleteTarget.uploadId
+              openSource.audioUploadId === deleteTarget.audioUploadId
             ) {
               setOpenSource(null);
             }

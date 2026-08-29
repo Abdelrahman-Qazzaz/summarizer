@@ -18,16 +18,16 @@ export function authLogoutEndpoint(): string {
   return `${apiBase}/auth/logout`;
 }
 
-export function jobEndpoint(uploadId: string): string {
-  return `${apiBase}/jobs/transcribe/${uploadId}`;
+export function jobEndpoint(audioUploadId: string): string {
+  return `${apiBase}/jobs/transcribe/${audioUploadId}`;
 }
 
 export function jobsListEndpoint(): string {
   return `${apiBase}/jobs`;
 }
 
-export function jobRerunEndpoint(uploadId: string): string {
-  return `${apiBase}/jobs/transcribe/${uploadId}/rerun`;
+export function jobRerunEndpoint(audioUploadId: string): string {
+  return `${apiBase}/jobs/transcribe/${audioUploadId}/rerun`;
 }
 
 export function chatModelsEndpoint(): string {

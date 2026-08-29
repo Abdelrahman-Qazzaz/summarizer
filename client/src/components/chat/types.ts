@@ -1,7 +1,7 @@
 import type { MessageTranscript } from "../../api/messages";
 
 export type TurnImage = {
-  uploadId: string;
+  imageUploadId: string;
   fileName: string;
   url: string;
 };

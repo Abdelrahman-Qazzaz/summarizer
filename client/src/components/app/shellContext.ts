@@ -7,9 +7,8 @@ import { createContext, useContext } from "react";
 export type OpenSource =
   | {
       kind: "transcript";
-      uploadId: string;
+      audioUploadId: string;
       fileName: string;
-      title?: string | null;
     }
   | { kind: "image"; url: string; fileName: string };
 
