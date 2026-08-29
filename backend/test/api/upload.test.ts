@@ -168,16 +168,16 @@ describe("POST /upload/audio", () => {
       message: string;
       fileName: string;
       source: string;
-      uploadId: string;
+      audioUploadId: string;
     };
     expect(body.message).toBe("File uploaded");
     expect(body.fileName).toBe("clip.mp3");
     expect(body.source).toBe("video");
-    expect(typeof body.uploadId).toBe("string");
+    expect(typeof body.audioUploadId).toBe("string");
     expect(mockUploadAudioToBucket).toHaveBeenCalledTimes(1);
     expect(mockInsert).toHaveBeenCalledTimes(1);
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe", {
-      uploadId: body.uploadId,
+      audioUploadId: body.audioUploadId,
     });
   });
 
@@ -260,20 +260,25 @@ describe("POST /upload/youtube", () => {
       message: string;
       source: string;
       url: string;
-      uploadId: string;
+      audioUploadId: string;
     };
     expect(body.source).toBe("youtube");
     expect(body.url).toBe(YT_URL);
-    expect(typeof body.uploadId).toBe("string");
+    expect(typeof body.audioUploadId).toBe("string");
     expect(mockInsert).toHaveBeenCalledTimes(1);
     // The row persists the origin URL (for history + future transcript caching).
     expect(mockValues).toHaveBeenCalledWith(
-      expect.objectContaining({ source: "youtube", YT_sourceUrl: YT_URL }),
+      expect.objectContaining({
+        captionUploadId: null,
+        source: "youtube",
+        YT_sourceUrl: YT_URL,
+      }),
     );
     // The fetch event carries the url + userId the fetcher needs (bucket write
     // happens in Python; the API only enqueues).
     expect(mockSendEvent).toHaveBeenCalledWith("yt_fetch", {
-      uploadId: body.uploadId,
+      audioUploadId: body.audioUploadId,
+      captionUploadId: null,
       url: YT_URL,
       userId: "user_01",
       useCaptionsIfAvailable: false,
@@ -296,9 +301,17 @@ describe("POST /upload/youtube", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(mockSendEvent).toHaveBeenCalledWith(
-      "yt_fetch",
-      expect.objectContaining({ useCaptionsIfAvailable: true }),
-    );
+    const body = (await res.json()) as { audioUploadId: string };
+    const insertedJob = mockValues.mock.calls[0]?.[0] as {
+      captionUploadId: string;
+    };
+    expect(insertedJob.captionUploadId).toEqual(expect.any(String));
+    expect(mockSendEvent).toHaveBeenCalledWith("yt_fetch", {
+      audioUploadId: body.audioUploadId,
+      captionUploadId: insertedJob.captionUploadId,
+      url: YT_URL,
+      userId: "user_01",
+      useCaptionsIfAvailable: true,
+    });
   });
 });

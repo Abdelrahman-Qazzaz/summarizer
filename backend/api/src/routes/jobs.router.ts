@@ -20,20 +20,20 @@ export const jobsRouter = new Hono();
 jobsRouter.use("*", requireAuth, jobRateLimiter);
 
 jobsRouter.get(
-  `/transcribe/:${CTX_KEYS.uploadId}`,
+  `/transcribe/:${CTX_KEYS.audioUploadId}`,
   validateReqParams(jobReqParamSchema),
   httpCache({ revalidate: true }),
   jobsController.handleGetTranscribeJob,
 );
 
 jobsRouter.delete(
-  `/transcribe/:${CTX_KEYS.uploadId}`,
+  `/transcribe/:${CTX_KEYS.audioUploadId}`,
   validateReqParams(jobReqParamSchema),
   jobsController.handleDeleteTranscribeJob,
 );
 
 jobsRouter.post(
-  `/transcribe/:${CTX_KEYS.uploadId}/rerun`,
+  `/transcribe/:${CTX_KEYS.audioUploadId}/rerun`,
   validateReqParams(jobReqParamSchema),
   validateReqBody(jobTranscribeRerunBodySchema),
   jobsController.handleRerunTranscribeJob,

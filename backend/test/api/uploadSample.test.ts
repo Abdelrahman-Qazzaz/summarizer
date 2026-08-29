@@ -83,25 +83,25 @@ describe("POST /upload/audio with sample file", () => {
       size: number;
       mimeType: string | null;
       source: string;
-      uploadId: string;
+      audioUploadId: string;
     };
     expect(body.message).toBe("File uploaded");
     expect(body.fileName).toBe(SAMPLE_AUDIO_NAME);
     expect(body.source).toBe("audio");
     expect(body.size).toBe(file.size);
     expect(body.mimeType).toBe("audio/flac");
-    expect(typeof body.uploadId).toBe("string");
+    expect(typeof body.audioUploadId).toBe("string");
 
     expect(mockUploadAudioToBucket).toHaveBeenCalledTimes(1);
-    const [userIdArg, uploadIdArg, fileArg] =
+    const [userIdArg, audioUploadIdArg, fileArg] =
       mockUploadAudioToBucket.mock.calls[0];
     expect(userIdArg).toBe("user_01");
-    expect(uploadIdArg).toBe(body.uploadId);
+    expect(audioUploadIdArg).toBe(body.audioUploadId);
     expect(fileArg).toBeInstanceOf(File);
     expect(fileArg.size).toBe(file.size);
     expect(mockInsert).toHaveBeenCalledTimes(1);
     expect(mockSendEvent).toHaveBeenCalledWith("transcribe", {
-      uploadId: body.uploadId,
+      audioUploadId: body.audioUploadId,
     });
   });
 });

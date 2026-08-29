@@ -46,7 +46,7 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
 import { createApp } from "../../api/app";
 import { sessionCookieHeader } from "../helpers/session";
 
-const uploadId = "550e8400-e29b-41d4-a716-446655440000";
+const audioUploadId = "550e8400-e29b-41d4-a716-446655440000";
 
 describe("rate limiting", () => {
   beforeEach(() => {
@@ -70,7 +70,7 @@ describe("rate limiting", () => {
   it("allows requests under the limit", async () => {
     mockLimit.mockResolvedValueOnce([
       {
-        uploadId,
+        audioUploadId,
         fileName: "clip.mp3",
         status: "completed",
         error: null,
@@ -78,7 +78,7 @@ describe("rate limiting", () => {
     ]);
     const res = await (
       await createApp()
-    ).request(`http://localhost/jobs/transcribe/${uploadId}`, {
+    ).request(`http://localhost/jobs/transcribe/${audioUploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(200);
@@ -87,16 +87,15 @@ describe("rate limiting", () => {
   it("returns RateLimit draft-6 headers on success", async () => {
     mockLimit.mockResolvedValueOnce([
       {
-        uploadId,
+        audioUploadId,
         fileName: "clip.mp3",
         status: "completed",
-        transcriptUploadId: null,
         error: null,
       },
     ]);
     const res = await (
       await createApp()
-    ).request(`http://localhost/jobs/${uploadId}`, {
+    ).request(`http://localhost/jobs/${audioUploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.headers.get("RateLimit-Limit")).toBe("100");
@@ -121,16 +120,15 @@ describe("rate limiting", () => {
     setRateLimitStoreUnavailable(true);
     mockLimit.mockResolvedValueOnce([
       {
-        uploadId,
+        audioUploadId,
         fileName: "clip.mp3",
         status: "completed",
-        transcriptUploadId: null,
         error: null,
       },
     ]);
     const res = await (
       await createApp()
-    ).request(`http://localhost/jobs/${uploadId}`, {
+    ).request(`http://localhost/jobs/${audioUploadId}`, {
       headers: { Cookie: await sessionCookieHeader("user_01") },
     });
     expect(res.status).toBe(503);

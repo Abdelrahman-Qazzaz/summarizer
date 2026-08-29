@@ -5,6 +5,8 @@ import { startSocketServer } from "./src/sockets/socketManager";
 
 import { mq } from "../shared/message-queue/messageQueue";
 import { failAudioJobById } from "../shared/data/jobs.data";
+import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
+import { logger } from "../shared/logger";
 import { onShutdown } from "../shared/shutdown";
 
 import { serve } from "@hono/node-server";
@@ -14,6 +16,7 @@ import { createApp } from "./app";
 // down (incl. RabbitMQ, which it also connects), the API never starts.
 const app = await createApp();
 export const port = env.PORT;
+const log = logger.child({ component: "api-queue" });
 
 // Listening starts here; the socket server then attaches to this same server,
 // so the API and the websocket share one port.
@@ -21,15 +24,32 @@ const server = serve({ fetch: app.fetch, port });
 export const io = startSocketServer(server);
 
 const cancelConsumers = await Promise.all([
-  mq.consume(mq.queues.TRANSCRIBE_DONE, ({ uploadId, userId }) => {
-    io.to(userId).emit("jobUpdated", { uploadId });
+  mq.consume(mq.queues.TRANSCRIBE_DONE, ({ audioUploadId, userId }) => {
+    io.to(userId).emit("jobUpdated", { audioUploadId });
   }),
   // youtube-fetcher couldn't download/upload the audio: mark the job failed and
   // notify the user. The row was created by POST /upload/youtube.
-  mq.consume(mq.queues.YT_FETCH_FAILED, async ({ uploadId, userId, error }) => {
-    await failAudioJobById(uploadId, error ?? "Failed to fetch YouTube audio");
-    io.to(userId).emit("jobUpdated", { uploadId });
-  }),
+  mq.consume(
+    mq.queues.YT_FETCH_FAILED,
+    async ({ audioUploadId, userId, error }) => {
+      await failAudioJobById(
+        audioUploadId,
+        error ?? "Failed to fetch YouTube audio",
+      );
+      try {
+        await cleanupTerminalCaptionUpload(audioUploadId);
+      } catch (cleanupError) {
+        log.warn("Failed to clean up caption upload", {
+          audioUploadId,
+          error:
+            cleanupError instanceof Error
+              ? cleanupError.message
+              : String(cleanupError),
+        });
+      }
+      io.to(userId).emit("jobUpdated", { audioUploadId });
+    },
+  ),
 ]);
 
 /**

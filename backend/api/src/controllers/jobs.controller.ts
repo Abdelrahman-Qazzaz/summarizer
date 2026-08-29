@@ -3,6 +3,7 @@ import { CTX_KEYS } from "../../../shared/keys";
 import { jobCursorSchema, type JobStatus } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
 import { deleteFilesFromBucket } from "../../../shared/bucket";
+import { cleanupTerminalCaptionUpload } from "../../../shared/captionUploads";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import {
   deleteAudioJob,
@@ -21,14 +22,14 @@ const log = logger.child({ controller: "jobs" });
 
 export async function handleGetTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  const uploadId = c.get(CTX_KEYS.uploadId);
+  const audioUploadId = c.get(CTX_KEYS.audioUploadId);
 
   // A transcript row exists only for a completed job (a re-run drops it), so its
   // presence is enough — no status gate, and it's the user's own by the scope.
   // A transcript-read failure degrades to null rather than failing the job view.
   const [audioJob, transcriptResult] = await Promise.all([
-    findAudioJob(userId, uploadId),
-    tryCatch(findTranscripts(userId, [uploadId])),
+    findAudioJob(userId, audioUploadId),
+    tryCatch(findTranscripts(userId, [audioUploadId])),
   ]);
 
   if (!audioJob) return c.json({ message: "Job not found" }, 404);
@@ -38,16 +39,15 @@ export async function handleGetTranscribeJob(c: Context) {
       "Failed to read transcript for job view",
       transcriptResult.error,
       {
-        uploadId,
+        audioUploadId,
       },
     );
 
   return c.json({
-    uploadId: audioJob.uploadId,
+    audioUploadId: audioJob.audioUploadId,
     fileName: audioJob.fileName,
-    title: audioJob.title,
     status: audioJob.status,
-    transcript: transcriptResult.data?.get(uploadId) ?? null,
+    transcript: transcriptResult.data?.get(audioUploadId) ?? null,
     error: audioJob.error,
   });
 }
@@ -78,7 +78,10 @@ export async function getUserJobs(c: Context) {
   const last = page[page.length - 1];
   const nextCursor =
     hasMore && last
-      ? encodeCursor({ createdAt: last.createdAt, uploadId: last.uploadId })
+      ? encodeCursor({
+          createdAt: last.createdAt,
+          audioUploadId: last.audioUploadId,
+        })
       : null;
 
   return c.json({ jobs: page, nextCursor });
@@ -86,15 +89,17 @@ export async function getUserJobs(c: Context) {
 
 export async function handleDeleteTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  const uploadId = c.get(CTX_KEYS.uploadId);
+  const audioUploadId = c.get(CTX_KEYS.audioUploadId);
 
-  // The transcript row cascades with the job; only the audio object is left in
-  // the bucket to remove. The key is user-scoped (<userId>/<uploadId>), so a
-  // non-owner's request no-ops on storage structurally.
-  await Promise.all([
-    deleteAudioJob(userId, uploadId),
-    deleteFilesFromBucket(userId, [uploadId]),
-  ]);
+  const job = await findAudioJob(userId, audioUploadId);
+  if (!job) return c.json({ message: "Job Deleted" }, 200);
+
+  const uploadIds = [
+    audioUploadId,
+    ...(job.captionUploadId ? [job.captionUploadId] : []),
+  ];
+  await deleteFilesFromBucket(userId, uploadIds);
+  await deleteAudioJob(userId, audioUploadId);
   return c.json({ message: "Job Deleted" }, 200);
 }
 
@@ -105,18 +110,19 @@ export async function handleDeleteTranscribeJob(c: Context) {
  */
 export async function handleRerunTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  const uploadId = c.get(CTX_KEYS.uploadId);
+  const audioUploadId = c.get(CTX_KEYS.audioUploadId);
   const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
 
-  const job = await requeueAudioJob(userId, uploadId, transcriptModelId);
+  await cleanupTerminalCaptionUpload(audioUploadId, userId);
+  const job = await requeueAudioJob(userId, audioUploadId, transcriptModelId);
 
   if (!job) {
-    const existingJob = await findAudioJob(userId, uploadId);
+    const existingJob = await findAudioJob(userId, audioUploadId);
     if (!existingJob) return c.json({ message: "Job not found" }, 404);
     return c.json({ message: "Job is already queued or processing" }, 409);
   }
 
-  await deleteTranscript(uploadId);
-  await mq.publish(mq.queues.TRANSCRIBE, { uploadId });
-  return c.json({ uploadId });
+  await deleteTranscript(audioUploadId);
+  await mq.publish(mq.queues.TRANSCRIBE, { audioUploadId });
+  return c.json({ audioUploadId });
 }

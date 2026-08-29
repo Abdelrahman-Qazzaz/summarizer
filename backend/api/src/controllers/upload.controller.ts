@@ -14,11 +14,12 @@ export async function handleAudioUpload(c: Context) {
 
   const source = c.get(CTX_KEYS.audioSource);
 
-  const uploadId: UploadId = randomUUID();
-  await uploadAudioToBucket(userId, uploadId, file);
+  const audioUploadId: UploadId = randomUUID();
+  await uploadAudioToBucket(userId, audioUploadId, file);
 
   await createAudioJob({
-    uploadId,
+    audioUploadId,
+    captionUploadId: null,
     userId,
     source,
     fileName: file.name,
@@ -27,10 +28,10 @@ export async function handleAudioUpload(c: Context) {
     transcriptModelId,
   });
 
-  await mq.publish(mq.queues.TRANSCRIBE, { uploadId });
+  await mq.publish(mq.queues.TRANSCRIBE, { audioUploadId });
   return c.json({
     message: "File uploaded",
-    uploadId,
+    audioUploadId,
     fileName: file.name,
     size: file.size,
     mimeType: file.type || null,
@@ -45,14 +46,18 @@ export async function handleYoutubeUpload(c: Context) {
   const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
   const useCaptionsIfAvailable = c.get(CTX_KEYS.useCaptionsIfAvailable);
 
-  const uploadId: UploadId = randomUUID();
+  const audioUploadId: UploadId = randomUUID();
+  const captionUploadId: UploadId | null = useCaptionsIfAvailable
+    ? randomUUID()
+    : null;
 
   // Created queued with placeholder file metadata — the youtube-fetcher hasn't
-  // downloaded anything yet. It uploads the audio to the bucket at `uploadId`
+  // downloaded anything yet. It uploads the audio to the bucket at `audioUploadId`
   // then publishes `transcribe`, so the row is claimed by the transcribe worker
   // exactly like a normal audio upload.
   await createAudioJob({
-    uploadId,
+    audioUploadId,
+    captionUploadId,
     userId,
     source: "youtube",
     youtubeSourceUrl: url,
@@ -63,14 +68,15 @@ export async function handleYoutubeUpload(c: Context) {
   });
 
   await mq.publish(mq.queues.YT_FETCH, {
-    uploadId,
+    audioUploadId,
+    captionUploadId,
     url,
     userId,
     useCaptionsIfAvailable,
   });
   return c.json({
     message: "Queued",
-    uploadId,
+    audioUploadId,
     source: "youtube" as const,
     url,
   });

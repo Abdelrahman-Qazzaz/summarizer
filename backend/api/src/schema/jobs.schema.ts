@@ -4,7 +4,7 @@ import { jobStatusEnum } from "../../../shared/db";
 import { isValidTranscribeModel } from "../../../shared/ai/ai_transcribe_client";
 
 export const jobReqParamSchema = z.object({
-  [CTX_KEYS.uploadId]: z.string().uuid(),
+  [CTX_KEYS.audioUploadId]: z.string().uuid(),
 });
 
 const jobStatusValues = jobStatusEnum.enumValues;
@@ -20,7 +20,7 @@ export const jobsListQuerySchema = z.object({
 
 export const jobCursorSchema = z.object({
   createdAt: z.string(),
-  uploadId: z.string(),
+  audioUploadId: z.string(),
 });
 
 /** Body for re-running an audio job with a different transcription model. */
