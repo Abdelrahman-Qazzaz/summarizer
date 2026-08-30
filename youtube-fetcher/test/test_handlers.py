@@ -184,7 +184,7 @@ class TestHandleYtFetch:
             {"audioUploadId": "u1"},
         )
 
-    def test_caption_upload_uses_reserved_id_and_queues_the_job(
+    def test_caption_upload_skips_audio_download_and_queues_the_job(
         self, publish, monkeypatch
     ):
         caption_fetch = MagicMock(return_value=True)
@@ -202,10 +202,33 @@ class TestHandleYtFetch:
             }
         )
 
-        audio_fetch.assert_called_once_with("u1", "https://youtu.be/x", "usr")
+        audio_fetch.assert_not_called()
         caption_fetch.assert_called_once_with("c1", "https://youtu.be/x", "usr")
         publish.assert_called_once_with(
             QueueName("caption_transcript"),
+            {"audioUploadId": "u1"},
+        )
+
+    def test_unavailable_captions_fall_back_to_audio(self, publish, monkeypatch):
+        caption_fetch = MagicMock(return_value=False)
+        audio_fetch = MagicMock()
+        monkeypatch.setattr(handlers, "_create_caption_upload", caption_fetch)
+        monkeypatch.setattr(handlers, "_fetch_with_retries", audio_fetch)
+
+        handlers.handle_yt_fetch(
+            {
+                "audioUploadId": "u1",
+                "captionUploadId": "c1",
+                "url": "https://youtu.be/x",
+                "userId": "usr",
+                "useCaptionsIfAvailable": True,
+            }
+        )
+
+        caption_fetch.assert_called_once_with("c1", "https://youtu.be/x", "usr")
+        audio_fetch.assert_called_once_with("u1", "https://youtu.be/x", "usr")
+        publish.assert_called_once_with(
+            QueueName("transcribe"),
             {"audioUploadId": "u1"},
         )
 

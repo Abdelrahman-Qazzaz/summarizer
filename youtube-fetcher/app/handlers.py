@@ -126,8 +126,6 @@ def handle_yt_fetch(event: dict) -> None:
         use_captions_if_available = event["useCaptionsIfAvailable"]
         caption_upload_id: str | None = event["captionUploadId"]
 
-        _fetch_with_retries(audio_upload_id, url, user_id)
-
         if (
             use_captions_if_available
             and caption_upload_id
@@ -138,6 +136,8 @@ def handle_yt_fetch(event: dict) -> None:
                 {"audioUploadId": audio_upload_id},
             )
             return
+
+        _fetch_with_retries(audio_upload_id, url, user_id)
     except Exception as error:
         # Tell the API so it can mark the job row failed — a malformed
         # payload (missing url/userId) must still fail the job if we know
