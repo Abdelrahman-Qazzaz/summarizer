@@ -47,7 +47,7 @@ export const messageCreateBodySchema = z
       .min(1, "Message must not be empty")
       .max(MAX_MESSAGE_LENGTH, "Message is too long"),
     [CTX_KEYS.chosenModelId]: z.string().min(1),
-    [CTX_KEYS.messageAttachments]: z
+    [CTX_KEYS.messageAttachmentsIds]: z
       .array(messageAttachmentSchema)
       .optional()
       .default([])
@@ -72,21 +72,21 @@ export const messageCreateBodySchema = z
       });
       return;
     }
-    const imageCount = data[CTX_KEYS.messageAttachments].filter(
+    const imageCount = data[CTX_KEYS.messageAttachmentsIds].filter(
       (attachment) => attachment.type === "image",
     ).length;
     if (imageCount > MAX_ATTACHMENTS) {
       ctx.addIssue({
         code: "custom",
         message: "Too many attachments",
-        path: [CTX_KEYS.messageAttachments],
+        path: [CTX_KEYS.messageAttachmentsIds],
       });
     }
     if (imageCount > 0 && !(await validateChatModelInput(modelId, "image"))) {
       ctx.addIssue({
         code: "custom",
         message: "Invalid model: must accept image input",
-        path: [CTX_KEYS.messageAttachments],
+        path: [CTX_KEYS.messageAttachmentsIds],
       });
     }
   });

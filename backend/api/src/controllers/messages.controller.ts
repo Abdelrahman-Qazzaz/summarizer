@@ -268,7 +268,7 @@ type MessageRequest = {
 
 function messageRequestFrom(c: Context): MessageRequest {
   const attachments: MessageAttachmentInput[] = c.get(
-    CTX_KEYS.messageAttachments,
+    CTX_KEYS.messageAttachmentsIds,
   );
   return {
     userId: c.get(CTX_KEYS.userId),

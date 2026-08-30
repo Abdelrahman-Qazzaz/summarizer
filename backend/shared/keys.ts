@@ -20,7 +20,7 @@ export const CTX_KEYS = {
   conversationTitle: "conversationTitle",
 
   messageContent: "messageContent",
-  messageAttachments: "attachments",
+  messageAttachmentsIds: "attachments",
   lastMessageId: "lastMessageId",
 
   uploadFile,
