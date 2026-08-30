@@ -1,3 +1,5 @@
+// TODO: refactor message creation & patching handlers.
+
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { SSEEventQueue } from "../utils/sse";
