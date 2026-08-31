@@ -74,12 +74,14 @@ describe("conversation turn claims", () => {
         "claim-1",
         "assistant-message-1",
         "Planning the next quarter",
+        4,
       ),
     ).resolves.toBe(true);
     expect(mockSet).toHaveBeenCalledWith(
       expect.objectContaining({
         activeTurnClaimToken: null,
         activeTurnClaimedAt: null,
+        contextWindowMessageCount: 4,
         lastMessageId: "assistant-message-1",
         title: expect.anything(),
       }),

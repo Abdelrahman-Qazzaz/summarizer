@@ -137,7 +137,8 @@ export async function completeConversationTurn(
   conversationId: string,
   claimToken: string,
   lastMessageId: string,
-  conversationTitle?: string,
+  conversationTitle: string | undefined,
+  contextWindowMessageCount: number | undefined,
   executor: Executor = db,
 ) {
   const [row] = await executor
@@ -147,6 +148,9 @@ export async function completeConversationTurn(
       activeTurnClaimToken: null,
       activeTurnClaimedAt: null,
       updatedAt: new Date(),
+      ...(contextWindowMessageCount !== undefined
+        ? { contextWindowMessageCount }
+        : {}),
       ...(conversationTitle
         ? {
             title: sql<string>`case when ${Conversations.title} = ${DEFAULT_CONVERSATION_TITLE} then ${conversationTitle} else ${Conversations.title} end`,

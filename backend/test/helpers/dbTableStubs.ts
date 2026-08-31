@@ -38,6 +38,7 @@ export const tableStubs = {
     createdAt: "created_at",
     updatedAt: "updated_at",
     lastMessageId: "last_message_id",
+    contextWindowMessageCount: "context_window_message_count",
     activeTurnClaimToken: "active_turn_claim_token",
     userId: "user_id",
   },

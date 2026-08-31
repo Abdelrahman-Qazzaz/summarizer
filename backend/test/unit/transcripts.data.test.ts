@@ -5,6 +5,7 @@ const claimToken = "8e517c2f-0e16-4a4b-99eb-b3906818b92e";
 
 const {
   mockCompleteAudioJob,
+  mockSelect,
   mockInsert,
   mockValues,
   mockOnConflictDoUpdate,
@@ -20,6 +21,7 @@ const {
 
   return {
     mockCompleteAudioJob: vi.fn(),
+    mockSelect: vi.fn(),
     mockInsert,
     mockValues,
     mockOnConflictDoUpdate,
@@ -29,7 +31,7 @@ const {
 });
 
 vi.mock("../../shared/db", () => ({
-  db: { transaction: mockTransaction },
+  db: { transaction: mockTransaction, select: mockSelect },
   TranscriptContents: { audioUploadId: "audio_upload_id" },
 }));
 
@@ -37,7 +39,17 @@ vi.mock("../../shared/data/jobs.data", () => ({
   completeAudioJob: mockCompleteAudioJob,
 }));
 
-import { saveCompletedTranscript } from "../../shared/data/transcripts.data";
+import {
+  findTranscripts,
+  saveCompletedTranscript,
+} from "../../shared/data/transcripts.data";
+
+describe("findTranscripts", () => {
+  it("returns without querying when no uploads were requested", async () => {
+    await expect(findTranscripts("user-1", [])).resolves.toEqual(new Map());
+    expect(mockSelect).not.toHaveBeenCalled();
+  });
+});
 
 describe("saveCompletedTranscript", () => {
   beforeEach(() => {

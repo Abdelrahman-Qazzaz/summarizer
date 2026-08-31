@@ -289,6 +289,7 @@ describe("persistAssistantMessage", () => {
       "claim-token",
       "assistant-3",
       undefined,
+      undefined,
       transaction,
     );
   });

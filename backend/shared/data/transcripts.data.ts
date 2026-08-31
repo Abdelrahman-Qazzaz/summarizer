@@ -61,7 +61,7 @@ export async function findTranscripts(
   userId: string,
   audioUploadIds: readonly string[],
 ): Promise<Map<string, string>> {
-  if (audioUploadIds.length === 0) return new Map();
+  if (audioUploadIds.length === 0) return new Map<string, string>();
 
   const rows = await db
     .select({

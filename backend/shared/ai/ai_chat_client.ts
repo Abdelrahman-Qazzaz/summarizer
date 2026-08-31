@@ -186,6 +186,7 @@ export async function validateChatModelOutput(
  * up front so a text-only model is a 400 on the request rather than a provider
  * rejection mid-stream, where the only channel left is an SSE error event.
  */
+// TODO: check this for perf issues since its in message-creation pipeline.
 export async function validateChatModelInput(
   modelId: string,
   requiredModality: InputModality,

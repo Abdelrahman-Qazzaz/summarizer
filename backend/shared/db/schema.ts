@@ -114,6 +114,9 @@ export const Conversations = pgTable(
       .notNull(),
 
     lastMessageId: uuid("last_message_id"),
+    contextWindowMessageCount: integer("context_window_message_count")
+      .default(0)
+      .notNull(),
     activeTurnClaimToken: uuid("active_turn_claim_token"),
     // When the active turn was claimed. Without it a claim is only ever
     // cleared by a clean release, so a process that dies mid-turn — an

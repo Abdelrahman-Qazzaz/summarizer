@@ -8,16 +8,21 @@ import {
   lt,
   notInArray,
   or,
+  sql,
 } from "drizzle-orm";
 import {
   AttachmentUploads,
   ChatMessageAttachments,
   ChatMessages,
   Conversations,
+  TranscriptContents,
   db,
   type Executor,
 } from "../../../shared/db";
-import { deleteOrphanedImageUploads } from "./images.data";
+import {
+  deleteOrphanedImageUploads,
+  resolveImageUploadUrls,
+} from "./images.data";
 import { completeConversationTurn } from "./conversations.data";
 import { attachUploadsToMessage } from "../../../shared/data/attachments.data";
 import {
@@ -104,6 +109,156 @@ export type ContextMessage = {
     signedUrlExpiresAt: Date | null;
   }[];
 };
+
+export type CreateMessageHistory = {
+  id: string;
+  role: MessageRow["role"];
+  content: string;
+  createdAt: Date;
+  transcriptContents: string[];
+  imageUrls: string[];
+  contextCharCount: number;
+};
+
+type CreateMessageHistoryRow = {
+  messageId: string;
+  role: MessageRow["role"];
+  content: string;
+  createdAt: Date;
+  attachmentUploadId: string | null;
+  attachmentKind: "image" | "audio" | null;
+  signedUrl: string | null;
+  signedUrlExpiresAt: Date | null;
+  transcriptContent: string | null;
+  transcriptCharCount: number | null;
+};
+
+type PendingCreateMessageHistory = Omit<CreateMessageHistory, "imageUrls"> & {
+  imageUploadIds: string[];
+};
+
+/** Fully resolved provisional history for POST message creation, newest first. */
+export async function findCreateMessageHistory(
+  userId: string,
+  conversationId: string,
+  maximumMessageCount: number,
+  maximumImageCount: number,
+): Promise<CreateMessageHistory[]> {
+  const rows = await db.execute<CreateMessageHistoryRow>(sql`
+    with conversation_window as (
+      select ${Conversations.contextWindowMessageCount} as message_count
+      from ${Conversations}
+      where ${Conversations.id} = ${conversationId}
+        and ${Conversations.userId} = ${userId}
+    ),
+    recent_messages as (
+      select
+        ${ChatMessages.id} as message_id,
+        ${ChatMessages.role} as role,
+        ${ChatMessages.content} as content,
+        ${ChatMessages.createdAt} as created_at
+      from ${ChatMessages}
+      where ${ChatMessages.conversationId} = ${conversationId}
+      order by
+        ${ChatMessages.createdAt} desc,
+        ${ChatMessages.role} desc,
+        ${ChatMessages.id} desc
+      limit coalesce(
+        (
+          select greatest(0, least(message_count, ${maximumMessageCount}))
+          from conversation_window
+        ),
+        0
+      )
+    )
+    select
+      recent_messages.message_id as "messageId",
+      recent_messages.role as role,
+      recent_messages.content as content,
+      recent_messages.created_at as "createdAt",
+      ${ChatMessageAttachments.attachmentUploadId} as "attachmentUploadId",
+      ${AttachmentUploads.kind} as "attachmentKind",
+      ${AttachmentUploads.signedUrl} as "signedUrl",
+      ${AttachmentUploads.signedUrlExpiresAt} as "signedUrlExpiresAt",
+      ${TranscriptContents.content} as "transcriptContent",
+      ${TranscriptContents.charCount} as "transcriptCharCount"
+    from recent_messages
+    left join ${ChatMessageAttachments}
+      on ${ChatMessageAttachments.messageId} = recent_messages.message_id
+    left join ${AttachmentUploads}
+      on ${AttachmentUploads.attachmentUploadId} = ${ChatMessageAttachments.attachmentUploadId}
+      and ${AttachmentUploads.userId} = ${userId}
+    left join ${TranscriptContents}
+      on ${TranscriptContents.audioUploadId} = ${AttachmentUploads.attachmentUploadId}
+      and ${AttachmentUploads.kind} = 'audio'
+    order by
+      recent_messages.created_at desc,
+      recent_messages.role desc,
+      recent_messages.message_id desc,
+      ${ChatMessageAttachments.position} asc
+  `);
+
+  const history: PendingCreateMessageHistory[] = [];
+  const historyByMessageId = new Map<string, PendingCreateMessageHistory>();
+  const imageRowsByUploadId = new Map<
+    string,
+    {
+      imageUploadId: string;
+      signedUrl: string | null;
+      signedUrlExpiresAt: Date | null;
+    }
+  >();
+  let remainingImageCount = Math.max(0, maximumImageCount);
+
+  for (const row of rows) {
+    let message = historyByMessageId.get(row.messageId);
+    if (!message) {
+      message = {
+        id: row.messageId,
+        role: row.role,
+        content: row.content,
+        createdAt: row.createdAt,
+        transcriptContents: [],
+        imageUploadIds: [],
+        contextCharCount: row.content.length,
+      };
+      history.push(message);
+      historyByMessageId.set(row.messageId, message);
+    }
+
+    if (row.attachmentKind === "audio" && row.transcriptContent !== null) {
+      message.transcriptContents.push(row.transcriptContent);
+      message.contextCharCount +=
+        row.transcriptCharCount ?? row.transcriptContent.length;
+    }
+
+    if (
+      row.attachmentKind === "image" &&
+      row.attachmentUploadId !== null &&
+      remainingImageCount > 0
+    ) {
+      message.imageUploadIds.push(row.attachmentUploadId);
+      imageRowsByUploadId.set(row.attachmentUploadId, {
+        imageUploadId: row.attachmentUploadId,
+        signedUrl: row.signedUrl,
+        signedUrlExpiresAt: row.signedUrlExpiresAt,
+      });
+      remainingImageCount -= 1;
+    }
+  }
+
+  const urlByImageUploadId = await resolveImageUploadUrls(userId, [
+    ...imageRowsByUploadId.values(),
+  ]);
+
+  return history.map(({ imageUploadIds, ...message }) => ({
+    ...message,
+    imageUrls: imageUploadIds.flatMap((imageUploadId) => {
+      const url = urlByImageUploadId.get(imageUploadId);
+      return url ? [url] : [];
+    }),
+  }));
+}
 
 async function hydrateContextMessages(
   userId: string,
@@ -530,6 +685,7 @@ export async function persistChatTurn(turn: {
   chosenModelId: string;
   assistantContent: string;
   conversationTitle?: string;
+  contextWindowMessageCount: number;
   claimToken: string;
 }) {
   return db.transaction(async (tx) => {
@@ -561,6 +717,7 @@ export async function persistChatTurn(turn: {
       turn.claimToken,
       assistantMessage.id,
       turn.conversationTitle,
+      turn.contextWindowMessageCount,
       tx,
     );
     if (!completed) throw new Error("Conversation turn claim was lost");
@@ -593,6 +750,7 @@ export async function persistAssistantMessage(turn: {
       turn.conversationId,
       turn.claimToken,
       assistantMessage.id,
+      undefined,
       undefined,
       tx,
     );
