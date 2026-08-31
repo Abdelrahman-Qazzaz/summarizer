@@ -1,6 +1,3 @@
-// TODO: cache per (kind, modelId) — kind is transcribe/text/etc. Even cached,
-// the full model catalog is too large to justify validating against on every req.
-
 import { getBaseEnv } from "../env";
 import { OpenRouter } from "@openrouter/sdk";
 
