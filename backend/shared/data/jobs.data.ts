@@ -60,6 +60,8 @@ export async function findAudioJob(userId: string, audioUploadId: string) {
       audioUploadId: AudioTranscriptionJobs.audioUploadId,
       captionUploadId: AudioTranscriptionJobs.captionUploadId,
       fileName: AttachmentUploads.fileName,
+      source: AudioTranscriptionJobs.source,
+      youtubeSourceUrl: AudioTranscriptionJobs.YT_sourceUrl,
       status: AudioTranscriptionJobs.status,
       error: AudioTranscriptionJobs.error,
     })
@@ -89,6 +91,7 @@ export type JobCursor = { createdAt: string; audioUploadId: string };
 export type JobSummary = {
   audioUploadId: string;
   fileName: string;
+  source: string;
   status: JobStatus;
   error: string | null;
   createdAt: Date;
@@ -98,6 +101,7 @@ export type JobSummary = {
 const audioJobColumns = {
   audioUploadId: AudioTranscriptionJobs.audioUploadId,
   fileName: AttachmentUploads.fileName,
+  source: AudioTranscriptionJobs.source,
   status: AudioTranscriptionJobs.status,
   createdAt: AttachmentUploads.createdAt,
   error: AudioTranscriptionJobs.error,
@@ -242,6 +246,7 @@ export async function requeueAudioJob(
   userId: string,
   audioUploadId: string,
   transcriptModelId: string,
+  captionUploadId: UploadId | null = null,
 ) {
   const [row] = await db
     .update(AudioTranscriptionJobs)
@@ -250,6 +255,7 @@ export async function requeueAudioJob(
       error: null,
       claimToken: null,
       transcriptModelId,
+      captionUploadId,
     })
     .where(
       and(

@@ -12,6 +12,7 @@ import {
   jobReqParamSchema,
   jobsListQuerySchema,
   jobTranscribeRerunBodySchema,
+  jobYoutubeRerunBodySchema,
 } from "../schema/jobs.schema";
 import { httpCache } from "../middleware/cache.middleware";
 
@@ -37,6 +38,13 @@ jobsRouter.post(
   validateReqParams(jobReqParamSchema),
   validateReqBody(jobTranscribeRerunBodySchema),
   jobsController.handleRerunTranscribeJob,
+);
+
+jobsRouter.post(
+  `/youtube/:${CTX_KEYS.audioUploadId}/rerun`,
+  validateReqParams(jobReqParamSchema),
+  validateReqBody(jobYoutubeRerunBodySchema),
+  jobsController.handleRerunYoutubeJob,
 );
 
 jobsRouter.get(

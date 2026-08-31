@@ -84,7 +84,8 @@ const audioJob = {
   audioUploadId,
   captionUploadId: null,
   fileName: "clip.mp3",
-  title: "Audio highlights",
+  source: "audio",
+  youtubeSourceUrl: null,
   status: "completed",
   error: null,
 };
@@ -117,7 +118,6 @@ describe("GET /jobs/transcribe/:audioUploadId", () => {
   it("returns an audio job for the owner", async () => {
     mockFindAudioJob.mockResolvedValueOnce({
       ...audioJob,
-      title: null,
       status: "processing",
     });
 
@@ -130,7 +130,7 @@ describe("GET /jobs/transcribe/:audioUploadId", () => {
     expect(await res.json()).toEqual({
       audioUploadId,
       fileName: "clip.mp3",
-      title: null,
+      source: "audio",
       status: "processing",
       transcript: null,
       error: null,
@@ -152,7 +152,7 @@ describe("GET /jobs/transcribe/:audioUploadId", () => {
     expect(await res.json()).toEqual({
       audioUploadId,
       fileName: "clip.mp3",
-      title: "Audio highlights",
+      source: "audio",
       status: "completed",
       transcript: "the full transcript text",
       error: null,
@@ -216,7 +216,7 @@ describe("GET /jobs/transcribe/:audioUploadId", () => {
     expect(await res.json()).toEqual({
       audioUploadId,
       fileName: "clip.mp3",
-      title: "Audio highlights",
+      source: "audio",
       status: "completed",
       transcript: null,
       error: null,
@@ -303,13 +303,32 @@ describe("POST /jobs/transcribe/:audioUploadId/rerun", () => {
     const res = await request();
 
     expect(res.status).toBe(200);
-    expect(mockCleanupTerminalCaptionUpload).toHaveBeenCalledWith(
-      audioUploadId,
+    expect(mockCleanupTerminalCaptionUpload).not.toHaveBeenCalled();
+    expect(mockRequeueAudioJob).toHaveBeenCalledWith(
       "user_01OWNER",
+      audioUploadId,
+      "nova-3",
     );
-    expect(mockRequeueAudioJob).toHaveBeenCalled();
     expect(mockDeleteTranscript).toHaveBeenCalledWith(audioUploadId);
     expect(mockPublish).toHaveBeenCalledWith("transcribe", { audioUploadId });
+  });
+
+  it("rejects YouTube jobs", async () => {
+    mockFindAudioJob.mockResolvedValueOnce({
+      ...audioJob,
+      source: "youtube",
+      youtubeSourceUrl: "https://www.youtube.com/watch?v=video",
+    });
+
+    const res = await request();
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      message: "YouTube jobs must use the YouTube rerun route",
+    });
+    expect(mockRequeueAudioJob).not.toHaveBeenCalled();
+    expect(mockDeleteTranscript).not.toHaveBeenCalled();
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 
   it("rejects rerunning a queued or processing job", async () => {
@@ -330,10 +349,132 @@ describe("POST /jobs/transcribe/:audioUploadId/rerun", () => {
   });
 });
 
+describe("POST /jobs/youtube/:audioUploadId/rerun", () => {
+  const youtubeUrl = "https://www.youtube.com/watch?v=video";
+  const request = async (useCaptionsIfAvailable: boolean) => {
+    mockFindAudioJob.mockResolvedValueOnce({
+      ...audioJob,
+      source: "youtube",
+      youtubeSourceUrl: youtubeUrl,
+    });
+    return (await createApp()).request(
+      `http://localhost/jobs/youtube/${audioUploadId}/rerun`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: await sessionCookieHeader("user_01OWNER"),
+        },
+        body: JSON.stringify({
+          transcriptModelId: "nova-3",
+          useCaptionsIfAvailable,
+        }),
+      },
+    );
+  };
+
+  it("re-fetches captions under a fresh temporary upload id", async () => {
+    const res = await request(true);
+    const captionUploadId = mockRequeueAudioJob.mock.calls[0]?.[3] as string;
+
+    expect(res.status).toBe(200);
+    expect(captionUploadId).toEqual(expect.any(String));
+    expect(mockCleanupTerminalCaptionUpload).toHaveBeenCalledWith(
+      audioUploadId,
+      "user_01OWNER",
+    );
+    expect(mockRequeueAudioJob).toHaveBeenCalledWith(
+      "user_01OWNER",
+      audioUploadId,
+      "nova-3",
+      captionUploadId,
+    );
+    expect(mockDeleteTranscript).toHaveBeenCalledWith(audioUploadId);
+    expect(mockPublish).toHaveBeenCalledWith("yt_fetch", {
+      audioUploadId,
+      captionUploadId,
+      userId: "user_01OWNER",
+      url: youtubeUrl,
+      useCaptionsIfAvailable: true,
+    });
+  });
+
+  it("re-fetches audio when captions are disabled", async () => {
+    const res = await request(false);
+
+    expect(res.status).toBe(200);
+    expect(mockRequeueAudioJob).toHaveBeenCalledWith(
+      "user_01OWNER",
+      audioUploadId,
+      "nova-3",
+      null,
+    );
+    expect(mockPublish).toHaveBeenCalledWith("yt_fetch", {
+      audioUploadId,
+      captionUploadId: null,
+      userId: "user_01OWNER",
+      url: youtubeUrl,
+      useCaptionsIfAvailable: false,
+    });
+  });
+
+  it("rejects non-YouTube jobs", async () => {
+    mockFindAudioJob.mockReset();
+    mockFindAudioJob.mockResolvedValueOnce(audioJob);
+
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/youtube/${audioUploadId}/rerun`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: await sessionCookieHeader("user_01OWNER"),
+      },
+      body: JSON.stringify({ transcriptModelId: "nova-3" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      message: "Only YouTube jobs can use the YouTube rerun route",
+    });
+    expect(mockRequeueAudioJob).not.toHaveBeenCalled();
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  it("does not requeue a YouTube job with no stored URL", async () => {
+    mockFindAudioJob.mockReset();
+    mockFindAudioJob.mockResolvedValueOnce({
+      ...audioJob,
+      source: "youtube",
+      youtubeSourceUrl: null,
+    });
+
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/youtube/${audioUploadId}/rerun`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: await sessionCookieHeader("user_01OWNER"),
+      },
+      body: JSON.stringify({ transcriptModelId: "nova-3" }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      message: "YouTube source URL is unavailable",
+    });
+    expect(mockRequeueAudioJob).not.toHaveBeenCalled();
+    expect(mockDeleteTranscript).not.toHaveBeenCalled();
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /jobs", () => {
   const jobRow = {
     audioUploadId: "550e8400-e29b-41d4-a716-44665544000a",
     fileName: "lecture.mp3",
+    source: "audio",
     status: "completed",
     createdAt: new Date("2026-01-02T00:00:00.000Z"),
     error: null,

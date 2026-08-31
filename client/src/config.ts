@@ -26,8 +26,12 @@ export function jobsListEndpoint(): string {
   return `${apiBase}/jobs`;
 }
 
-export function jobRerunEndpoint(audioUploadId: string): string {
+export function audioJobRerunEndpoint(audioUploadId: string): string {
   return `${apiBase}/jobs/transcribe/${audioUploadId}/rerun`;
+}
+
+export function youtubeJobRerunEndpoint(audioUploadId: string): string {
+  return `${apiBase}/jobs/youtube/${audioUploadId}/rerun`;
 }
 
 export function chatModelsEndpoint(): string {

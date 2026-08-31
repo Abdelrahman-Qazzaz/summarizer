@@ -1,17 +1,23 @@
 import { useEffect, useState } from "react";
+import type { JobSource } from "../../api/jobs";
 import { useAuth } from "../../hooks/auth/useAuth";
 import { useTranscriptionModelsQuery } from "../../hooks/queries/useModelsQuery";
 
 type RerunDialogProps = {
   fileName: string;
+  source: JobSource;
   currentModelId: string | null;
-  onConfirm: (transcriptModelId: string) => void;
+  onConfirm: (
+    transcriptModelId: string,
+    useCaptionsIfAvailable: boolean,
+  ) => void;
   onCancel: () => void;
 };
 
-/** Same audio, different transcription model — the old transcript is replaced. */
+/** Replaces a transcript using stored audio or the original YouTube source. */
 export function RerunDialog({
   fileName,
+  source,
   currentModelId,
   onConfirm,
   onCancel,
@@ -19,6 +25,9 @@ export function RerunDialog({
   const { user } = useAuth();
   const { entries } = useTranscriptionModelsQuery(!!user);
   const [modelId, setModelId] = useState(currentModelId ?? "");
+  const [useCaptionsIfAvailable, setUseCaptionsIfAvailable] = useState(
+    source === "youtube",
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -44,12 +53,38 @@ export function RerunDialog({
       >
         <h2 className="text-base font-semibold">Transcribe again</h2>
         <p className="mt-2 text-sm text-muted">
-          <span className="font-mono text-[12px]">{fileName}</span> is
-          transcribed again and the current transcript is replaced.
+          The current transcript for{" "}
+          <span className="font-mono text-[12px]">{fileName}</span> is replaced.
         </p>
 
-        <label htmlFor="rerun-model" className="eyebrow mt-4 block pb-1.5 text-faint">
-          Model
+        {source === "youtube" && (
+          <label className="mt-4 flex items-start gap-2.5 rounded-lg border border-line bg-canvas px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={useCaptionsIfAvailable}
+              onChange={(event) =>
+                setUseCaptionsIfAvailable(event.target.checked)
+              }
+              className="mt-0.5"
+            />
+            <span>
+              <span className="block text-sm font-medium text-ink">
+                Use captions if available
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-snug text-faint">
+                Skips the audio download when YouTube provides captions.
+              </span>
+            </span>
+          </label>
+        )}
+
+        <label
+          htmlFor="rerun-model"
+          className="eyebrow mt-4 block pb-1.5 text-faint"
+        >
+          {source === "youtube" && useCaptionsIfAvailable
+            ? "Fallback model"
+            : "Model"}
         </label>
         <select
           id="rerun-model"
@@ -79,7 +114,7 @@ export function RerunDialog({
           <button
             type="button"
             disabled={!modelId}
-            onClick={() => onConfirm(modelId)}
+            onClick={() => onConfirm(modelId, useCaptionsIfAvailable)}
             className="rounded-lg bg-signal px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             Start

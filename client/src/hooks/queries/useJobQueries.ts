@@ -10,6 +10,7 @@ import {
   fetchJobs,
   rerunJob,
   type JobsFilters,
+  type RerunJobInput,
 } from "../../api/jobs";
 import { errorMessage } from "../../api/http";
 import { queryKeys } from "../../lib/queryClient";
@@ -64,13 +65,7 @@ export function useRerunJobMutation() {
   const toast = useToast();
 
   return useMutation({
-    mutationFn: ({
-      audioUploadId,
-      transcriptModelId,
-    }: {
-      audioUploadId: string;
-      transcriptModelId: string;
-    }) => rerunJob(audioUploadId, transcriptModelId),
+    mutationFn: (input: RerunJobInput) => rerunJob(input),
     onSuccess: (audioUploadId) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
       void queryClient.invalidateQueries({

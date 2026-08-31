@@ -23,17 +23,31 @@ export const jobCursorSchema = z.object({
   audioUploadId: z.string(),
 });
 
-/** Body for re-running an audio job with a different transcription model. */
-export const jobTranscribeRerunBodySchema = z
-  .object({
-    [CTX_KEYS.transcriptModelId]: z.string().min(1),
-  })
-  .superRefine(async (data, ctx) => {
-    if (!(await isValidTranscribeModel(data[CTX_KEYS.transcriptModelId]))) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Invalid transcription model",
-        path: [CTX_KEYS.transcriptModelId],
-      });
-    }
+const rerunFields = {
+  [CTX_KEYS.transcriptModelId]: z.string().min(1),
+};
+
+async function validateRerunModel(
+  data: { [CTX_KEYS.transcriptModelId]: string },
+  ctx: z.RefinementCtx,
+) {
+  if (await isValidTranscribeModel(data[CTX_KEYS.transcriptModelId])) return;
+  ctx.addIssue({
+    code: "custom",
+    message: "Invalid transcription model",
+    path: [CTX_KEYS.transcriptModelId],
   });
+}
+
+/** Re-transcribe an audio object already stored for this job. */
+export const jobTranscribeRerunBodySchema = z
+  .object(rerunFields)
+  .superRefine(validateRerunModel);
+
+/** Fetch a YouTube source again, preferring captions when requested. */
+export const jobYoutubeRerunBodySchema = z
+  .object({
+    ...rerunFields,
+    [CTX_KEYS.useCaptionsIfAvailable]: z.boolean().optional().default(false),
+  })
+  .superRefine(validateRerunModel);

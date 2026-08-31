@@ -51,10 +51,9 @@ export async function handleYoutubeUpload(c: Context) {
     ? randomUUID()
     : null;
 
-  // Created queued with placeholder file metadata — the youtube-fetcher hasn't
-  // downloaded anything yet. It uploads the audio to the bucket at `audioUploadId`
-  // then publishes `transcribe`, so the row is claimed by the transcribe worker
-  // exactly like a normal audio upload.
+  // Created queued with placeholder metadata. The fetcher tries a reserved
+  // caption object first when requested, otherwise it writes audio under
+  // `audioUploadId` and sends the appropriate worker delivery.
   await createAudioJob({
     audioUploadId,
     captionUploadId,

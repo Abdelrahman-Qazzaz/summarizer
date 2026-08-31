@@ -44,9 +44,11 @@ function TranscriptBody({
   };
 
   const attach = () => {
-    // The job view carries no source kind, so this stages as plain audio; the
-    // sent turn shows what it really was once the server answers.
-    attachExisting({ audioUploadId, fileName: job.fileName, source: "audio" });
+    attachExisting({
+      audioUploadId,
+      fileName: job.fileName,
+      source: job.source,
+    });
     toast.show({
       kind: "success",
       message: `${job.fileName} added to the message.`,

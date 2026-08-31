@@ -1,11 +1,18 @@
-import { jobEndpoint, jobRerunEndpoint, jobsListEndpoint } from "../config";
+import {
+  audioJobRerunEndpoint,
+  jobEndpoint,
+  jobsListEndpoint,
+  youtubeJobRerunEndpoint,
+} from "../config";
 import { apiFetch, apiJson, jsonRequest } from "./http";
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
+export type JobSource = "audio" | "video" | "youtube";
 
 export type Job = {
   audioUploadId: string;
   fileName: string;
+  source: JobSource;
   status: JobStatus;
   transcript: string | null;
   error: string | null;
@@ -15,6 +22,7 @@ export type Job = {
 export type JobSummary = {
   audioUploadId: string;
   fileName: string;
+  source: JobSource;
   status: JobStatus;
   createdAt: string;
   error: string | null;
@@ -54,14 +62,28 @@ export async function deleteJob(audioUploadId: string): Promise<void> {
   await apiFetch(jobEndpoint(audioUploadId), { method: "DELETE" });
 }
 
-/** Transcribe the same audio again with another model, replacing the transcript. */
-export async function rerunJob(
-  audioUploadId: string,
-  transcriptModelId: string,
-): Promise<string> {
+export type RerunJobInput = {
+  audioUploadId: string;
+  source: JobSource;
+  transcriptModelId: string;
+  useCaptionsIfAvailable: boolean;
+};
+
+/** Replace a transcript using its stored audio or by fetching YouTube again. */
+export async function rerunJob(input: RerunJobInput): Promise<string> {
+  const endpoint =
+    input.source === "youtube"
+      ? youtubeJobRerunEndpoint(input.audioUploadId)
+      : audioJobRerunEndpoint(input.audioUploadId);
+  const body = {
+    transcriptModelId: input.transcriptModelId,
+    ...(input.source === "youtube"
+      ? { useCaptionsIfAvailable: input.useCaptionsIfAvailable }
+      : {}),
+  };
   const data = await apiJson<{ audioUploadId: string }>(
-    jobRerunEndpoint(audioUploadId),
-    jsonRequest("POST", { transcriptModelId }),
+    endpoint,
+    jsonRequest("POST", body),
   );
-  return data.audioUploadId ?? audioUploadId;
+  return data.audioUploadId ?? input.audioUploadId;
 }

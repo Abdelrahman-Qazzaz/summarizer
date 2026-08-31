@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { JobStatus } from "../../api/jobs";
+import type { JobSource, JobStatus } from "../../api/jobs";
 import { useAuth } from "../../hooks/auth/useAuth";
 import {
   useDeleteJobMutation,
@@ -40,6 +40,7 @@ export function SourcesDrawer() {
   const [rerunTarget, setRerunTarget] = useState<{
     audioUploadId: string;
     fileName: string;
+    source: JobSource;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     audioUploadId: string;
@@ -75,10 +76,12 @@ export function SourcesDrawer() {
 
   const jobs = jobsQuery.data?.pages.flatMap((page) => page.jobs) ?? [];
 
-  const attach = (audioUploadId: string, fileName: string) => {
-    // The list doesn't carry a source kind, so this stages as plain audio; the
-    // sent turn shows what it really was once the server answers.
-    attachExisting({ audioUploadId, fileName, source: "audio" });
+  const attach = (
+    audioUploadId: string,
+    fileName: string,
+    source: JobSource,
+  ) => {
+    attachExisting({ audioUploadId, fileName, source });
     toast.show({
       kind: "success",
       message: `${fileName} added to the message.`,
@@ -167,11 +170,14 @@ export function SourcesDrawer() {
                         fileName: job.fileName,
                       })
                     }
-                    onAttach={() => attach(job.audioUploadId, job.fileName)}
+                    onAttach={() =>
+                      attach(job.audioUploadId, job.fileName, job.source)
+                    }
                     onRerun={() =>
                       setRerunTarget({
                         audioUploadId: job.audioUploadId,
                         fileName: job.fileName,
+                        source: job.source,
                       })
                     }
                     onDelete={() =>
@@ -201,11 +207,14 @@ export function SourcesDrawer() {
       {rerunTarget && (
         <RerunDialog
           fileName={rerunTarget.fileName}
+          source={rerunTarget.source}
           currentModelId={transcriptModelId}
-          onConfirm={(modelId) => {
+          onConfirm={(modelId, useCaptionsIfAvailable) => {
             rerunJob.mutate({
               audioUploadId: rerunTarget.audioUploadId,
+              source: rerunTarget.source,
               transcriptModelId: modelId,
+              useCaptionsIfAvailable,
             });
             setRerunTarget(null);
           }}

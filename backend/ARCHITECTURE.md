@@ -49,12 +49,17 @@ handles at most one transcribe job at a time. Handlers are `await`ed before
 ```
 
 A YouTube upload takes the same path one step earlier: the API publishes
-`yt_fetch`, and the Python youtube-fetcher downloads the audio into the bucket
-under the job's `audioUploadId` before publishing `transcribe` itself. When
-captions are preferred, the API reserves and persists a temporary
-`captionUploadId`. The fetcher writes available captions under that exact ID;
-the worker reads the ID from the job and clears it only after deleting the
-caption object. The audio remains available for reruns.
+`yt_fetch`. When captions are preferred, the API reserves and persists a
+temporary `captionUploadId`. The Python fetcher tries captions first and skips
+the audio download when it finds them. Otherwise it stores audio under the
+job's `audioUploadId` and publishes `transcribe`. The worker deletes a temporary
+caption object and clears its ID after finishing.
+
+Reruns use separate routes. A direct audio or video rerun publishes
+`transcribe` because its audio object is already stored. A YouTube rerun
+publishes `yt_fetch` with a fresh caption ID when captions are requested. It
+keeps the existing job ID so messages attached to that transcript still point
+to the replacement.
 
 **Transcripts are not summarized.** The transcript is stored in Postgres under
 the audio job's `audioUploadId`. The user feeds one or more completed jobs to a
