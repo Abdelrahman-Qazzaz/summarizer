@@ -4,7 +4,7 @@ const {
   mockFindOwnedConversation,
   mockClaimConversationTurn,
   mockReleaseConversationTurn,
-  mockFindRecentMessagesWithContext,
+  mockFindCreateMessageHistory,
   mockFindMessagePatchContext,
   mockPersistChatTurn,
   mockPersistAssistantMessage,
@@ -25,7 +25,7 @@ const {
   mockFindOwnedConversation: vi.fn(),
   mockClaimConversationTurn: vi.fn(),
   mockReleaseConversationTurn: vi.fn(),
-  mockFindRecentMessagesWithContext: vi.fn(),
+  mockFindCreateMessageHistory: vi.fn(),
   mockFindMessagePatchContext: vi.fn(),
   mockPersistChatTurn: vi.fn(),
   mockPersistAssistantMessage: vi.fn(),
@@ -46,7 +46,7 @@ const {
 
 // The data layer is mocked directly — these tests drive the controller's
 // context assembly, streaming and (non-blocking) persistence, not the SQL. The
-// join query behind findRecentMessagesWithContext is a data-layer concern. The
+// join queries behind the history loaders are a data-layer concern. The
 // table stubs stand in for the columns other controllers read at module scope
 // when createApp wires the whole app.
 vi.mock("../../shared/db", async () => ({
@@ -65,7 +65,7 @@ vi.mock("../../api/src/data/conversations.data", async (importActual) => ({
 
 vi.mock("../../api/src/data/messages.data", async (importActual) => ({
   ...(await importActual<typeof import("../../api/src/data/messages.data")>()),
-  findRecentMessagesWithContext: mockFindRecentMessagesWithContext,
+  findCreateMessageHistory: mockFindCreateMessageHistory,
   findMessagePatchContext: mockFindMessagePatchContext,
   persistChatTurn: mockPersistChatTurn,
   persistAssistantMessage: mockPersistAssistantMessage,
@@ -117,7 +117,10 @@ import {
   MAX_RESPONSE_TOKENS,
 } from "../../api/src/controllers/messages.controller";
 import { authedHeaders, sessionCookieHeader } from "../helpers/session";
-import type { ContextMessage } from "../../api/src/data/messages.data";
+import type {
+  ContextMessage,
+  CreateMessageHistory,
+} from "../../api/src/data/messages.data";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
 const messageId = "650e8400-e29b-41d4-a716-446655440111";
@@ -174,12 +177,61 @@ function contextMessage(partial: Partial<ContextMessage> = {}): ContextMessage {
   };
 }
 
+function createMessageHistory(
+  partial: Partial<CreateMessageHistory> = {},
+): CreateMessageHistory {
+  const content = partial.content ?? "";
+  const transcriptContents = partial.transcriptContents ?? [];
+  return {
+    id: messageId,
+    role: "user",
+    createdAt: new Date(createdAt),
+    imageUrls: [],
+    ...partial,
+    content,
+    transcriptContents,
+    contextCharCount:
+      partial.contextCharCount ??
+      content.length +
+        transcriptContents.reduce(
+          (total, transcript) => total + transcript.length,
+          0,
+        ),
+  };
+}
+
+function messageRequestBody(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const {
+    imageUploadIds = [],
+    audioUploadIds = [],
+    ...requestBody
+  } = body as {
+    imageUploadIds?: string[];
+    audioUploadIds?: string[];
+  } & Record<string, unknown>;
+
+  return {
+    ...requestBody,
+    attachments: [
+      ...imageUploadIds.map((imageUploadId) => ({
+        type: "image",
+        imageUploadId,
+      })),
+      ...audioUploadIds.map((audioUploadId) => ({
+        type: "transcript",
+        audioUploadId,
+      })),
+    ],
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockFindOwnedConversation.mockResolvedValue(ownedConversation);
   mockClaimConversationTurn.mockResolvedValue("claim-token");
   mockReleaseConversationTurn.mockResolvedValue(undefined);
-  mockFindRecentMessagesWithContext.mockResolvedValue([]);
+  mockFindCreateMessageHistory.mockResolvedValue([]);
   mockFindMessagePatchContext.mockResolvedValue({
     target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
     history: [],
@@ -315,7 +367,7 @@ describe("POST /conversations/:conversationId/messages", () => {
   function postMessage(body: unknown, signal?: AbortSignal) {
     const requestBody =
       body && typeof body === "object" && !Array.isArray(body)
-        ? { lastMessageId: null, ...body }
+        ? messageRequestBody({ lastMessageId: null, ...body })
         : body;
     return sessionCookieHeader(userId).then(async (cookie) =>
       (await createApp()).request(
@@ -384,7 +436,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     await vi.waitFor(() => {
       expect(mockResolveImages).toHaveBeenCalled();
-      expect(mockFindRecentMessagesWithContext).toHaveBeenCalled();
+      expect(mockFindCreateMessageHistory).toHaveBeenCalled();
     });
 
     resolveClaim("claim-token");
@@ -394,7 +446,7 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("releases an acquired claim when a context read fails", async () => {
-    mockFindRecentMessagesWithContext.mockRejectedValueOnce(
+    mockFindCreateMessageHistory.mockRejectedValueOnce(
       new Error("history unavailable"),
     );
 
@@ -510,8 +562,8 @@ describe("POST /conversations/:conversationId/messages", () => {
         content: "Hi there",
         assistantContent: "Hello world",
         chosenModelId: modelId,
-        imageUploadIds: [],
-        audioUploadIds: [],
+        attachmentUploadIds: [],
+        contextWindowMessageCount: 2,
         conversationTitle: "Friendly greeting",
         claimToken: "claim-token",
       }),
@@ -574,14 +626,18 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("replays prior history to the model, oldest first", async () => {
-    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
+    mockFindCreateMessageHistory.mockResolvedValueOnce([
       // History arrives newest-first from the query; the controller reverses it.
-      contextMessage({
+      createMessageHistory({
         id: assistantRow.id,
         role: "assistant",
         content: "Old answer",
       }),
-      contextMessage({ id: messageId, role: "user", content: "Old question" }),
+      createMessageHistory({
+        id: messageId,
+        role: "user",
+        content: "Old question",
+      }),
     ]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 
@@ -603,35 +659,21 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
-  it("reads only the transcripts of turns that fit the budget", async () => {
-    // Newest turn fits; the older one's transcript alone blows the budget.
-    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
-      contextMessage({
+  it("trims resolved transcript history against the final budget", async () => {
+    mockFindCreateMessageHistory.mockResolvedValueOnce([
+      createMessageHistory({
         id: assistantRow.id,
         content: "Newer",
-        transcripts: [
-          {
-            audioUploadId: "audio-fits",
-            fileName: "fits.mp3",
-            source: "audio",
-            charCount: 10,
-          },
-        ],
+        transcriptContents: ["T"],
+        contextCharCount: 15,
       }),
-      contextMessage({
+      createMessageHistory({
         id: messageId,
         content: "Older",
-        transcripts: [
-          {
-            audioUploadId: "audio-huge",
-            fileName: "huge.mp3",
-            source: "audio",
-            charCount: MAX_CONTEXT_CHARS,
-          },
-        ],
+        transcriptContents: ["unused body"],
+        contextCharCount: MAX_CONTEXT_CHARS,
       }),
     ]);
-    mockFindTranscripts.mockResolvedValueOnce(new Map([["audio-fits", "T"]]));
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
@@ -641,25 +683,21 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(res.status).toBe(200);
     await res.text();
 
-    // The dropped turn's body is never fetched — only the admitted one's.
-    expect(mockFindTranscripts).toHaveBeenCalledWith(userId, ["audio-fits"]);
-    // The over-budget turn didn't make the prompt.
+    expect(mockFindTranscripts).toHaveBeenCalledOnce();
+    expect(mockFindTranscripts).toHaveBeenCalledWith(userId, []);
     const [, turns] = mockChatAI.mock.calls[0];
     expect(turns).toHaveLength(2);
   });
 
   it("replays images a past turn was sent with", async () => {
-    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
-      contextMessage({
+    mockFindCreateMessageHistory.mockResolvedValueOnce([
+      createMessageHistory({
         id: messageId,
         role: "user",
         content: "What is this?",
-        images: [{ imageUploadId, signedUrl: null, signedUrlExpiresAt: null }],
+        imageUrls: [resolvedImage.url],
       }),
     ]);
-    mockResolveImageUploadUrls.mockResolvedValueOnce(
-      new Map([[imageUploadId, resolvedImage.url]]),
-    );
     mockChatAI.mockResolvedValueOnce("Hello world");
 
     const res = await postMessage({
@@ -687,17 +725,14 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("rejects a text-only model when the assembled history contains an image", async () => {
-    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
-      contextMessage({
+    mockFindCreateMessageHistory.mockResolvedValueOnce([
+      createMessageHistory({
         id: messageId,
         role: "user",
         content: "What is this?",
-        images: [{ imageUploadId, signedUrl: null, signedUrlExpiresAt: null }],
+        imageUrls: [resolvedImage.url],
       }),
     ]);
-    mockResolveImageUploadUrls.mockResolvedValueOnce(
-      new Map([[imageUploadId, resolvedImage.url]]),
-    );
     mockValidateModelInput.mockResolvedValueOnce(false);
 
     const response = await postMessage({
@@ -721,10 +756,10 @@ describe("POST /conversations/:conversationId/messages", () => {
   it("drops history beyond the character budget and caps the response", async () => {
     // Two of these fit in the budget; the third pushes it over.
     const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
-    mockFindRecentMessagesWithContext.mockResolvedValueOnce([
-      contextMessage({ role: "user", content: `newest ${long}` }),
-      contextMessage({ role: "assistant", content: `middle ${long}` }),
-      contextMessage({ role: "user", content: `oldest ${long}` }),
+    mockFindCreateMessageHistory.mockResolvedValueOnce([
+      createMessageHistory({ role: "user", content: `newest ${long}` }),
+      createMessageHistory({ role: "assistant", content: `middle ${long}` }),
+      createMessageHistory({ role: "user", content: `oldest ${long}` }),
     ]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 
@@ -740,6 +775,9 @@ describe("POST /conversations/:conversationId/messages", () => {
     // The oldest turn fell off; the new one is always kept, last.
     expect(labels).toEqual(["middle", "newest", "Hi the"]);
     expect(opts.maxOutputTokens).toBe(MAX_RESPONSE_TOKENS);
+    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ contextWindowMessageCount: 4 }),
+    );
   });
 
   describe("with transcription jobs attached", () => {
@@ -779,7 +817,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         expect(mockPersistChatTurn).toHaveBeenCalledWith(
           expect.objectContaining({
             content: "Compare these",
-            audioUploadIds: [firstAudioUploadId, secondAudioUploadId],
+            attachmentUploadIds: [firstAudioUploadId, secondAudioUploadId],
           }),
         ),
       );
@@ -790,33 +828,14 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     it("replays all transcripts from a past turn", async () => {
-      mockFindRecentMessagesWithContext.mockResolvedValueOnce([
-        contextMessage({
+      mockFindCreateMessageHistory.mockResolvedValueOnce([
+        createMessageHistory({
           id: messageId,
           role: "user",
           content: "Compare these",
-          transcripts: [
-            {
-              audioUploadId: firstAudioUploadId,
-              fileName: "interview.mp3",
-              source: "audio",
-              charCount: firstTranscript.length,
-            },
-            {
-              audioUploadId: secondAudioUploadId,
-              fileName: "Product demo",
-              source: "youtube",
-              charCount: secondTranscript.length,
-            },
-          ],
+          transcriptContents: [firstTranscript, secondTranscript],
         }),
       ]);
-      mockFindTranscripts.mockResolvedValueOnce(
-        new Map([
-          [firstAudioUploadId, firstTranscript],
-          [secondAudioUploadId, secondTranscript],
-        ]),
-      );
       mockChatAI.mockResolvedValueOnce("Hello world");
 
       const response = await postMessage({
@@ -881,9 +900,9 @@ describe("POST /conversations/:conversationId/messages", () => {
       mockFindTranscripts.mockResolvedValueOnce(
         new Map([[firstAudioUploadId, transcript]]),
       );
-      mockFindRecentMessagesWithContext.mockResolvedValueOnce([
-        contextMessage({ role: "user", content: `newest ${long}` }),
-        contextMessage({ role: "assistant", content: `middle ${long}` }),
+      mockFindCreateMessageHistory.mockResolvedValueOnce([
+        createMessageHistory({ role: "user", content: `newest ${long}` }),
+        createMessageHistory({ role: "assistant", content: `middle ${long}` }),
       ]);
       mockChatAI.mockResolvedValueOnce("Hello world");
 
@@ -953,7 +972,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     // by the user message it inserts.
     await vi.waitFor(() =>
       expect(mockPersistChatTurn).toHaveBeenCalledWith(
-        expect.objectContaining({ imageUploadIds: [imageUploadId] }),
+        expect.objectContaining({ attachmentUploadIds: [imageUploadId] }),
       ),
     );
   });
@@ -1051,7 +1070,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
         {
           method: "PATCH",
           headers: { Cookie: cookie, "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify(messageRequestBody(body)),
         },
       ),
     );
@@ -1114,8 +1133,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       conversationId,
       messageId,
       content: "Updated question",
-      imageUploadIds: [imageUploadId],
-      audioUploadIds: [audioUploadId],
+      attachmentUploadIds: [imageUploadId, audioUploadId],
       claimToken: "claim-token",
     });
     expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith(userId, [
