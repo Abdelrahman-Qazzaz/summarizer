@@ -82,7 +82,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFindAudioJob.mockResolvedValue(audioJob);
   mockFindTranscripts.mockResolvedValue(new Map());
-  mockDeleteAudioJob.mockResolvedValue(undefined);
+  mockDeleteAudioJob.mockResolvedValue(true);
   mockDeleteFilesFromBucket.mockResolvedValue(undefined);
 });
 
@@ -226,7 +226,7 @@ describe("GET /jobs/transcribe/:audioUploadId", () => {
 });
 
 describe("DELETE /jobs/transcribe/:audioUploadId", () => {
-  it("removes the audio and caption objects before deleting the job", async () => {
+  it("deletes the job and its audio and caption objects", async () => {
     const captionUploadId = "650e8400-e29b-41d4-a716-446655440111";
     mockFindAudioJob.mockResolvedValueOnce({
       ...audioJob,
@@ -250,6 +250,23 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
       audioUploadId,
       captionUploadId,
     ]);
+  });
+
+  it("preserves a source that is attached to a message", async () => {
+    mockDeleteAudioJob.mockResolvedValueOnce(false);
+
+    const response = await (
+      await createApp()
+    ).request(`http://localhost/jobs/transcribe/${audioUploadId}`, {
+      method: "DELETE",
+      headers: await authedHeaders("user_01OWNER"),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      message: "Source is attached to a message",
+    });
+    expect(mockDeleteFilesFromBucket).not.toHaveBeenCalled();
   });
 
   it("scopes the delete to the requesting user", async () => {

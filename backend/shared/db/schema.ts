@@ -191,7 +191,7 @@ export const ChatMessageAttachments = pgTable(
     attachmentUploadId: text("attachment_upload_id")
       .notNull()
       .references(() => AttachmentUploads.attachmentUploadId, {
-        onDelete: "cascade",
+        onDelete: "restrict",
       }),
     position: integer("position").notNull(),
   },

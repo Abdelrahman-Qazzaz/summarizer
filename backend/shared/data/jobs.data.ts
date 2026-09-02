@@ -7,6 +7,7 @@ import {
   inArray,
   isNotNull,
   lt,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -14,6 +15,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   AttachmentUploads,
   AudioTranscriptionJobs,
+  ChatMessageAttachments,
   db,
   type Executor,
 } from "../db";
@@ -206,15 +208,26 @@ export async function createAudioJob(job: {
 }
 
 export async function deleteAudioJob(userId: string, audioUploadId: string) {
-  await db
+  const [deleted] = await db
     .delete(AttachmentUploads)
     .where(
       and(
         eq(AttachmentUploads.attachmentUploadId, audioUploadId),
         eq(AttachmentUploads.userId, userId),
         eq(AttachmentUploads.kind, "audio"),
+        notExists(
+          db
+            .select({ messageId: ChatMessageAttachments.messageId })
+            .from(ChatMessageAttachments)
+            .where(
+              eq(ChatMessageAttachments.attachmentUploadId, audioUploadId),
+            ),
+        ),
       ),
-    );
+    )
+    .returning({ audioUploadId: AttachmentUploads.attachmentUploadId });
+
+  return Boolean(deleted);
 }
 
 /**
