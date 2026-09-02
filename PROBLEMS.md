@@ -5,9 +5,6 @@
         orphaned files, stranded rows, or duplicate paid jobs when clients retry: backend/api/src/
         controllers/upload.controller.ts:17.
 
-      - Rerun changes the job to queued, deletes its transcript, then publishes. If publishing fails, retry
-        returns 409, leaving the job stuck: backend/api/src/controllers/jobs.controller.ts:111.
-
       - Node consumers discard every failed delivery with nack(..., false, false): backend/shared/message-
         queue/messageQueue.consumer.ts:27.
 

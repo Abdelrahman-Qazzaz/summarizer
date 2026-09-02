@@ -55,11 +55,10 @@ the audio download when it finds them. Otherwise it stores audio under the
 job's `audioUploadId` and publishes `transcribe`. The worker deletes a temporary
 caption object and clears its ID after finishing.
 
-Reruns use separate routes. A direct audio or video rerun publishes
-`transcribe` because its audio object is already stored. A YouTube rerun
-publishes `yt_fetch` with a fresh caption ID when captions are requested. It
-keeps the existing job ID so messages attached to that transcript still point
-to the replacement.
+Completed transcripts are immutable. The API has no rerun route, and a source
+attached to a message cannot be deleted. Trying another transcription requires
+a new upload and job, so old conversation history cannot change underneath a
+message.
 
 **Transcripts are not summarized.** The transcript is stored in Postgres under
 the audio job's `audioUploadId`. The user feeds one or more completed jobs to a
