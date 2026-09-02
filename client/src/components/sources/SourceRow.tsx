@@ -21,17 +21,10 @@ type SourceRowProps = {
   job: JobSummary;
   onOpen: () => void;
   onAttach: () => void;
-  onRerun: () => void;
   onDelete: () => void;
 };
 
-export function SourceRow({
-  job,
-  onOpen,
-  onAttach,
-  onRerun,
-  onDelete,
-}: SourceRowProps) {
+export function SourceRow({ job, onOpen, onAttach, onDelete }: SourceRowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useDismissable<HTMLDivElement>(menuOpen, () =>
     setMenuOpen(false),
@@ -84,17 +77,6 @@ export function SourceRow({
           ref={menuRef}
           className="absolute right-3 top-12 z-30 w-48 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-lg"
         >
-          <button
-            type="button"
-            onClick={() => {
-              setMenuOpen(false);
-              onRerun();
-            }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-sunk"
-          >
-            <Icon name="refresh" className="h-4 w-4 text-muted" />
-            Transcribe again
-          </button>
           <button
             type="button"
             onClick={() => {

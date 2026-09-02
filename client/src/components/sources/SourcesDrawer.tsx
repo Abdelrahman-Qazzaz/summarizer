@@ -4,14 +4,12 @@ import { useAuth } from "../../hooks/auth/useAuth";
 import {
   useDeleteJobMutation,
   useJobsQuery,
-  useRerunJobMutation,
 } from "../../hooks/queries/useJobQueries";
 import { useToast } from "../../hooks/toast/useToast";
 import { useSources } from "../../sources/useSources";
 import { useShell } from "../app/shellContext";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Icon } from "../ui/Icon";
-import { RerunDialog } from "./RerunDialog";
 import { SourceRow } from "./SourceRow";
 import { useDraftKey } from "./useDraftKey";
 
@@ -32,16 +30,11 @@ export function SourcesDrawer() {
   const { user } = useAuth();
   const toast = useToast();
   const draftKey = useDraftKey();
-  const { attachExisting, transcriptModelId } = useSources(draftKey);
+  const { attachExisting } = useSources(draftKey);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState<JobStatus | null>(null);
-  const [rerunTarget, setRerunTarget] = useState<{
-    audioUploadId: string;
-    fileName: string;
-    source: JobSource;
-  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     audioUploadId: string;
     fileName: string;
@@ -52,7 +45,6 @@ export function SourcesDrawer() {
     q: debouncedSearch || null,
   });
   const deleteJob = useDeleteJobMutation();
-  const rerunJob = useRerunJobMutation();
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -64,7 +56,7 @@ export function SourcesDrawer() {
 
   // Escape closes the drawer, but only once whatever is stacked on top of it
   // has taken its own turn.
-  const dialogOpen = !!rerunTarget || !!deleteTarget || !!openSource;
+  const dialogOpen = !!deleteTarget || !!openSource;
   useEffect(() => {
     if (dialogOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -173,13 +165,6 @@ export function SourcesDrawer() {
                     onAttach={() =>
                       attach(job.audioUploadId, job.fileName, job.source)
                     }
-                    onRerun={() =>
-                      setRerunTarget({
-                        audioUploadId: job.audioUploadId,
-                        fileName: job.fileName,
-                        source: job.source,
-                      })
-                    }
                     onDelete={() =>
                       setDeleteTarget({
                         audioUploadId: job.audioUploadId,
@@ -204,28 +189,10 @@ export function SourcesDrawer() {
         </div>
       </aside>
 
-      {rerunTarget && (
-        <RerunDialog
-          fileName={rerunTarget.fileName}
-          source={rerunTarget.source}
-          currentModelId={transcriptModelId}
-          onConfirm={(modelId, useCaptionsIfAvailable) => {
-            rerunJob.mutate({
-              audioUploadId: rerunTarget.audioUploadId,
-              source: rerunTarget.source,
-              transcriptModelId: modelId,
-              useCaptionsIfAvailable,
-            });
-            setRerunTarget(null);
-          }}
-          onCancel={() => setRerunTarget(null)}
-        />
-      )}
-
       {deleteTarget && (
         <ConfirmDialog
           title="Delete this source?"
-          body={`“${deleteTarget.fileName}” and its transcript are removed. Messages already sent with it keep their copy.`}
+          body={`“${deleteTarget.fileName}” and its transcript are removed. Sources attached to sent messages cannot be deleted.`}
           confirmLabel="Delete source"
           onConfirm={() => {
             deleteJob.mutate({ audioUploadId: deleteTarget.audioUploadId });

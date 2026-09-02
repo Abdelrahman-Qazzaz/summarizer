@@ -8,9 +8,7 @@ import {
   deleteJob,
   fetchJob,
   fetchJobs,
-  rerunJob,
   type JobsFilters,
-  type RerunJobInput,
 } from "../../api/jobs";
 import { errorMessage } from "../../api/http";
 import { queryKeys } from "../../lib/queryClient";
@@ -55,28 +53,6 @@ export function useDeleteJobMutation() {
       toast.show({
         kind: "error",
         message: errorMessage(error, "Couldn't delete that source."),
-      });
-    },
-  });
-}
-
-export function useRerunJobMutation() {
-  const queryClient = useQueryClient();
-  const toast = useToast();
-
-  return useMutation({
-    mutationFn: (input: RerunJobInput) => rerunJob(input),
-    onSuccess: (audioUploadId) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.job(audioUploadId),
-      });
-      toast.show({ kind: "success", message: "Transcribing again." });
-    },
-    onError: (error) => {
-      toast.show({
-        kind: "error",
-        message: errorMessage(error, "Couldn't start that re-run."),
       });
     },
   });
