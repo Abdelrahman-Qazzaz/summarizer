@@ -1,5 +1,5 @@
 // TODO: stop referring to ONLY images as attachments. attachments means both in one var, seperated by "kind" attr.
-// TODO: refactor message creation & patching handlers.
+// TODO: refactor and fix patching&deletion handlers.
 
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
