@@ -196,7 +196,8 @@ function createMessageHistory(
         transcriptContents.reduce(
           (total, transcript) => total + transcript.length,
           0,
-        ),
+        ) +
+        transcriptContents.length * 2,
   };
 }
 
@@ -659,19 +660,13 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
-  it("trims resolved transcript history against the final budget", async () => {
+  it("uses transcript history admitted by the data layer", async () => {
     mockFindCreateMessageHistory.mockResolvedValueOnce([
       createMessageHistory({
         id: assistantRow.id,
         content: "Newer",
         transcriptContents: ["T"],
         contextCharCount: 15,
-      }),
-      createMessageHistory({
-        id: messageId,
-        content: "Older",
-        transcriptContents: ["unused body"],
-        contextCharCount: MAX_CONTEXT_CHARS,
       }),
     ]);
     mockChatAI.mockResolvedValueOnce("Hello world");
@@ -753,13 +748,11 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
-  it("drops history beyond the character budget and caps the response", async () => {
-    // Two of these fit in the budget; the third pushes it over.
+  it("uses budgeted history from the data layer and caps the response", async () => {
     const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
     mockFindCreateMessageHistory.mockResolvedValueOnce([
       createMessageHistory({ role: "user", content: `newest ${long}` }),
       createMessageHistory({ role: "assistant", content: `middle ${long}` }),
-      createMessageHistory({ role: "user", content: `oldest ${long}` }),
     ]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 
@@ -772,7 +765,6 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     const [, turns, opts] = mockChatAI.mock.calls[0];
     const labels = turns.map((t: { content: string }) => t.content.slice(0, 6));
-    // The oldest turn fell off; the new one is always kept, last.
     expect(labels).toEqual(["middle", "newest", "Hi the"]);
     expect(opts.maxOutputTokens).toBe(MAX_RESPONSE_TOKENS);
     expect(mockPersistChatTurn).toHaveBeenCalledWith(
@@ -894,7 +886,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
     });
 
-    it("charges all transcripts against the budget when admitting history", async () => {
+    it("passes every current transcript to history admission", async () => {
       const long = "x".repeat(Math.floor(MAX_CONTEXT_CHARS / 3));
       const transcript = "y".repeat(MAX_CONTEXT_CHARS / 2);
       mockFindTranscripts.mockResolvedValueOnce(
@@ -902,7 +894,6 @@ describe("POST /conversations/:conversationId/messages", () => {
       );
       mockFindCreateMessageHistory.mockResolvedValueOnce([
         createMessageHistory({ role: "user", content: `newest ${long}` }),
-        createMessageHistory({ role: "assistant", content: `middle ${long}` }),
       ]);
       mockChatAI.mockResolvedValueOnce("Hello world");
 
@@ -917,6 +908,16 @@ describe("POST /conversations/:conversationId/messages", () => {
       const [, turns] = mockChatAI.mock.calls[0];
       expect(turns).toHaveLength(2);
       expect(turns[0].content.slice(0, 6)).toBe("newest");
+      expect(mockFindCreateMessageHistory).toHaveBeenCalledWith({
+        userId,
+        conversationId,
+        newMessageContentCharCount: "Summarise this".length,
+        newTranscriptUploadIds: [firstAudioUploadId],
+        transcriptSeparatorCharCount: 2,
+        maximumContextCharCount: MAX_CONTEXT_CHARS,
+        maximumMessageCount: 49,
+        maximumImageCount: 8,
+      });
     });
   });
 

@@ -22,10 +22,12 @@ const createdAt = new Date("2026-08-31T00:00:00.000Z");
 
 function historyRow(
   partial: Partial<{
-    messageId: string;
-    role: "user" | "assistant";
-    content: string;
-    createdAt: Date;
+    currentTurnContextCharCount: number;
+    currentTranscriptCount: number;
+    messageId: string | null;
+    role: "user" | "assistant" | null;
+    content: string | null;
+    createdAt: Date | null;
     attachmentUploadId: string | null;
     attachmentKind: "image" | "audio" | null;
     signedUrl: string | null;
@@ -35,6 +37,8 @@ function historyRow(
   }> = {},
 ) {
   return {
+    currentTurnContextCharCount: 10,
+    currentTranscriptCount: 1,
     messageId: "message-1",
     role: "user" as const,
     content: "Question",
@@ -55,7 +59,7 @@ beforeEach(() => {
 });
 
 describe("findCreateMessageHistory", () => {
-  it("groups transcript bodies and resolves only image slots inside the cap", async () => {
+  it("admits history before resolving its image slots", async () => {
     mockExecute.mockResolvedValueOnce([
       historyRow({
         messageId: "message-2",
@@ -86,7 +90,16 @@ describe("findCreateMessageHistory", () => {
     );
 
     await expect(
-      findCreateMessageHistory("user-1", "conversation-1", 49, 1),
+      findCreateMessageHistory({
+        userId: "user-1",
+        conversationId: "conversation-1",
+        newMessageContentCharCount: 8,
+        newTranscriptUploadIds: ["current-audio"],
+        transcriptSeparatorCharCount: 2,
+        maximumContextCharCount: 36,
+        maximumMessageCount: 49,
+        maximumImageCount: 1,
+      }),
     ).resolves.toEqual([
       {
         id: "message-2",
@@ -104,23 +117,16 @@ describe("findCreateMessageHistory", () => {
         createdAt,
         transcriptContents: ["Transcript"],
         imageUrls: ["signed-url"],
-        contextCharCount: 18,
-      },
-      {
-        id: "message-0",
-        role: "user",
-        content: "Older",
-        createdAt,
-        transcriptContents: [],
-        imageUrls: [],
-        contextCharCount: 5,
+        contextCharCount: 20,
       },
     ]);
     expect(mockExecute).toHaveBeenCalledOnce();
     const query = mockExecute.mock.calls[0][0];
     const compiledQuery = new PgDialect().sqlToQuery(query);
     expect(compiledQuery.sql).toContain("context_window_message_count");
-    expect(compiledQuery.sql).toContain("with conversation_window");
+    expect(compiledQuery.sql).toContain("current_turn as");
+    expect(compiledQuery.sql).toContain("recent_messages as");
+    expect(compiledQuery.sql).not.toContain("admitted_messages");
     expect(mockResolveImageUploadUrls).toHaveBeenCalledWith("user-1", [
       {
         imageUploadId: "image-1",

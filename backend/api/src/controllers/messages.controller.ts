@@ -64,6 +64,7 @@ export const MAX_RESPONSE_TOKENS = 4_000;
  */
 const MAX_CONTEXT_IMAGES = 8;
 const FALLBACK_CONVERSATION_TITLE_CHARS = 80;
+const TRANSCRIPT_SEPARATOR = "\n\n";
 
 async function titleForFirstTurn(content: string, conversationId: string) {
   const fallback = content
@@ -103,7 +104,7 @@ function toMessageJson(
 
 function withTranscripts(content: string, transcripts: readonly string[]) {
   if (transcripts.length === 0) return content;
-  return `${transcripts.join("\n\n")}\n\n${content}`;
+  return `${transcripts.join(TRANSCRIPT_SEPARATOR)}${TRANSCRIPT_SEPARATOR}${content}`;
 }
 
 function turnCharCount(
@@ -113,7 +114,8 @@ function turnCharCount(
   return (
     content.length +
     transcripts.reduce(
-      (total, transcript) => total + (transcript.charCount ?? 0),
+      (total, transcript) =>
+        total + (transcript.charCount ?? 0) + TRANSCRIPT_SEPARATOR.length,
       0,
     )
   );
@@ -137,15 +139,10 @@ function containsImageInput(turns: readonly ChatTurn[]) {
 function assembleCreateMessageContext(
   history: readonly CreateMessageHistory[],
   newTurn: ChatTurn,
-  spentChars: number,
 ): ChatTurn[] {
-  let charBudget = MAX_CONTEXT_CHARS - spentChars;
   const turns: ChatTurn[] = [newTurn];
 
   for (const message of history) {
-    if (charBudget - message.contextCharCount < 0) break;
-    charBudget -= message.contextCharCount;
-
     const content = withTranscripts(
       message.content,
       message.transcriptContents,
@@ -367,12 +364,16 @@ export async function handleCreateMessage(c: Context) {
       claimPromise,
       resolveImages(messageInput.userId, messageInput.imageUploadIds),
       findTranscripts(messageInput.userId, messageInput.audioUploadIds),
-      findCreateMessageHistory(
-        messageInput.userId,
-        messageInput.conversationId,
-        MAX_CONTEXT_MESSAGES - 1,
-        MAX_CONTEXT_IMAGES,
-      ),
+      findCreateMessageHistory({
+        userId: messageInput.userId,
+        conversationId: messageInput.conversationId,
+        newMessageContentCharCount: messageInput.content.length,
+        newTranscriptUploadIds: messageInput.audioUploadIds,
+        transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
+        maximumContextCharCount: MAX_CONTEXT_CHARS,
+        maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
+        maximumImageCount: MAX_CONTEXT_IMAGES,
+      }),
     ]);
   } catch (error) {
     const acquiredClaimToken = await claimPromise.catch(() => null);
@@ -437,9 +438,7 @@ export async function handleCreateMessage(c: Context) {
     );
 
     const newTurnContent = withTranscripts(messageInput.content, transcripts);
-    newMessageContextCharCount =
-      messageInput.content.length +
-      transcripts.reduce((total, transcript) => total + transcript.length, 0);
+    newMessageContextCharCount = newTurnContent.length;
     if (newTurnContent.length >= MAX_CONTEXT_CHARS) {
       await releaseClaim();
       return c.json(
@@ -458,7 +457,6 @@ export async function handleCreateMessage(c: Context) {
         newTurnContent,
         resolvedImages.map((image) => image.url),
       ),
-      newTurnContent.length,
     );
     if (
       containsImageInput(turns) &&
