@@ -209,8 +209,8 @@ export const ChatMessageAttachments = pgTable(
 /**
  * The transcript text a completed job produced, out of the job row so it isn't
  * pulled by the job list. A row exists only while a valid transcript does — the
- * worker upserts it on completion, a re-run deletes it — so its presence means
- * "ready". `charCount` lets a chat turn be budgeted without reading the body.
+ * the worker inserts it on completion, so its presence means "ready".
+ * `charCount` lets a chat turn be budgeted without reading the body.
  */
 export const TranscriptContents = pgTable("transcript_contents", {
   // The audio job this transcript belongs to (1:1).

@@ -18,23 +18,16 @@ import type { UploadId } from "../types";
  * of a row means a valid transcript is ready.
  */
 
-/** Worker write: replace on a re-run (the same audioUploadId transcribed again). */
-export async function upsertTranscript(
+async function insertTranscript(
   audioUploadId: UploadId,
   content: string,
   executor: Executor = db,
 ) {
-  await executor
-    .insert(TranscriptContents)
-    .values({
-      audioUploadId,
-      content,
-      charCount: content.length,
-    })
-    .onConflictDoUpdate({
-      target: TranscriptContents.audioUploadId,
-      set: { content, charCount: content.length },
-    });
+  await executor.insert(TranscriptContents).values({
+    audioUploadId,
+    content,
+    charCount: content.length,
+  });
 }
 
 /**
@@ -51,7 +44,7 @@ export async function saveCompletedTranscript(
     const ownsJob = await completeAudioJob(audioUploadId, claimToken, tx);
     if (!ownsJob) return false;
 
-    await upsertTranscript(audioUploadId, content, tx);
+    await insertTranscript(audioUploadId, content, tx);
     return true;
   });
 }
@@ -154,11 +147,4 @@ export async function findMessageTranscriptAttachments(
   }
 
   return transcriptionsByMessageId;
-}
-
-/** A re-run drops the old transcript; the worker upserts the new one on completion. */
-export async function deleteTranscript(audioUploadId: string) {
-  await db
-    .delete(TranscriptContents)
-    .where(eq(TranscriptContents.audioUploadId, audioUploadId));
 }

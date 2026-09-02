@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { CTX_KEYS } from "../../../shared/keys";
 import { jobStatusEnum } from "../../../shared/db";
-import { isValidTranscribeModel } from "../../../shared/ai/ai_transcribe_client";
 
 export const jobReqParamSchema = z.object({
   [CTX_KEYS.audioUploadId]: z.string().uuid(),
@@ -22,32 +21,3 @@ export const jobCursorSchema = z.object({
   createdAt: z.string(),
   audioUploadId: z.string(),
 });
-
-const rerunFields = {
-  [CTX_KEYS.transcriptModelId]: z.string().min(1),
-};
-
-async function validateRerunModel(
-  data: { [CTX_KEYS.transcriptModelId]: string },
-  ctx: z.RefinementCtx,
-) {
-  if (await isValidTranscribeModel(data[CTX_KEYS.transcriptModelId])) return;
-  ctx.addIssue({
-    code: "custom",
-    message: "Invalid transcription model",
-    path: [CTX_KEYS.transcriptModelId],
-  });
-}
-
-/** Re-transcribe an audio object already stored for this job. */
-export const jobTranscribeRerunBodySchema = z
-  .object(rerunFields)
-  .superRefine(validateRerunModel);
-
-/** Fetch a YouTube source again, preferring captions when requested. */
-export const jobYoutubeRerunBodySchema = z
-  .object({
-    ...rerunFields,
-    [CTX_KEYS.useCaptionsIfAvailable]: z.boolean().optional().default(false),
-  })
-  .superRefine(validateRerunModel);

@@ -5,15 +5,9 @@ import { requireAuth } from "../middleware/auth.middleware";
 import {
   validateReqParams,
   validateReqQuery,
-  validateReqBody,
 } from "../middleware/validate.middleware";
 import { CTX_KEYS } from "../../../shared/keys";
-import {
-  jobReqParamSchema,
-  jobsListQuerySchema,
-  jobTranscribeRerunBodySchema,
-  jobYoutubeRerunBodySchema,
-} from "../schema/jobs.schema";
+import { jobReqParamSchema, jobsListQuerySchema } from "../schema/jobs.schema";
 import { httpCache } from "../middleware/cache.middleware";
 
 export const jobsRouter = new Hono();
@@ -31,20 +25,6 @@ jobsRouter.delete(
   `/transcribe/:${CTX_KEYS.audioUploadId}`,
   validateReqParams(jobReqParamSchema),
   jobsController.handleDeleteTranscribeJob,
-);
-
-jobsRouter.post(
-  `/transcribe/:${CTX_KEYS.audioUploadId}/rerun`,
-  validateReqParams(jobReqParamSchema),
-  validateReqBody(jobTranscribeRerunBodySchema),
-  jobsController.handleRerunTranscribeJob,
-);
-
-jobsRouter.post(
-  `/youtube/:${CTX_KEYS.audioUploadId}/rerun`,
-  validateReqParams(jobReqParamSchema),
-  validateReqBody(jobYoutubeRerunBodySchema),
-  jobsController.handleRerunYoutubeJob,
 );
 
 jobsRouter.get(

@@ -34,26 +34,6 @@ type AudioJobRow = typeof AudioTranscriptionJobs.$inferSelect;
 
 /* ---------------------------------------------------------------- API reads */
 
-/** Ownership scopes every request-path query; the worker deliberately skips it. */
-function ownedBy(userId: string, audioUploadId: string) {
-  return and(
-    eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
-    inArray(
-      AudioTranscriptionJobs.audioUploadId,
-      db
-        .select({ attachmentUploadId: AttachmentUploads.attachmentUploadId })
-        .from(AttachmentUploads)
-        .where(
-          and(
-            eq(AttachmentUploads.attachmentUploadId, audioUploadId),
-            eq(AttachmentUploads.userId, userId),
-            eq(AttachmentUploads.kind, "audio"),
-          ),
-        ),
-    ),
-  );
-}
-
 export async function findAudioJob(userId: string, audioUploadId: string) {
   const [row] = await db
     .select({
@@ -235,38 +215,6 @@ export async function deleteAudioJob(userId: string, audioUploadId: string) {
         eq(AttachmentUploads.kind, "audio"),
       ),
     );
-}
-
-/**
- * Reset a terminal job to `queued`, clearing the previous claim and error. An
- * active job cannot be rerun underneath its worker; broker redelivery owns the
- * separate `processing` recovery path in claimAudioJob.
- */
-export async function requeueAudioJob(
-  userId: string,
-  audioUploadId: string,
-  transcriptModelId: string,
-  captionUploadId: UploadId | null = null,
-) {
-  const [row] = await db
-    .update(AudioTranscriptionJobs)
-    .set({
-      status: "queued",
-      error: null,
-      claimToken: null,
-      transcriptModelId,
-      captionUploadId,
-    })
-    .where(
-      and(
-        ownedBy(userId, audioUploadId),
-        inArray(AudioTranscriptionJobs.status, ["completed", "failed"]),
-      ),
-    )
-    // Only whether a row matched; the response echoes the request's audioUploadId.
-    .returning({ audioUploadId: AudioTranscriptionJobs.audioUploadId });
-
-  return row ?? null;
 }
 
 /**

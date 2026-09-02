@@ -8,14 +8,10 @@ const {
   mockSelect,
   mockInsert,
   mockValues,
-  mockOnConflictDoUpdate,
   mockTransaction,
   transactionExecutor,
 } = vi.hoisted(() => {
-  const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-  const mockValues = vi.fn(() => ({
-    onConflictDoUpdate: mockOnConflictDoUpdate,
-  }));
+  const mockValues = vi.fn().mockResolvedValue(undefined);
   const mockInsert = vi.fn(() => ({ values: mockValues }));
   const transactionExecutor = { insert: mockInsert };
 
@@ -24,7 +20,6 @@ const {
     mockSelect: vi.fn(),
     mockInsert,
     mockValues,
-    mockOnConflictDoUpdate,
     mockTransaction: vi.fn(),
     transactionExecutor,
   };
@@ -92,6 +87,5 @@ describe("saveCompletedTranscript", () => {
       content: "current transcript",
       charCount: 18,
     });
-    expect(mockOnConflictDoUpdate).toHaveBeenCalled();
   });
 });
