@@ -1,4 +1,24 @@
-import { ChatMessageAttachments, db, type Executor } from "../db";
+import { eq, notExists } from "drizzle-orm";
+import {
+  AttachmentUploads,
+  ChatMessageAttachments,
+  db,
+  type Executor,
+} from "../db";
+
+export function attachmentUploadIsUnattached(executor: Executor) {
+  return notExists(
+    executor
+      .select({ messageId: ChatMessageAttachments.messageId })
+      .from(ChatMessageAttachments)
+      .where(
+        eq(
+          ChatMessageAttachments.attachmentUploadId,
+          AttachmentUploads.attachmentUploadId,
+        ),
+      ),
+  );
+}
 
 export async function attachUploadsToMessage(
   messageId: string,

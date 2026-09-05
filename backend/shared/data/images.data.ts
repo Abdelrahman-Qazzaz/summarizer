@@ -8,6 +8,11 @@ import {
 } from "../db";
 import { IMAGE_URL_TTL_SECONDS, createSignedUrls } from "../bucket";
 import type { UploadId } from "../types";
+import {
+  createAttachmentUpload,
+  deleteOwnedUnattachedAttachmentUpload,
+  findOwnedUnattachedAttachmentUploadId,
+} from "./attachments.data";
 
 /**
  * What resolving an image needs: the signature cache to decide whether to
@@ -60,7 +65,7 @@ export async function createImageUpload(upload: {
   file: File;
   signedUrl: string;
 }) {
-  await db.insert(AttachmentUploads).values({
+  await createAttachmentUpload({
     attachmentUploadId: upload.imageUploadId,
     kind: "image",
     userId: upload.userId,
@@ -304,58 +309,22 @@ export async function findOwnedUnattachedImageUploadId(
   userId: string,
   imageUploadId: string,
 ) {
-  const [upload] = await db
-    .select({ imageUploadId: AttachmentUploads.attachmentUploadId })
-    .from(AttachmentUploads)
-    .where(
-      and(
-        eq(AttachmentUploads.attachmentUploadId, imageUploadId),
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "image"),
-        notExists(
-          db
-            .select({
-              attachmentUploadId: ChatMessageAttachments.attachmentUploadId,
-            })
-            .from(ChatMessageAttachments)
-            .where(
-              eq(
-                ChatMessageAttachments.attachmentUploadId,
-                AttachmentUploads.attachmentUploadId,
-              ),
-            ),
-        ),
-      ),
-    )
-    .limit(1);
-
-  return upload?.imageUploadId ?? null;
+  return findOwnedUnattachedAttachmentUploadId({
+    userId,
+    attachmentUploadId: imageUploadId,
+    kind: "image",
+  });
 }
 
 export async function deleteOwnedUnattachedImageUpload(
   userId: string,
   imageUploadId: string,
 ) {
-  await db.delete(AttachmentUploads).where(
-    and(
-      eq(AttachmentUploads.userId, userId),
-      eq(AttachmentUploads.attachmentUploadId, imageUploadId),
-      eq(AttachmentUploads.kind, "image"),
-      notExists(
-        db
-          .select({
-            attachmentUploadId: ChatMessageAttachments.attachmentUploadId,
-          })
-          .from(ChatMessageAttachments)
-          .where(
-            eq(
-              ChatMessageAttachments.attachmentUploadId,
-              AttachmentUploads.attachmentUploadId,
-            ),
-          ),
-      ),
-    ),
-  );
+  await deleteOwnedUnattachedAttachmentUpload({
+    userId,
+    attachmentUploadId: imageUploadId,
+    kind: "image",
+  });
 }
 
 export async function deleteOrphanedImageUploads(
