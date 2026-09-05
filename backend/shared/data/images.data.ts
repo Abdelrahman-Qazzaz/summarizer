@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, notExists, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
 import {
   AttachmentUploads,
   ChatMessageAttachments,
@@ -11,6 +11,7 @@ import type { UploadId } from "../types";
 import {
   createAttachmentUpload,
   deleteOwnedUnattachedAttachmentUpload,
+  deleteOwnedUnattachedAttachmentUploads,
   findOwnedUnattachedAttachmentUploadId,
 } from "./attachments.data";
 
@@ -332,34 +333,12 @@ export async function deleteOrphanedImageUploads(
   candidateImageUploadIds: readonly string[],
   executor: Executor = db,
 ) {
-  const imageUploadIds = [...new Set(candidateImageUploadIds)];
-  if (imageUploadIds.length === 0) return [];
-
-  const deleted = await executor
-    .delete(AttachmentUploads)
-    .where(
-      and(
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "image"),
-        inArray(AttachmentUploads.attachmentUploadId, imageUploadIds),
-        notExists(
-          executor
-            .select({
-              attachmentUploadId: ChatMessageAttachments.attachmentUploadId,
-            })
-            .from(ChatMessageAttachments)
-            .where(
-              eq(
-                ChatMessageAttachments.attachmentUploadId,
-                AttachmentUploads.attachmentUploadId,
-              ),
-            ),
-        ),
-      ),
-    )
-    .returning({
-      imageUploadId: AttachmentUploads.attachmentUploadId,
-    });
-
-  return deleted.map((upload) => upload.imageUploadId);
+  return deleteOwnedUnattachedAttachmentUploads(
+    {
+      userId,
+      attachmentUploadIds: candidateImageUploadIds,
+      kind: "image",
+    },
+    executor,
+  );
 }

@@ -7,7 +7,6 @@ import {
   inArray,
   isNotNull,
   lt,
-  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -15,12 +14,15 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   AttachmentUploads,
   AudioTranscriptionJobs,
-  ChatMessageAttachments,
   db,
   type Executor,
 } from "../db";
 import type { jobStatusEnum } from "../db";
 import type { UploadId } from "../types";
+import {
+  createAttachmentUpload,
+  deleteOwnedUnattachedAttachmentUpload,
+} from "./attachments.data";
 
 /**
  * Both process types read and write this table — the API on the request path,
@@ -187,14 +189,17 @@ export async function createAudioJob(job: {
   } = job;
 
   await db.transaction(async (tx) => {
-    await tx.insert(AttachmentUploads).values({
-      attachmentUploadId: audioUploadId,
-      kind: "audio",
-      userId,
-      fileName,
-      mimeType,
-      sizeBytes,
-    });
+    await createAttachmentUpload(
+      {
+        attachmentUploadId: audioUploadId,
+        kind: "audio",
+        userId,
+        fileName,
+        mimeType,
+        sizeBytes,
+      },
+      tx,
+    );
     await tx.insert(AudioTranscriptionJobs).values({
       audioUploadId,
       captionUploadId,
@@ -208,26 +213,13 @@ export async function createAudioJob(job: {
 }
 
 export async function deleteAudioJob(userId: string, audioUploadId: string) {
-  const [deleted] = await db
-    .delete(AttachmentUploads)
-    .where(
-      and(
-        eq(AttachmentUploads.attachmentUploadId, audioUploadId),
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "audio"),
-        notExists(
-          db
-            .select({ messageId: ChatMessageAttachments.messageId })
-            .from(ChatMessageAttachments)
-            .where(
-              eq(ChatMessageAttachments.attachmentUploadId, audioUploadId),
-            ),
-        ),
-      ),
-    )
-    .returning({ audioUploadId: AttachmentUploads.attachmentUploadId });
+  const deletedAudioUploadId = await deleteOwnedUnattachedAttachmentUpload({
+    userId,
+    attachmentUploadId: audioUploadId,
+    kind: "audio",
+  });
 
-  return Boolean(deleted);
+  return Boolean(deletedAudioUploadId);
 }
 
 /**

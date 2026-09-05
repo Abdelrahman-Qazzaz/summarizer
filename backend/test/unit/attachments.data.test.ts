@@ -36,9 +36,14 @@ vi.mock("../../shared/db", async () => ({
 import {
   createAttachmentUpload,
   deleteOwnedUnattachedAttachmentUpload,
+  deleteOwnedUnattachedAttachmentUploads,
   findOwnedUnattachedAttachmentUploadId,
 } from "../../shared/data/attachments.data";
 import { AttachmentUploads, ChatMessageAttachments } from "../../shared/db";
+
+type AttachmentExecutor = NonNullable<
+  Parameters<typeof createAttachmentUpload>[1]
+>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -75,6 +80,30 @@ describe("attachment uploads", () => {
     expect(mockValues).toHaveBeenCalledWith(upload);
   });
 
+  it("creates an attachment upload through the supplied executor", async () => {
+    const transactionValues = vi.fn().mockResolvedValue(undefined);
+    const transactionInsert = vi.fn().mockReturnValue({
+      values: transactionValues,
+    });
+    const transactionExecutor = {
+      insert: transactionInsert,
+    } as unknown as AttachmentExecutor;
+    const upload = {
+      attachmentUploadId: "650e8400-e29b-41d4-a716-446655440111",
+      kind: "audio" as const,
+      userId: "user-1",
+      fileName: "interview.mp3",
+      mimeType: "audio/mpeg",
+      sizeBytes: 256,
+    };
+
+    await createAttachmentUpload(upload, transactionExecutor);
+
+    expect(transactionInsert).toHaveBeenCalledWith(AttachmentUploads);
+    expect(transactionValues).toHaveBeenCalledWith(upload);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
   it("returns null when no matching unattached upload exists", async () => {
     mockLimit.mockResolvedValueOnce([]);
 
@@ -101,5 +130,44 @@ describe("attachment uploads", () => {
         kind: "image",
       }),
     ).resolves.toBe("image-upload-1");
+  });
+
+  it("uses the supplied executor for the delete and its attachment check", async () => {
+    const transactionSubqueryWhere = vi.fn().mockReturnValue({});
+    const transactionFrom = vi.fn().mockReturnValue({
+      where: transactionSubqueryWhere,
+    });
+    const transactionSelect = vi.fn().mockReturnValue({
+      from: transactionFrom,
+    });
+    const transactionReturning = vi
+      .fn()
+      .mockResolvedValue([{ attachmentUploadId: "image-upload-1" }]);
+    const transactionDeleteWhere = vi.fn().mockReturnValue({
+      returning: transactionReturning,
+    });
+    const transactionDelete = vi.fn().mockReturnValue({
+      where: transactionDeleteWhere,
+    });
+    const transactionExecutor = {
+      delete: transactionDelete,
+      select: transactionSelect,
+    } as unknown as AttachmentExecutor;
+
+    await expect(
+      deleteOwnedUnattachedAttachmentUploads(
+        {
+          userId: "user-1",
+          attachmentUploadIds: ["image-upload-1"],
+          kind: "image",
+        },
+        transactionExecutor,
+      ),
+    ).resolves.toEqual(["image-upload-1"]);
+
+    expect(transactionDelete).toHaveBeenCalledWith(AttachmentUploads);
+    expect(transactionFrom).toHaveBeenCalledWith(ChatMessageAttachments);
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockSelect).not.toHaveBeenCalled();
   });
 });
