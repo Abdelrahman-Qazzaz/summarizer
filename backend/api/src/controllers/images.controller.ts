@@ -11,7 +11,7 @@ import {
   deleteOwnedUnattachedImageUpload,
   findOwnedUnattachedImageUploadId,
   resolveImages,
-} from "../data/images.data";
+} from "../../../shared/data/images.data";
 import { CTX_KEYS } from "../../../shared/keys";
 import type { UploadId } from "../../../shared/types";
 

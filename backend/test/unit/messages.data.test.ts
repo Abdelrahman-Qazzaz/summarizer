@@ -42,11 +42,11 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-vi.mock("../../api/src/data/images.data", () => ({
+vi.mock("../../shared/data/images.data", () => ({
   attachImagesToMessage: vi.fn(),
 }));
 
-vi.mock("../../api/src/data/conversations.data", () => ({
+vi.mock("../../shared/data/conversations.data", () => ({
   completeConversationTurn: mockCompleteConversationTurn,
 }));
 
@@ -59,7 +59,7 @@ import {
   deleteOwnedMessage,
   patchOwnedUserMessage,
   persistAssistantMessage,
-} from "../../api/src/data/messages.data";
+} from "../../shared/data/messages.data";
 
 function returnLockedConversation(rows: unknown[]) {
   mockSelect.mockReturnValueOnce({

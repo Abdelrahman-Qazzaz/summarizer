@@ -15,7 +15,7 @@ import {
   type CreateMessageHistory,
   type ContextMessage,
   type MessageRow,
-} from "../data/messages.data";
+} from "../../../shared/data/messages.data";
 import { CTX_KEYS } from "../../../shared/keys";
 import {
   buildUserTurn,
@@ -29,13 +29,13 @@ import {
   claimConversationTurn,
   findOwnedConversation,
   releaseConversationTurn,
-} from "../data/conversations.data";
+} from "../../../shared/data/conversations.data";
 import {
   resolveImageUploadUrls,
   resolveImages,
   resolveMessageImages,
   type ResolvedImage,
-} from "../data/images.data";
+} from "../../../shared/data/images.data";
 import { deleteFilesFromBucket } from "../../../shared/bucket";
 import {
   findMessageTranscriptAttachments,

@@ -1,4 +1,4 @@
-import { db, users } from "../../../shared/db";
+import { db, users } from "../db";
 
 /**
  * First login creates the row; every later one is a no-op. The auth provider

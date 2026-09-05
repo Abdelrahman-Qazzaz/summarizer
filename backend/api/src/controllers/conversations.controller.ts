@@ -4,7 +4,7 @@ import { deleteFilesFromBucket } from "../../../shared/bucket";
 import {
   deleteOrphanedImageUploads,
   findConversationImageUploadIds,
-} from "../data/images.data";
+} from "../../../shared/data/images.data";
 import {
   createConversation,
   deleteOwnedConversation,
@@ -12,7 +12,7 @@ import {
   findUserConversations,
   renameConversation,
   type ConversationRow,
-} from "../data/conversations.data";
+} from "../../../shared/data/conversations.data";
 
 function toConversationJson(row: ConversationRow) {
   return {

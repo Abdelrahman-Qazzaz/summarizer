@@ -5,7 +5,7 @@ import {
   DEFAULT_CONVERSATION_TITLE,
   db,
   type Executor,
-} from "../../../shared/db";
+} from "../db";
 
 const conversationColumns = {
   id: Conversations.id,

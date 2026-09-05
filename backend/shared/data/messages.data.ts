@@ -18,17 +18,17 @@ import {
   TranscriptContents,
   db,
   type Executor,
-} from "../../../shared/db";
+} from "../db";
 import {
   deleteOrphanedImageUploads,
   resolveImageUploadUrls,
 } from "./images.data";
 import { completeConversationTurn } from "./conversations.data";
-import { attachUploadsToMessage } from "../../../shared/data/attachments.data";
+import { attachUploadsToMessage } from "./attachments.data";
 import {
   findMessageTranscriptAttachments,
   type StoredTranscriptAttachment,
-} from "../../../shared/data/transcripts.data";
+} from "./transcripts.data";
 
 /**
  * The columns a message is exposed through — every read feeding `toMessageJson`

@@ -54,17 +54,17 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-vi.mock("../../api/src/data/conversations.data", async (importActual) => ({
+vi.mock("../../shared/data/conversations.data", async (importActual) => ({
   ...(await importActual<
-    typeof import("../../api/src/data/conversations.data")
+    typeof import("../../shared/data/conversations.data")
   >()),
   findOwnedConversation: mockFindOwnedConversation,
   claimConversationTurn: mockClaimConversationTurn,
   releaseConversationTurn: mockReleaseConversationTurn,
 }));
 
-vi.mock("../../api/src/data/messages.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../api/src/data/messages.data")>()),
+vi.mock("../../shared/data/messages.data", async (importActual) => ({
+  ...(await importActual<typeof import("../../shared/data/messages.data")>()),
   findCreateMessageHistory: mockFindCreateMessageHistory,
   findMessagePatchContext: mockFindMessagePatchContext,
   persistChatTurn: mockPersistChatTurn,
@@ -74,8 +74,8 @@ vi.mock("../../api/src/data/messages.data", async (importActual) => ({
   deleteOwnedMessage: mockDeleteOwnedMessage,
 }));
 
-vi.mock("../../api/src/data/images.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../api/src/data/images.data")>()),
+vi.mock("../../shared/data/images.data", async (importActual) => ({
+  ...(await importActual<typeof import("../../shared/data/images.data")>()),
   resolveImages: mockResolveImages,
   resolveMessageImages: mockResolveMessageImages,
   resolveImageUploadUrls: mockResolveImageUploadUrls,
@@ -120,7 +120,7 @@ import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 import type {
   ContextMessage,
   CreateMessageHistory,
-} from "../../api/src/data/messages.data";
+} from "../../shared/data/messages.data";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
 const messageId = "650e8400-e29b-41d4-a716-446655440111";

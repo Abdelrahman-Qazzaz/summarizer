@@ -16,7 +16,7 @@ import {
   claimConversationTurn,
   completeConversationTurn,
   releaseConversationTurn,
-} from "../../api/src/data/conversations.data";
+} from "../../shared/data/conversations.data";
 
 beforeEach(() => {
   vi.clearAllMocks();

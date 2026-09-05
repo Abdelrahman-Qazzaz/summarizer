@@ -5,12 +5,9 @@ import {
   ChatMessages,
   db,
   type Executor,
-} from "../../../shared/db";
-import {
-  IMAGE_URL_TTL_SECONDS,
-  createSignedUrls,
-} from "../../../shared/bucket";
-import type { UploadId } from "../../../shared/types";
+} from "../db";
+import { IMAGE_URL_TTL_SECONDS, createSignedUrls } from "../bucket";
+import type { UploadId } from "../types";
 
 /**
  * What resolving an image needs: the signature cache to decide whether to

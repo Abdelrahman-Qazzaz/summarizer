@@ -64,7 +64,20 @@ export default defineConfig([
     },
   },
   {
-    files: ["**/*.data.ts"],
+    files: ["shared/**/*.data.ts"],
     rules: { "no-restricted-imports": "off" },
+  },
+  {
+    files: ["**/*.data.ts"],
+    ignores: ["shared/**/*.data.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Program",
+          message: "Data modules must live under backend/shared.",
+        },
+      ],
+    },
   },
 ]);

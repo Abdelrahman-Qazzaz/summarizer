@@ -11,12 +11,12 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../../shared/db/schema")),
 }));
 
-vi.mock("../../api/src/data/images.data", () => ({
+vi.mock("../../shared/data/images.data", () => ({
   deleteOrphanedImageUploads: vi.fn(),
   resolveImageUploadUrls: mockResolveImageUploadUrls,
 }));
 
-import { findCreateMessageHistory } from "../../api/src/data/messages.data";
+import { findCreateMessageHistory } from "../../shared/data/messages.data";
 
 const createdAt = new Date("2026-08-31T00:00:00.000Z");
 

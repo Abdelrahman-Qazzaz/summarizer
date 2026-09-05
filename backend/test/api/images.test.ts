@@ -20,8 +20,8 @@ vi.mock("../../shared/bucket", async (importActual) => ({
   deleteFilesFromBucket: mockDeleteFilesFromBucket,
 }));
 
-vi.mock("../../api/src/data/images.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../api/src/data/images.data")>()),
+vi.mock("../../shared/data/images.data", async (importActual) => ({
+  ...(await importActual<typeof import("../../shared/data/images.data")>()),
   deleteOwnedUnattachedImageUpload: mockDeleteOwnedUnattachedImageUpload,
   findOwnedUnattachedImageUploadId: mockFindOwnedUnattachedImageUploadId,
 }));
