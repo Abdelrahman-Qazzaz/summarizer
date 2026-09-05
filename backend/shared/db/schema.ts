@@ -206,6 +206,27 @@ export const ChatMessageAttachments = pgTable(
     index("chat_message_attachments_upload_idx").on(table.attachmentUploadId),
   ],
 );
+
+/** Uploads held by an in-flight message until that turn is persisted or fails. */
+export const AttachmentTurnReservations = pgTable(
+  "attachment_turn_reservations",
+  {
+    attachmentUploadId: text("attachment_upload_id")
+      .notNull()
+      .references(() => AttachmentUploads.attachmentUploadId, {
+        onDelete: "cascade",
+      }),
+    claimToken: uuid("claim_token").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.attachmentUploadId, table.claimToken],
+    }),
+    index("attachment_turn_reservations_claim_idx").on(table.claimToken),
+  ],
+);
+
 /**
  * The transcript text a completed job produced, out of the job row so it isn't
  * pulled by the job list. A row exists only while a valid transcript does — the
