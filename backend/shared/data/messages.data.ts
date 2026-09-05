@@ -24,7 +24,7 @@ import {
   resolveImageUploadUrls,
 } from "./images.data";
 import { completeConversationTurn } from "./conversations.data";
-import { attachUploadsToMessage } from "./attachments.data";
+import { attachUploadsToMessage } from "./messageAttachments.data";
 import {
   findMessageTranscriptAttachments,
   type StoredTranscriptAttachment,
