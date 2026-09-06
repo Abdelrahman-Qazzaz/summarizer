@@ -26,16 +26,30 @@ type OwnedUnattachedAttachments = {
   kind: AttachmentUploadValues["kind"];
 };
 
+type OwnedAttachmentUploads = {
+  userId: string;
+  attachmentUploadIds?: readonly string[];
+  kind: AttachmentUploadValues["kind"];
+};
+
+export function userOwnsAttachmentUploads(input: OwnedAttachmentUploads) {
+  return and(
+    eq(AttachmentUploads.userId, input.userId),
+    eq(AttachmentUploads.kind, input.kind),
+    input.attachmentUploadIds === undefined
+      ? undefined
+      : inArray(AttachmentUploads.attachmentUploadId, [
+          ...input.attachmentUploadIds,
+        ]),
+  );
+}
+
 function ownedUnattachedAttachments(
   input: OwnedUnattachedAttachments,
   executor: Executor,
 ) {
   return and(
-    eq(AttachmentUploads.userId, input.userId),
-    inArray(AttachmentUploads.attachmentUploadId, [
-      ...input.attachmentUploadIds,
-    ]),
-    eq(AttachmentUploads.kind, input.kind),
+    userOwnsAttachmentUploads(input),
     attachmentUploadIsUnattached(executor),
   );
 }

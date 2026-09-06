@@ -10,6 +10,7 @@ import {
 
 import { completeAudioJob } from "./jobs.data";
 import type { UploadId } from "../types";
+import { userOwnsAttachmentUploads } from "./attachments.data";
 
 /**
  * The transcript text a completed job produced. Lives here, not in the job row
@@ -71,8 +72,7 @@ export async function findTranscripts(
     )
     .where(
       and(
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "audio"),
+        userOwnsAttachmentUploads({ userId, kind: "audio" }),
         inArray(TranscriptContents.audioUploadId, [...audioUploadIds]),
       ),
     );
@@ -114,8 +114,7 @@ export async function findMessageTranscriptAttachments(
           AttachmentUploads.attachmentUploadId,
           ChatMessageAttachments.attachmentUploadId,
         ),
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "audio"),
+        userOwnsAttachmentUploads({ userId, kind: "audio" }),
       ),
     )
     .innerJoin(

@@ -13,6 +13,7 @@ import {
   deleteOwnedUnattachedAttachmentUpload,
   deleteOwnedUnattachedAttachmentUploads,
   findOwnedUnattachedAttachmentUploadId,
+  userOwnsAttachmentUploads,
 } from "./attachments.data";
 
 /**
@@ -97,6 +98,7 @@ function hasFreshSignedUrl(row: SignableImageRow) {
  */
 async function findImageUploads(
   userId: string,
+  imageUploadIds: readonly string[],
   filter: SQL | undefined,
 ): Promise<ImageUploadRow[]> {
   return db
@@ -104,8 +106,11 @@ async function findImageUploads(
     .from(AttachmentUploads)
     .where(
       and(
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "image"),
+        userOwnsAttachmentUploads({
+          userId,
+          attachmentUploadIds: imageUploadIds,
+          kind: "image",
+        }),
         filter,
       ),
     )
@@ -183,13 +188,7 @@ async function resolveImagesWhere(
 ): Promise<ResolvedImage[]> {
   if (imageUploadIds.length === 0) return [];
 
-  const rows = await findImageUploads(
-    userId,
-    and(
-      inArray(AttachmentUploads.attachmentUploadId, [...imageUploadIds]),
-      filter,
-    ),
-  );
+  const rows = await findImageUploads(userId, imageUploadIds, filter);
   if (rows.length === 0) return [];
 
   const urlByImageUploadId = await resolveImageUploadUrls(userId, rows);
@@ -239,8 +238,7 @@ export async function resolveMessageImages(
     )
     .where(
       and(
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "image"),
+        userOwnsAttachmentUploads({ userId, kind: "image" }),
         inArray(ChatMessageAttachments.messageId, [...messageIds]),
       ),
     )
@@ -278,13 +276,7 @@ async function findAttachedImageUploadIdsWhere(
         ChatMessageAttachments.attachmentUploadId,
       ),
     )
-    .where(
-      and(
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "image"),
-        filter,
-      ),
-    );
+    .where(and(userOwnsAttachmentUploads({ userId, kind: "image" }), filter));
 
   return rows.map((row) => row.imageUploadId);
 }
