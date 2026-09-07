@@ -11,8 +11,8 @@ import {
   sql,
 } from "drizzle-orm";
 import {
-  AttachmentUploads,
-  ChatMessageAttachments,
+  Attachments,
+  ChatMessageAttachmentLinks,
   ChatMessages,
   Conversations,
   TranscriptContents,
@@ -20,8 +20,8 @@ import {
   type Executor,
 } from "../db";
 import {
-  deleteOrphanedImageUploads,
-  resolveImageUploadUrls,
+  deleteOrphanedImageAttachments,
+  resolveImageAttachmentUrls,
 } from "./images.data";
 import { completeConversationTurn } from "./conversations.data";
 import { attachUploadsToMessage } from "./messageAttachments.data";
@@ -128,7 +128,7 @@ type CreateMessageHistoryRow = {
   role: MessageRow["role"] | null;
   content: string | null;
   createdAt: Date | null;
-  attachmentUploadId: string | null;
+  attachmentId: string | null;
   attachmentKind: "image" | "audio" | null;
   signedUrl: string | null;
   signedUrlExpiresAt: Date | null;
@@ -179,10 +179,10 @@ export async function findCreateMessageHistory(input: {
         )::integer as context_char_count,
         count(${TranscriptContents.audioUploadId})::integer as transcript_count
       from ${TranscriptContents}
-      inner join ${AttachmentUploads}
-        on ${AttachmentUploads.attachmentUploadId} = ${TranscriptContents.audioUploadId}
-        and ${AttachmentUploads.userId} = ${input.userId}
-        and ${AttachmentUploads.kind} = 'audio'
+      inner join ${Attachments}
+        on ${Attachments.attachmentId} = ${TranscriptContents.audioUploadId}
+        and ${Attachments.userId} = ${input.userId}
+        and ${Attachments.kind} = 'audio'
       where ${currentTranscriptFilter}
     ),
     recent_messages as (
@@ -220,27 +220,27 @@ export async function findCreateMessageHistory(input: {
       recent_messages.role as role,
       recent_messages.content as content,
       recent_messages.created_at as "createdAt",
-      ${ChatMessageAttachments.attachmentUploadId} as "attachmentUploadId",
-      ${AttachmentUploads.kind} as "attachmentKind",
-      ${AttachmentUploads.signedUrl} as "signedUrl",
-      ${AttachmentUploads.signedUrlExpiresAt} as "signedUrlExpiresAt",
+      ${ChatMessageAttachmentLinks.attachmentId} as "attachmentId",
+      ${Attachments.kind} as "attachmentKind",
+      ${Attachments.signedUrl} as "signedUrl",
+      ${Attachments.signedUrlExpiresAt} as "signedUrlExpiresAt",
       ${TranscriptContents.content} as "transcriptContent",
       ${TranscriptContents.charCount} as "transcriptCharCount"
     from current_turn
     left join recent_messages on true
-    left join ${ChatMessageAttachments}
-      on ${ChatMessageAttachments.messageId} = recent_messages.message_id
-    left join ${AttachmentUploads}
-      on ${AttachmentUploads.attachmentUploadId} = ${ChatMessageAttachments.attachmentUploadId}
-      and ${AttachmentUploads.userId} = ${input.userId}
+    left join ${ChatMessageAttachmentLinks}
+      on ${ChatMessageAttachmentLinks.messageId} = recent_messages.message_id
+    left join ${Attachments}
+      on ${Attachments.attachmentId} = ${ChatMessageAttachmentLinks.attachmentId}
+      and ${Attachments.userId} = ${input.userId}
     left join ${TranscriptContents}
-      on ${TranscriptContents.audioUploadId} = ${AttachmentUploads.attachmentUploadId}
-      and ${AttachmentUploads.kind} = 'audio'
+      on ${TranscriptContents.audioUploadId} = ${Attachments.attachmentId}
+      and ${Attachments.kind} = 'audio'
     order by
       recent_messages.created_at desc,
       recent_messages.role desc,
       recent_messages.message_id desc,
-      ${ChatMessageAttachments.position} asc
+      ${ChatMessageAttachmentLinks.position} asc
   `);
 
   const currentTurn = rows[0];
@@ -288,9 +288,9 @@ export async function findCreateMessageHistory(input: {
         input.transcriptSeparatorCharCount;
     }
 
-    if (row.attachmentKind === "image" && row.attachmentUploadId !== null) {
+    if (row.attachmentKind === "image" && row.attachmentId !== null) {
       message.images.push({
-        imageUploadId: row.attachmentUploadId,
+        imageUploadId: row.attachmentId,
         signedUrl: row.signedUrl,
         signedUrlExpiresAt: row.signedUrlExpiresAt,
       });
@@ -316,7 +316,7 @@ export async function findCreateMessageHistory(input: {
     }
   }
 
-  const urlByImageUploadId = await resolveImageUploadUrls(input.userId, [
+  const urlByImageUploadId = await resolveImageAttachmentUrls(input.userId, [
     ...imageRowsByUploadId.values(),
   ]);
 
@@ -339,29 +339,26 @@ async function hydrateContextMessages(
   const [imageRows, transcriptionsByMessageId] = await Promise.all([
     db
       .select({
-        messageId: ChatMessageAttachments.messageId,
-        imageUploadId: AttachmentUploads.attachmentUploadId,
-        imageSignedUrl: AttachmentUploads.signedUrl,
-        imageSignedUrlExpiresAt: AttachmentUploads.signedUrlExpiresAt,
+        messageId: ChatMessageAttachmentLinks.messageId,
+        imageUploadId: Attachments.attachmentId,
+        imageSignedUrl: Attachments.signedUrl,
+        imageSignedUrlExpiresAt: Attachments.signedUrlExpiresAt,
       })
-      .from(ChatMessageAttachments)
+      .from(ChatMessageAttachmentLinks)
       .innerJoin(
-        AttachmentUploads,
-        eq(
-          AttachmentUploads.attachmentUploadId,
-          ChatMessageAttachments.attachmentUploadId,
-        ),
+        Attachments,
+        eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
       )
       .where(
         and(
-          eq(AttachmentUploads.userId, userId),
-          eq(AttachmentUploads.kind, "image"),
-          inArray(ChatMessageAttachments.messageId, messageIds),
+          eq(Attachments.userId, userId),
+          eq(Attachments.kind, "image"),
+          inArray(ChatMessageAttachmentLinks.messageId, messageIds),
         ),
       )
       .orderBy(
-        asc(ChatMessageAttachments.messageId),
-        asc(ChatMessageAttachments.position),
+        asc(ChatMessageAttachmentLinks.messageId),
+        asc(ChatMessageAttachmentLinks.position),
       ),
     findMessageTranscriptAttachments(userId, messageIds),
   ]);
@@ -555,23 +552,20 @@ export async function deleteOwnedMessage(
       or(eq(ChatMessages.id, targetMessage.id), messageIsAfter(targetMessage)),
     );
     const imageRows = await tx
-      .select({ imageUploadId: AttachmentUploads.attachmentUploadId })
-      .from(ChatMessageAttachments)
+      .select({ imageUploadId: Attachments.attachmentId })
+      .from(ChatMessageAttachmentLinks)
       .innerJoin(
-        AttachmentUploads,
-        eq(
-          AttachmentUploads.attachmentUploadId,
-          ChatMessageAttachments.attachmentUploadId,
-        ),
+        Attachments,
+        eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
       )
       .innerJoin(
         ChatMessages,
-        eq(ChatMessageAttachments.messageId, ChatMessages.id),
+        eq(ChatMessageAttachmentLinks.messageId, ChatMessages.id),
       )
       .where(
         and(
-          eq(AttachmentUploads.userId, userId),
-          eq(AttachmentUploads.kind, "image"),
+          eq(Attachments.userId, userId),
+          eq(Attachments.kind, "image"),
           deleteFilter,
         ),
       );
@@ -581,7 +575,7 @@ export async function deleteOwnedMessage(
       .where(deleteFilter)
       .returning({ id: ChatMessages.id });
 
-    const deletedImageUploadIds = await deleteOrphanedImageUploads(
+    const deletedImageUploadIds = await deleteOrphanedImageAttachments(
       userId,
       imageRows.map((image) => image.imageUploadId),
       tx,
@@ -612,7 +606,7 @@ export async function patchOwnedUserMessage(input: {
   conversationId: string;
   messageId: string;
   content: string;
-  attachmentUploadIds: readonly string[];
+  attachmentIds: readonly string[];
   claimToken: string;
 }) {
   return db.transaction(async (tx) => {
@@ -650,51 +644,46 @@ export async function patchOwnedUserMessage(input: {
     if (!target) return { status: "not_found" } as const;
     if (target.role !== "user") return { status: "not_user" } as const;
 
-    if (input.attachmentUploadIds.length > 0) {
+    if (input.attachmentIds.length > 0) {
       const ownedUploads = await tx
         .select({
-          attachmentUploadId: AttachmentUploads.attachmentUploadId,
+          attachmentId: Attachments.attachmentId,
         })
-        .from(AttachmentUploads)
+        .from(Attachments)
         .where(
           and(
-            eq(AttachmentUploads.userId, input.userId),
-            inArray(AttachmentUploads.attachmentUploadId, [
-              ...input.attachmentUploadIds,
-            ]),
+            eq(Attachments.userId, input.userId),
+            inArray(Attachments.attachmentId, [...input.attachmentIds]),
           ),
         )
         .for("update");
-      if (ownedUploads.length !== input.attachmentUploadIds.length)
+      if (ownedUploads.length !== input.attachmentIds.length)
         return { status: "attachments_changed" } as const;
     }
 
     const removedImageRows = await tx
-      .select({ imageUploadId: AttachmentUploads.attachmentUploadId })
-      .from(ChatMessageAttachments)
+      .select({ imageUploadId: Attachments.attachmentId })
+      .from(ChatMessageAttachmentLinks)
       .innerJoin(
-        AttachmentUploads,
-        eq(
-          AttachmentUploads.attachmentUploadId,
-          ChatMessageAttachments.attachmentUploadId,
-        ),
+        Attachments,
+        eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
       )
       .innerJoin(
         ChatMessages,
-        eq(ChatMessageAttachments.messageId, ChatMessages.id),
+        eq(ChatMessageAttachmentLinks.messageId, ChatMessages.id),
       )
       .where(
         and(
-          eq(AttachmentUploads.userId, input.userId),
-          eq(AttachmentUploads.kind, "image"),
+          eq(Attachments.userId, input.userId),
+          eq(Attachments.kind, "image"),
           eq(ChatMessages.conversationId, input.conversationId),
           or(
             messageIsAfter(target),
             and(
               eq(ChatMessages.id, target.id),
-              input.attachmentUploadIds.length > 0
-                ? notInArray(ChatMessageAttachments.attachmentUploadId, [
-                    ...input.attachmentUploadIds,
+              input.attachmentIds.length > 0
+                ? notInArray(ChatMessageAttachmentLinks.attachmentId, [
+                    ...input.attachmentIds,
                   ])
                 : undefined,
             ),
@@ -713,11 +702,11 @@ export async function patchOwnedUserMessage(input: {
       );
 
     await tx
-      .delete(ChatMessageAttachments)
-      .where(eq(ChatMessageAttachments.messageId, target.id));
-    await attachUploadsToMessage(target.id, input.attachmentUploadIds, tx);
+      .delete(ChatMessageAttachmentLinks)
+      .where(eq(ChatMessageAttachmentLinks.messageId, target.id));
+    await attachUploadsToMessage(target.id, input.attachmentIds, tx);
 
-    const deletedImageUploadIds = await deleteOrphanedImageUploads(
+    const deletedImageUploadIds = await deleteOrphanedImageAttachments(
       input.userId,
       removedImageRows.map((image) => image.imageUploadId),
       tx,
@@ -750,7 +739,7 @@ export async function persistChatTurn(turn: {
   userId: string;
   conversationId: string;
   content: string;
-  attachmentUploadIds: readonly string[];
+  attachmentIds: readonly string[];
   chosenModelId: string;
   assistantContent: string;
   conversationTitle?: string;
@@ -778,7 +767,7 @@ export async function persistChatTurn(turn: {
         },
         tx,
       ),
-      attachUploadsToMessage(userMessage.id, turn.attachmentUploadIds, tx),
+      attachUploadsToMessage(userMessage.id, turn.attachmentIds, tx),
     ]);
     const completed = await completeConversationTurn(
       turn.userId,

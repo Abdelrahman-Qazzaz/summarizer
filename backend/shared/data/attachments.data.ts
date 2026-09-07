@@ -1,17 +1,17 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   AttachmentTurnReservations,
-  AttachmentUploads,
+  Attachments,
   Conversations,
   db,
   type Executor,
 } from "../db";
 import { CLAIM_LEASE_MS } from "./conversations.data";
-import { attachmentUploadIsUnattached } from "./messageAttachments.data";
+import { attachmentIsUnattached } from "./messageAttachments.data";
 
-type AttachmentUploadValues = Pick<
-  typeof AttachmentUploads.$inferInsert,
-  | "attachmentUploadId"
+type AttachmentValues = Pick<
+  typeof Attachments.$inferInsert,
+  | "attachmentId"
   | "kind"
   | "userId"
   | "fileName"
@@ -23,31 +23,29 @@ type AttachmentUploadValues = Pick<
 
 type OwnedUnattachedAttachment = {
   userId: string;
-  attachmentUploadId: string;
-  kind: AttachmentUploadValues["kind"];
+  attachmentId: string;
+  kind: AttachmentValues["kind"];
 };
 
 type OwnedUnattachedAttachments = {
   userId: string;
-  attachmentUploadIds: readonly string[];
-  kind: AttachmentUploadValues["kind"];
+  attachmentIds: readonly string[];
+  kind: AttachmentValues["kind"];
 };
 
-type OwnedAttachmentUploads = {
+type OwnedAttachments = {
   userId: string;
-  attachmentUploadIds?: readonly string[];
-  kind: AttachmentUploadValues["kind"];
+  attachmentIds?: readonly string[];
+  kind: AttachmentValues["kind"];
 };
 
-export function userOwnsAttachmentUploads(input: OwnedAttachmentUploads) {
+export function userOwnsAttachments(input: OwnedAttachments) {
   return and(
-    eq(AttachmentUploads.userId, input.userId),
-    eq(AttachmentUploads.kind, input.kind),
-    input.attachmentUploadIds === undefined
+    eq(Attachments.userId, input.userId),
+    eq(Attachments.kind, input.kind),
+    input.attachmentIds === undefined
       ? undefined
-      : inArray(AttachmentUploads.attachmentUploadId, [
-          ...input.attachmentUploadIds,
-        ]),
+      : inArray(Attachments.attachmentId, [...input.attachmentIds]),
   );
 }
 
@@ -57,11 +55,11 @@ function ownedUnattachedAttachments(
 ) {
   // A slow provider may outlive the lease while its conversation claim still owns the turn.
   return and(
-    userOwnsAttachmentUploads(input),
-    attachmentUploadIsUnattached(executor),
+    userOwnsAttachments(input),
+    attachmentIsUnattached(executor),
     sql`not exists (
       select 1 from ${AttachmentTurnReservations}
-      where ${AttachmentTurnReservations.attachmentUploadId} = ${AttachmentUploads.attachmentUploadId}
+      where ${AttachmentTurnReservations.attachmentId} = ${Attachments.attachmentId}
         and (${AttachmentTurnReservations.expiresAt} > now() or exists (
           select 1 from ${Conversations}
           where ${Conversations.activeTurnClaimToken} = ${AttachmentTurnReservations.claimToken}
@@ -70,43 +68,43 @@ function ownedUnattachedAttachments(
   );
 }
 
-async function lockOwnedAttachmentUploads(
+async function lockOwnedAttachments(
   userId: string,
-  attachmentUploadIds: readonly string[],
+  attachmentIds: readonly string[],
   executor: Executor,
 ) {
   return executor
-    .select({ attachmentUploadId: AttachmentUploads.attachmentUploadId })
-    .from(AttachmentUploads)
+    .select({ attachmentId: Attachments.attachmentId })
+    .from(Attachments)
     .where(
       and(
-        eq(AttachmentUploads.userId, userId),
-        inArray(AttachmentUploads.attachmentUploadId, [...attachmentUploadIds]),
+        eq(Attachments.userId, userId),
+        inArray(Attachments.attachmentId, [...attachmentIds]),
       ),
     )
-    .orderBy(asc(AttachmentUploads.attachmentUploadId))
+    .orderBy(asc(Attachments.attachmentId))
     .for("update");
 }
 
-export async function reserveAttachmentUploads(
+export async function reserveAttachments(
   userId: string,
-  attachmentUploadIds: readonly string[],
+  attachmentIds: readonly string[],
   claimToken: string,
 ) {
-  const uniqueUploadIds = [...new Set(attachmentUploadIds)];
-  if (uniqueUploadIds.length === 0) return true;
+  const uniqueAttachmentIds = [...new Set(attachmentIds)];
+  if (uniqueAttachmentIds.length === 0) return true;
 
   return db.transaction(async (transaction) => {
-    const uploads = await lockOwnedAttachmentUploads(
+    const attachments = await lockOwnedAttachments(
       userId,
-      uniqueUploadIds,
+      uniqueAttachmentIds,
       transaction,
     );
-    if (uploads.length !== uniqueUploadIds.length) return false;
+    if (attachments.length !== uniqueAttachmentIds.length) return false;
 
     await transaction.insert(AttachmentTurnReservations).values(
-      uniqueUploadIds.map((attachmentUploadId) => ({
-        attachmentUploadId,
+      uniqueAttachmentIds.map((attachmentId) => ({
+        attachmentId,
         claimToken,
         expiresAt: new Date(Date.now() + CLAIM_LEASE_MS),
       })),
@@ -124,54 +122,51 @@ export async function releaseAttachmentReservations(
     .where(eq(AttachmentTurnReservations.claimToken, claimToken));
 }
 
-export async function createAttachmentUpload(
-  values: AttachmentUploadValues,
+export async function createAttachment(
+  values: AttachmentValues,
   executor: Executor = db,
 ) {
-  await executor.insert(AttachmentUploads).values(values);
+  await executor.insert(Attachments).values(values);
 }
 
-export async function deleteOwnedUnattachedAttachmentUpload(
+export async function deleteOwnedUnattachedAttachment(
   input: OwnedUnattachedAttachment,
   executor: Executor = db,
 ) {
-  const [deletedAttachmentUploadId] =
-    await deleteOwnedUnattachedAttachmentUploads(
-      {
-        userId: input.userId,
-        attachmentUploadIds: [input.attachmentUploadId],
-        kind: input.kind,
-      },
-      executor,
-    );
+  const [deletedAttachmentId] = await deleteOwnedUnattachedAttachments(
+    {
+      userId: input.userId,
+      attachmentIds: [input.attachmentId],
+      kind: input.kind,
+    },
+    executor,
+  );
 
-  return deletedAttachmentUploadId ?? null;
+  return deletedAttachmentId ?? null;
 }
 
-export async function deleteOwnedUnattachedAttachmentUploads(
+export async function deleteOwnedUnattachedAttachments(
   input: OwnedUnattachedAttachments,
   executor: Executor = db,
 ): Promise<string[]> {
-  const attachmentUploadIds = [...new Set(input.attachmentUploadIds)];
-  if (attachmentUploadIds.length === 0) return [];
+  const attachmentIds = [...new Set(input.attachmentIds)];
+  if (attachmentIds.length === 0) return [];
 
   if (executor === db) {
     return db.transaction((transaction) =>
-      deleteOwnedUnattachedAttachmentUploads(input, transaction),
+      deleteOwnedUnattachedAttachments(input, transaction),
     );
   }
 
   // Recheck references in a fresh statement after any competing reservation commits.
-  await lockOwnedAttachmentUploads(input.userId, attachmentUploadIds, executor);
+  await lockOwnedAttachments(input.userId, attachmentIds, executor);
 
-  const deletedUploads = await executor
-    .delete(AttachmentUploads)
-    .where(
-      ownedUnattachedAttachments({ ...input, attachmentUploadIds }, executor),
-    )
+  const deletedAttachments = await executor
+    .delete(Attachments)
+    .where(ownedUnattachedAttachments({ ...input, attachmentIds }, executor))
     .returning({
-      attachmentUploadId: AttachmentUploads.attachmentUploadId,
+      attachmentId: Attachments.attachmentId,
     });
 
-  return deletedUploads.map((upload) => upload.attachmentUploadId);
+  return deletedAttachments.map((attachment) => attachment.attachmentId);
 }

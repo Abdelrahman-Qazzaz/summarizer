@@ -1,36 +1,33 @@
 import { eq, notExists } from "drizzle-orm";
 import {
-  AttachmentUploads,
-  ChatMessageAttachments,
+  Attachments,
+  ChatMessageAttachmentLinks,
   db,
   type Executor,
 } from "../db";
 
-export function attachmentUploadIsUnattached(executor: Executor) {
+export function attachmentIsUnattached(executor: Executor) {
   return notExists(
     executor
-      .select({ messageId: ChatMessageAttachments.messageId })
-      .from(ChatMessageAttachments)
+      .select({ messageId: ChatMessageAttachmentLinks.messageId })
+      .from(ChatMessageAttachmentLinks)
       .where(
-        eq(
-          ChatMessageAttachments.attachmentUploadId,
-          AttachmentUploads.attachmentUploadId,
-        ),
+        eq(ChatMessageAttachmentLinks.attachmentId, Attachments.attachmentId),
       ),
   );
 }
 
 export async function attachUploadsToMessage(
   messageId: string,
-  attachmentUploadIds: readonly string[],
+  attachmentIds: readonly string[],
   executor: Executor = db,
 ) {
-  if (attachmentUploadIds.length === 0) return;
+  if (attachmentIds.length === 0) return;
 
-  await executor.insert(ChatMessageAttachments).values(
-    attachmentUploadIds.map((attachmentUploadId, position) => ({
+  await executor.insert(ChatMessageAttachmentLinks).values(
+    attachmentIds.map((attachmentId, position) => ({
       messageId,
-      attachmentUploadId,
+      attachmentId,
       position,
     })),
   );

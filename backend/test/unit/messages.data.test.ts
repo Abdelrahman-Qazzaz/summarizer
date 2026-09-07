@@ -183,7 +183,7 @@ describe("patchOwnedUserMessage", () => {
     conversationId: "conversation-1",
     messageId: "message-2",
     content: "Edited question",
-    attachmentUploadIds: ["image-kept", "image-new", "audio-2", "audio-1"],
+    attachmentIds: ["image-kept", "image-new", "audio-2", "audio-1"],
     claimToken: "claim-token",
   };
 

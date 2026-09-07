@@ -27,7 +27,7 @@ const messageAttachmentSchema = z.discriminatedUnion("type", [
 
 export type MessageAttachmentInput = z.infer<typeof messageAttachmentSchema>;
 
-function attachmentUploadId(attachment: MessageAttachmentInput) {
+function attachmentId(attachment: MessageAttachmentInput) {
   return attachment.type === "image"
     ? attachment.imageUploadId
     : attachment.audioUploadId;
@@ -54,7 +54,7 @@ export const messageCreateBodySchema = z
       .transform((attachments) => {
         const seenUploadIds = new Set<string>();
         return attachments.filter((attachment) => {
-          const uploadId = attachmentUploadId(attachment);
+          const uploadId = attachmentId(attachment);
           if (seenUploadIds.has(uploadId)) return false;
           seenUploadIds.add(uploadId);
           return true;

@@ -1,8 +1,8 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
-  AttachmentUploads,
+  Attachments,
   AudioTranscriptionJobs,
-  ChatMessageAttachments,
+  ChatMessageAttachmentLinks,
   TranscriptContents,
   db,
   type Executor,
@@ -10,7 +10,7 @@ import {
 
 import { completeAudioJob } from "./jobs.data";
 import type { UploadId } from "../types";
-import { userOwnsAttachmentUploads } from "./attachments.data";
+import { userOwnsAttachments } from "./attachments.data";
 
 /**
  * The transcript text a completed job produced. Lives here, not in the job row
@@ -64,15 +64,12 @@ export async function findTranscripts(
     })
     .from(TranscriptContents)
     .innerJoin(
-      AttachmentUploads,
-      eq(
-        AttachmentUploads.attachmentUploadId,
-        TranscriptContents.audioUploadId,
-      ),
+      Attachments,
+      eq(Attachments.attachmentId, TranscriptContents.audioUploadId),
     )
     .where(
       and(
-        userOwnsAttachmentUploads({ userId, kind: "audio" }),
+        userOwnsAttachments({ userId, kind: "audio" }),
         inArray(TranscriptContents.audioUploadId, [...audioUploadIds]),
       ),
     );
@@ -100,28 +97,25 @@ export async function findMessageTranscriptAttachments(
 
   const rows = await db
     .select({
-      messageId: ChatMessageAttachments.messageId,
+      messageId: ChatMessageAttachmentLinks.messageId,
       audioUploadId: AudioTranscriptionJobs.audioUploadId,
-      fileName: AttachmentUploads.fileName,
+      fileName: Attachments.fileName,
       source: AudioTranscriptionJobs.source,
       charCount: TranscriptContents.charCount,
     })
-    .from(ChatMessageAttachments)
+    .from(ChatMessageAttachmentLinks)
     .innerJoin(
-      AttachmentUploads,
+      Attachments,
       and(
-        eq(
-          AttachmentUploads.attachmentUploadId,
-          ChatMessageAttachments.attachmentUploadId,
-        ),
-        userOwnsAttachmentUploads({ userId, kind: "audio" }),
+        eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
+        userOwnsAttachments({ userId, kind: "audio" }),
       ),
     )
     .innerJoin(
       AudioTranscriptionJobs,
       eq(
         AudioTranscriptionJobs.audioUploadId,
-        ChatMessageAttachments.attachmentUploadId,
+        ChatMessageAttachmentLinks.attachmentId,
       ),
     )
     .leftJoin(
@@ -133,10 +127,10 @@ export async function findMessageTranscriptAttachments(
         ),
       ),
     )
-    .where(inArray(ChatMessageAttachments.messageId, [...messageIds]))
+    .where(inArray(ChatMessageAttachmentLinks.messageId, [...messageIds]))
     .orderBy(
-      asc(ChatMessageAttachments.messageId),
-      asc(ChatMessageAttachments.position),
+      asc(ChatMessageAttachmentLinks.messageId),
+      asc(ChatMessageAttachmentLinks.position),
     );
 
   for (const { messageId, ...transcription } of rows) {

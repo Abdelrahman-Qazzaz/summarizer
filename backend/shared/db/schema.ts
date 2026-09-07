@@ -39,10 +39,10 @@ export const users = pgTable("users", {
 });
 
 /** Durable user uploads that can be attached to one or more chat messages. */
-export const AttachmentUploads = pgTable(
+export const Attachments = pgTable(
   "attachment_uploads",
   {
-    attachmentUploadId: text("attachment_upload_id").notNull().primaryKey(),
+    attachmentId: text("attachment_upload_id").notNull().primaryKey(),
     kind: attachmentKindEnum("kind").notNull(),
     fileName: text("file_name").notNull(),
     mimeType: text("mime_type"),
@@ -63,7 +63,7 @@ export const AttachmentUploads = pgTable(
       table.userId,
       table.kind,
       table.createdAt,
-      table.attachmentUploadId,
+      table.attachmentId,
     ),
   ],
 );
@@ -73,7 +73,7 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   audioUploadId: text("audio_upload_id")
     .notNull()
     .primaryKey()
-    .references(() => AttachmentUploads.attachmentUploadId, {
+    .references(() => Attachments.attachmentId, {
       onDelete: "cascade",
     }),
   // Reserved for the temporary caption object of a caption-enabled YouTube job.
@@ -182,28 +182,28 @@ export const ChatMessages = pgTable(
   ],
 );
 
-export const ChatMessageAttachments = pgTable(
+export const ChatMessageAttachmentLinks = pgTable(
   "chat_message_attachments",
   {
     messageId: uuid("message_id")
       .notNull()
       .references(() => ChatMessages.id, { onDelete: "cascade" }),
-    attachmentUploadId: text("attachment_upload_id")
+    attachmentId: text("attachment_upload_id")
       .notNull()
-      .references(() => AttachmentUploads.attachmentUploadId, {
+      .references(() => Attachments.attachmentId, {
         onDelete: "restrict",
       }),
     position: integer("position").notNull(),
   },
   (table) => [
     primaryKey({
-      columns: [table.messageId, table.attachmentUploadId],
+      columns: [table.messageId, table.attachmentId],
     }),
     uniqueIndex("chat_message_attachments_message_position_idx").on(
       table.messageId,
       table.position,
     ),
-    index("chat_message_attachments_upload_idx").on(table.attachmentUploadId),
+    index("chat_message_attachments_upload_idx").on(table.attachmentId),
   ],
 );
 
@@ -211,9 +211,9 @@ export const ChatMessageAttachments = pgTable(
 export const AttachmentTurnReservations = pgTable(
   "attachment_turn_reservations",
   {
-    attachmentUploadId: text("attachment_upload_id")
+    attachmentId: text("attachment_upload_id")
       .notNull()
-      .references(() => AttachmentUploads.attachmentUploadId, {
+      .references(() => Attachments.attachmentId, {
         onDelete: "cascade",
       }),
     claimToken: uuid("claim_token").notNull(),
@@ -221,7 +221,7 @@ export const AttachmentTurnReservations = pgTable(
   },
   (table) => [
     primaryKey({
-      columns: [table.attachmentUploadId, table.claimToken],
+      columns: [table.attachmentId, table.claimToken],
     }),
     index("attachment_turn_reservations_claim_idx").on(table.claimToken),
   ],

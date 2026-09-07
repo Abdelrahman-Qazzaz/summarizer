@@ -2,8 +2,8 @@ import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
 import { deleteFilesFromBucket } from "../../../shared/bucket";
 import {
-  deleteOrphanedImageUploads,
-  findConversationImageUploadIds,
+  deleteOrphanedImageAttachments,
+  findConversationImageAttachmentIds,
 } from "../../../shared/data/images.data";
 import {
   createConversation,
@@ -72,7 +72,7 @@ export async function handleDeleteConversation(c: Context) {
 
   // Keep the candidates before their message links cascade away. Uploads still
   // referenced by another conversation are filtered out after the delete.
-  const imageUploadIds = await findConversationImageUploadIds(
+  const imageUploadIds = await findConversationImageAttachmentIds(
     userId,
     conversationId,
   );
@@ -89,7 +89,7 @@ export async function handleDeleteConversation(c: Context) {
     return c.json({ message: "A response is already in progress" }, 409);
   }
 
-  const orphanedImageUploadIds = await deleteOrphanedImageUploads(
+  const orphanedImageUploadIds = await deleteOrphanedImageAttachments(
     userId,
     imageUploadIds,
   );

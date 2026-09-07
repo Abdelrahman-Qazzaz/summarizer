@@ -57,7 +57,7 @@ vi.mock("../../shared/bucket", () => ({
 
 import { desc } from "drizzle-orm";
 // Resolves to the mocked module above, so these are the stub column names.
-import { ChatMessageAttachments, Conversations } from "../../shared/db";
+import { ChatMessageAttachmentLinks, Conversations } from "../../shared/db";
 import { createApp } from "../../api/app";
 import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 
@@ -73,7 +73,7 @@ beforeEach(() => {
   // Deleting a conversation reads its messages' image_uploads first, and that
   // read is awaited at `.where()` rather than chaining on to `.limit()`.
   mockFrom.mockImplementation((table: unknown) =>
-    table === ChatMessageAttachments
+    table === ChatMessageAttachmentLinks
       ? { where: mockImageWhere }
       : { where: mockWhere },
   );

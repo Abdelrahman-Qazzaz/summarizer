@@ -37,15 +37,13 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 import {
-  createAttachmentUpload,
-  deleteOwnedUnattachedAttachmentUpload,
-  deleteOwnedUnattachedAttachmentUploads,
+  createAttachment,
+  deleteOwnedUnattachedAttachment,
+  deleteOwnedUnattachedAttachments,
 } from "../../shared/data/attachments.data";
-import { AttachmentUploads, ChatMessageAttachments } from "../../shared/db";
+import { Attachments, ChatMessageAttachmentLinks } from "../../shared/db";
 
-type AttachmentExecutor = NonNullable<
-  Parameters<typeof createAttachmentUpload>[1]
->;
+type AttachmentExecutor = NonNullable<Parameters<typeof createAttachment>[1]>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -57,7 +55,7 @@ beforeEach(() => {
   mockValues.mockResolvedValue(undefined);
   mockSelect.mockReturnValue({ from: mockFrom });
   mockFrom.mockImplementation((table) =>
-    table === AttachmentUploads
+    table === Attachments
       ? { where: mockSelectWhere }
       : { where: mockSubqueryWhere },
   );
@@ -72,7 +70,7 @@ beforeEach(() => {
 describe("attachment uploads", () => {
   it("creates an attachment upload", async () => {
     const upload = {
-      attachmentUploadId: "550e8400-e29b-41d4-a716-446655440000",
+      attachmentId: "550e8400-e29b-41d4-a716-446655440000",
       kind: "image" as const,
       userId: "user-1",
       fileName: "diagram.png",
@@ -82,9 +80,9 @@ describe("attachment uploads", () => {
       signedUrlExpiresAt: new Date("2026-09-06T00:00:00.000Z"),
     };
 
-    await createAttachmentUpload(upload);
+    await createAttachment(upload);
 
-    expect(mockInsert).toHaveBeenCalledWith(AttachmentUploads);
+    expect(mockInsert).toHaveBeenCalledWith(Attachments);
     expect(mockValues).toHaveBeenCalledWith(upload);
   });
 
@@ -97,7 +95,7 @@ describe("attachment uploads", () => {
       insert: transactionInsert,
     } as unknown as AttachmentExecutor;
     const upload = {
-      attachmentUploadId: "650e8400-e29b-41d4-a716-446655440111",
+      attachmentId: "650e8400-e29b-41d4-a716-446655440111",
       kind: "audio" as const,
       userId: "user-1",
       fileName: "interview.mp3",
@@ -105,22 +103,20 @@ describe("attachment uploads", () => {
       sizeBytes: 256,
     };
 
-    await createAttachmentUpload(upload, transactionExecutor);
+    await createAttachment(upload, transactionExecutor);
 
-    expect(transactionInsert).toHaveBeenCalledWith(AttachmentUploads);
+    expect(transactionInsert).toHaveBeenCalledWith(Attachments);
     expect(transactionValues).toHaveBeenCalledWith(upload);
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it("returns the upload deleted by the guarded delete", async () => {
-    mockReturning.mockResolvedValueOnce([
-      { attachmentUploadId: "image-upload-1" },
-    ]);
+    mockReturning.mockResolvedValueOnce([{ attachmentId: "image-upload-1" }]);
 
     await expect(
-      deleteOwnedUnattachedAttachmentUpload({
+      deleteOwnedUnattachedAttachment({
         userId: "user-1",
-        attachmentUploadId: "image-upload-1",
+        attachmentId: "image-upload-1",
         kind: "image",
       }),
     ).resolves.toBe("image-upload-1");
@@ -138,7 +134,7 @@ describe("attachment uploads", () => {
     });
     const transactionReturning = vi
       .fn()
-      .mockResolvedValue([{ attachmentUploadId: "image-upload-1" }]);
+      .mockResolvedValue([{ attachmentId: "image-upload-1" }]);
     const transactionDeleteWhere = vi.fn().mockReturnValue({
       returning: transactionReturning,
     });
@@ -151,18 +147,18 @@ describe("attachment uploads", () => {
     } as unknown as AttachmentExecutor;
 
     await expect(
-      deleteOwnedUnattachedAttachmentUploads(
+      deleteOwnedUnattachedAttachments(
         {
           userId: "user-1",
-          attachmentUploadIds: ["image-upload-1"],
+          attachmentIds: ["image-upload-1"],
           kind: "image",
         },
         transactionExecutor,
       ),
     ).resolves.toEqual(["image-upload-1"]);
 
-    expect(transactionDelete).toHaveBeenCalledWith(AttachmentUploads);
-    expect(transactionFrom).toHaveBeenCalledWith(ChatMessageAttachments);
+    expect(transactionDelete).toHaveBeenCalledWith(Attachments);
+    expect(transactionFrom).toHaveBeenCalledWith(ChatMessageAttachmentLinks);
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockSelect).not.toHaveBeenCalled();
   });

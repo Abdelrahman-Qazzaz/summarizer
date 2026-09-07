@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const { mockExecute, mockResolveImageUploadUrls } = vi.hoisted(() => ({
+const { mockExecute, mockResolveImageAttachmentUrls } = vi.hoisted(() => ({
   mockExecute: vi.fn(),
-  mockResolveImageUploadUrls: vi.fn(),
+  mockResolveImageAttachmentUrls: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -12,8 +12,8 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 vi.mock("../../shared/data/images.data", () => ({
-  deleteOrphanedImageUploads: vi.fn(),
-  resolveImageUploadUrls: mockResolveImageUploadUrls,
+  deleteOrphanedImageAttachments: vi.fn(),
+  resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
 }));
 
 import { findCreateMessageHistory } from "../../shared/data/messages.data";
@@ -28,7 +28,7 @@ function historyRow(
     role: "user" | "assistant" | null;
     content: string | null;
     createdAt: Date | null;
-    attachmentUploadId: string | null;
+    attachmentId: string | null;
     attachmentKind: "image" | "audio" | null;
     signedUrl: string | null;
     signedUrlExpiresAt: Date | null;
@@ -43,7 +43,7 @@ function historyRow(
     role: "user" as const,
     content: "Question",
     createdAt,
-    attachmentUploadId: null,
+    attachmentId: null,
     attachmentKind: null,
     signedUrl: null,
     signedUrlExpiresAt: null,
@@ -55,7 +55,7 @@ function historyRow(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockResolveImageUploadUrls.mockResolvedValue(new Map());
+  mockResolveImageAttachmentUrls.mockResolvedValue(new Map());
 });
 
 describe("findCreateMessageHistory", () => {
@@ -67,13 +67,13 @@ describe("findCreateMessageHistory", () => {
         content: "Answer",
       }),
       historyRow({
-        attachmentUploadId: "audio-1",
+        attachmentId: "audio-1",
         attachmentKind: "audio",
         transcriptContent: "Transcript",
         transcriptCharCount: 10,
       }),
       historyRow({
-        attachmentUploadId: "image-1",
+        attachmentId: "image-1",
         attachmentKind: "image",
         signedUrl: "old-url",
         signedUrlExpiresAt: createdAt,
@@ -81,11 +81,11 @@ describe("findCreateMessageHistory", () => {
       historyRow({
         messageId: "message-0",
         content: "Older",
-        attachmentUploadId: "image-2",
+        attachmentId: "image-2",
         attachmentKind: "image",
       }),
     ]);
-    mockResolveImageUploadUrls.mockResolvedValueOnce(
+    mockResolveImageAttachmentUrls.mockResolvedValueOnce(
       new Map([["image-1", "signed-url"]]),
     );
 
@@ -127,7 +127,7 @@ describe("findCreateMessageHistory", () => {
     expect(compiledQuery.sql).toContain("current_turn as");
     expect(compiledQuery.sql).toContain("recent_messages as");
     expect(compiledQuery.sql).not.toContain("admitted_messages");
-    expect(mockResolveImageUploadUrls).toHaveBeenCalledWith("user-1", [
+    expect(mockResolveImageAttachmentUrls).toHaveBeenCalledWith("user-1", [
       {
         imageUploadId: "image-1",
         signedUrl: "old-url",

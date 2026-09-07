@@ -46,18 +46,18 @@ vi.mock("../../shared/bucket", () => ({
 
 import {
   AttachmentTurnReservations,
-  AttachmentUploads,
-  ChatMessageAttachments,
+  Attachments,
+  ChatMessageAttachmentLinks,
   Conversations,
   db,
   users,
 } from "../../shared/db";
 import {
-  deleteOwnedUnattachedAttachmentUploads,
+  deleteOwnedUnattachedAttachments,
   releaseAttachmentReservations,
-  reserveAttachmentUploads,
+  reserveAttachments,
 } from "../../shared/data/attachments.data";
-import { deleteOwnedUnattachedImageUpload } from "../../shared/data/images.data";
+import { deleteOwnedUnattachedImageAttachment } from "../../shared/data/images.data";
 import { persistChatTurn } from "../../shared/data/messages.data";
 
 const userId = "reservation-owner";
@@ -122,16 +122,16 @@ describe.skipIf(!testState.databaseUrl)(
         activeTurnClaimToken: claimToken,
         activeTurnClaimedAt: new Date(),
       });
-      await db.insert(AttachmentUploads).values([
+      await db.insert(Attachments).values([
         {
-          attachmentUploadId: imageUploadId,
+          attachmentId: imageUploadId,
           userId,
           kind: "image",
           fileName: "image.png",
           sizeBytes: 10,
         },
         {
-          attachmentUploadId: audioUploadId,
+          attachmentId: audioUploadId,
           userId,
           kind: "audio",
           fileName: "audio.mp3",
@@ -142,36 +142,32 @@ describe.skipIf(!testState.databaseUrl)(
 
     it("reserves all requested uploads or none, with ownership checks", async () => {
       expect(
-        await reserveAttachmentUploads(
+        await reserveAttachments(
           userId,
           [imageUploadId, "missing"],
           claimToken,
         ),
       ).toBe(false);
       expect(
-        await reserveAttachmentUploads(
-          "another-user",
-          [imageUploadId],
-          claimToken,
-        ),
+        await reserveAttachments("another-user", [imageUploadId], claimToken),
       ).toBe(false);
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
     });
 
     it("protects images and transcripts until the completed turn links them", async () => {
       expect(
-        await reserveAttachmentUploads(
+        await reserveAttachments(
           userId,
           [imageUploadId, audioUploadId],
           claimToken,
         ),
       ).toBe(true);
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
       expect(
-        await deleteOwnedUnattachedAttachmentUploads({
+        await deleteOwnedUnattachedAttachments({
           userId,
-          attachmentUploadIds: [audioUploadId],
+          attachmentIds: [audioUploadId],
           kind: "audio",
         }),
       ).toEqual([]);
@@ -180,34 +176,36 @@ describe.skipIf(!testState.databaseUrl)(
         userId,
         conversationId,
         content: "Summarize",
-        attachmentUploadIds: [imageUploadId, audioUploadId],
+        attachmentIds: [imageUploadId, audioUploadId],
         chosenModelId: "test-model",
         assistantContent: "Summary",
         contextWindowMessageCount: 2,
         claimToken,
       });
-      expect(await db.select().from(ChatMessageAttachments)).toHaveLength(2);
+      expect(await db.select().from(ChatMessageAttachmentLinks)).toHaveLength(
+        2,
+      );
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
     });
 
     it("releases only the failed turn's reservation when uploads are shared", async () => {
       const otherClaimToken = randomUUID();
-      await reserveAttachmentUploads(userId, [imageUploadId], claimToken);
-      await reserveAttachmentUploads(userId, [imageUploadId], otherClaimToken);
+      await reserveAttachments(userId, [imageUploadId], claimToken);
+      await reserveAttachments(userId, [imageUploadId], otherClaimToken);
       await releaseAttachmentReservations(claimToken);
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
       await releaseAttachmentReservations(otherClaimToken);
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledWith(userId, [
         imageUploadId,
       ]);
     });
 
     it("keeps reservations when persistence rolls back", async () => {
-      await reserveAttachmentUploads(userId, [imageUploadId], claimToken);
+      await reserveAttachments(userId, [imageUploadId], claimToken);
       await db
         .update(Conversations)
         .set({ activeTurnClaimToken: randomUUID() });
@@ -217,7 +215,7 @@ describe.skipIf(!testState.databaseUrl)(
           userId,
           conversationId,
           content: "Describe",
-          attachmentUploadIds: [imageUploadId],
+          attachmentIds: [imageUploadId],
           chosenModelId: "test-model",
           assistantContent: "Description",
           contextWindowMessageCount: 2,
@@ -225,27 +223,27 @@ describe.skipIf(!testState.databaseUrl)(
         }),
       ).rejects.toThrow("Conversation turn claim was lost");
 
-      expect(await db.select().from(ChatMessageAttachments)).toEqual([]);
+      expect(await db.select().from(ChatMessageAttachmentLinks)).toEqual([]);
       expect(await db.select().from(AttachmentTurnReservations)).toHaveLength(
         1,
       );
       await releaseAttachmentReservations(claimToken);
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledWith(userId, [
         imageUploadId,
       ]);
     });
 
     it("protects an expired reservation while its conversation claim still exists", async () => {
-      await reserveAttachmentUploads(userId, [imageUploadId], claimToken);
+      await reserveAttachments(userId, [imageUploadId], claimToken);
       await db
         .update(AttachmentTurnReservations)
         .set({ expiresAt: new Date(0) });
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
 
       await db.update(Conversations).set({ activeTurnClaimToken: null });
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledWith(userId, [
         imageUploadId,
       ]);
@@ -256,15 +254,15 @@ describe.skipIf(!testState.databaseUrl)(
         new Error("storage unavailable"),
       );
       await expect(
-        deleteOwnedUnattachedImageUpload(userId, imageUploadId),
+        deleteOwnedUnattachedImageAttachment(userId, imageUploadId),
       ).rejects.toThrow("storage unavailable");
       expect(
         await db
           .select()
-          .from(AttachmentUploads)
-          .where(eq(AttachmentUploads.attachmentUploadId, imageUploadId)),
+          .from(Attachments)
+          .where(eq(Attachments.attachmentId, imageUploadId)),
       ).toHaveLength(1);
-      await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledTimes(2);
     });
 
@@ -275,9 +273,12 @@ describe.skipIf(!testState.databaseUrl)(
         storageStarted.resolve();
         await finishStorage.promise;
       });
-      const deletion = deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      const deletion = deleteOwnedUnattachedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       await storageStarted.promise;
-      const reservation = reserveAttachmentUploads(
+      const reservation = reserveAttachments(
         userId,
         [imageUploadId],
         claimToken,
@@ -298,16 +299,16 @@ describe.skipIf(!testState.databaseUrl)(
       const reservation = db.transaction(async (transaction) => {
         await transaction
           .select()
-          .from(AttachmentUploads)
+          .from(Attachments)
           .where(
             and(
-              eq(AttachmentUploads.userId, userId),
-              eq(AttachmentUploads.attachmentUploadId, imageUploadId),
+              eq(Attachments.userId, userId),
+              eq(Attachments.attachmentId, imageUploadId),
             ),
           )
           .for("update");
         await transaction.insert(AttachmentTurnReservations).values({
-          attachmentUploadId: imageUploadId,
+          attachmentId: imageUploadId,
           claimToken,
           expiresAt: new Date(Date.now() + 60_000),
         });
@@ -315,7 +316,10 @@ describe.skipIf(!testState.databaseUrl)(
         await finishReservation.promise;
       });
       await reservationStarted.promise;
-      const deletion = deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+      const deletion = deleteOwnedUnattachedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       try {
         await waitForBlockedQuery();
       } finally {
@@ -326,8 +330,8 @@ describe.skipIf(!testState.databaseUrl)(
       expect(
         await db
           .select()
-          .from(AttachmentUploads)
-          .where(eq(AttachmentUploads.attachmentUploadId, imageUploadId)),
+          .from(Attachments)
+          .where(eq(Attachments.attachmentId, imageUploadId)),
       ).toHaveLength(1);
     });
   },

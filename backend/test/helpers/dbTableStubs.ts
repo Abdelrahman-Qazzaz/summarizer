@@ -20,8 +20,8 @@ export const tableStubs = {
     transcriptModelId: "transcription_model_id",
   },
 
-  AttachmentUploads: {
-    attachmentUploadId: "attachment_upload_id",
+  Attachments: {
+    attachmentId: "attachment_upload_id",
     kind: "kind",
     fileName: "file_name",
     mimeType: "mime_type",
@@ -54,14 +54,14 @@ export const tableStubs = {
     userId: "user_id",
   },
 
-  ChatMessageAttachments: {
+  ChatMessageAttachmentLinks: {
     messageId: "message_id",
-    attachmentUploadId: "attachment_upload_id",
+    attachmentId: "attachment_upload_id",
     position: "position",
   },
 
   AttachmentTurnReservations: {
-    attachmentUploadId: "attachment_upload_id",
+    attachmentId: "attachment_upload_id",
     claimToken: "claim_token",
     expiresAt: "expires_at",
   },

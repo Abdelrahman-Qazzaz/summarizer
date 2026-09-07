@@ -13,7 +13,7 @@ const {
   mockDeleteOwnedMessage,
   mockResolveImages,
   mockResolveMessageImages,
-  mockResolveImageUploadUrls,
+  mockResolveImageAttachmentUrls,
   mockFindMessageTranscriptAttachments,
   mockFindTranscripts,
   mockDeleteFilesFromBucket,
@@ -21,7 +21,7 @@ const {
   mockValidateModelInput,
   mockChatAI,
   mockGenerateTitle,
-  mockReserveAttachmentUploads,
+  mockReserveAttachments,
   mockReleaseAttachmentReservations,
 } = vi.hoisted(() => ({
   mockFindOwnedConversation: vi.fn(),
@@ -36,7 +36,7 @@ const {
   mockDeleteOwnedMessage: vi.fn(),
   mockResolveImages: vi.fn(),
   mockResolveMessageImages: vi.fn(),
-  mockResolveImageUploadUrls: vi.fn(),
+  mockResolveImageAttachmentUrls: vi.fn(),
   mockFindMessageTranscriptAttachments: vi.fn(),
   mockFindTranscripts: vi.fn(),
   mockDeleteFilesFromBucket: vi.fn(),
@@ -44,7 +44,7 @@ const {
   mockValidateModelInput: vi.fn(),
   mockChatAI: vi.fn(),
   mockGenerateTitle: vi.fn(),
-  mockReserveAttachmentUploads: vi.fn(),
+  mockReserveAttachments: vi.fn(),
   mockReleaseAttachmentReservations: vi.fn(),
 }));
 
@@ -52,7 +52,7 @@ vi.mock("../../shared/data/attachments.data", async (importActual) => ({
   ...(await importActual<
     typeof import("../../shared/data/attachments.data")
   >()),
-  reserveAttachmentUploads: mockReserveAttachmentUploads,
+  reserveAttachments: mockReserveAttachments,
   releaseAttachmentReservations: mockReleaseAttachmentReservations,
 }));
 
@@ -90,7 +90,7 @@ vi.mock("../../shared/data/images.data", async (importActual) => ({
   ...(await importActual<typeof import("../../shared/data/images.data")>()),
   resolveImages: mockResolveImages,
   resolveMessageImages: mockResolveMessageImages,
-  resolveImageUploadUrls: mockResolveImageUploadUrls,
+  resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
 }));
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
@@ -244,7 +244,7 @@ beforeEach(() => {
   mockFindOwnedConversation.mockResolvedValue(ownedConversation);
   mockClaimConversationTurn.mockResolvedValue("claim-token");
   mockReleaseConversationTurn.mockResolvedValue(undefined);
-  mockReserveAttachmentUploads.mockResolvedValue(true);
+  mockReserveAttachments.mockResolvedValue(true);
   mockReleaseAttachmentReservations.mockResolvedValue(undefined);
   mockFindCreateMessageHistory.mockResolvedValue([]);
   mockFindMessagePatchContext.mockResolvedValue({
@@ -253,7 +253,7 @@ beforeEach(() => {
   });
   mockResolveImages.mockResolvedValue([]);
   mockResolveMessageImages.mockResolvedValue(new Map());
-  mockResolveImageUploadUrls.mockResolvedValue(new Map());
+  mockResolveImageAttachmentUrls.mockResolvedValue(new Map());
   mockFindMessageTranscriptAttachments.mockResolvedValue(new Map());
   mockFindTranscripts.mockResolvedValue(new Map());
   mockPersistChatTurn.mockResolvedValue(assistantRow.id);
@@ -399,7 +399,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
   it("rejects an upload deleted after validation before starting either model call", async () => {
     mockResolveImages.mockResolvedValueOnce([resolvedImage]);
-    mockReserveAttachmentUploads.mockResolvedValueOnce(false);
+    mockReserveAttachments.mockResolvedValueOnce(false);
 
     const response = await postMessage({
       messageContent: "Describe this",
@@ -438,17 +438,17 @@ describe("POST /conversations/:conversationId/messages", () => {
       audioUploadIds: [audioUploadId],
     });
 
-    expect(mockReserveAttachmentUploads).toHaveBeenCalledWith(
+    expect(mockReserveAttachments).toHaveBeenCalledWith(
       userId,
       [imageUploadId, audioUploadId],
       "claim-token",
     );
-    expect(
-      mockReserveAttachmentUploads.mock.invocationCallOrder[0],
-    ).toBeLessThan(mockChatAI.mock.invocationCallOrder[0]);
-    expect(
-      mockReserveAttachmentUploads.mock.invocationCallOrder[0],
-    ).toBeLessThan(mockGenerateTitle.mock.invocationCallOrder[0]);
+    expect(mockReserveAttachments.mock.invocationCallOrder[0]).toBeLessThan(
+      mockChatAI.mock.invocationCallOrder[0],
+    );
+    expect(mockReserveAttachments.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGenerateTitle.mock.invocationCallOrder[0],
+    );
     expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
 
@@ -656,7 +656,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         content: "Hi there",
         assistantContent: "Hello world",
         chosenModelId: modelId,
-        attachmentUploadIds: [],
+        attachmentIds: [],
         contextWindowMessageCount: 2,
         conversationTitle: "Friendly greeting",
         claimToken: "claim-token",
@@ -902,7 +902,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         expect(mockPersistChatTurn).toHaveBeenCalledWith(
           expect.objectContaining({
             content: "Compare these",
-            attachmentUploadIds: [firstAudioUploadId, secondAudioUploadId],
+            attachmentIds: [firstAudioUploadId, secondAudioUploadId],
           }),
         ),
       );
@@ -1069,7 +1069,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     // by the user message it inserts.
     await vi.waitFor(() =>
       expect(mockPersistChatTurn).toHaveBeenCalledWith(
-        expect.objectContaining({ attachmentUploadIds: [imageUploadId] }),
+        expect.objectContaining({ attachmentIds: [imageUploadId] }),
       ),
     );
   });
@@ -1230,7 +1230,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       conversationId,
       messageId,
       content: "Updated question",
-      attachmentUploadIds: [imageUploadId, audioUploadId],
+      attachmentIds: [imageUploadId, audioUploadId],
       claimToken: "claim-token",
     });
     expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith(userId, [
@@ -1390,7 +1390,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
         }),
       ],
     });
-    mockResolveImageUploadUrls.mockResolvedValueOnce(
+    mockResolveImageAttachmentUrls.mockResolvedValueOnce(
       new Map([[imageUploadId, resolvedImage.url]]),
     );
     mockValidateModelInput.mockResolvedValueOnce(false);

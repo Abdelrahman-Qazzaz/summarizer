@@ -11,17 +11,12 @@ import {
   sql,
 } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import {
-  AttachmentUploads,
-  AudioTranscriptionJobs,
-  db,
-  type Executor,
-} from "../db";
+import { Attachments, AudioTranscriptionJobs, db, type Executor } from "../db";
 import type { jobStatusEnum } from "../db";
 import type { UploadId } from "../types";
 import {
-  createAttachmentUpload,
-  deleteOwnedUnattachedAttachmentUpload,
+  createAttachment,
+  deleteOwnedUnattachedAttachment,
 } from "./attachments.data";
 
 /**
@@ -43,7 +38,7 @@ export async function findAudioJob(userId: string, audioUploadId: string) {
     .select({
       audioUploadId: AudioTranscriptionJobs.audioUploadId,
       captionUploadId: AudioTranscriptionJobs.captionUploadId,
-      fileName: AttachmentUploads.fileName,
+      fileName: Attachments.fileName,
       source: AudioTranscriptionJobs.source,
       youtubeSourceUrl: AudioTranscriptionJobs.YT_sourceUrl,
       status: AudioTranscriptionJobs.status,
@@ -51,16 +46,13 @@ export async function findAudioJob(userId: string, audioUploadId: string) {
     })
     .from(AudioTranscriptionJobs)
     .innerJoin(
-      AttachmentUploads,
-      eq(
-        AttachmentUploads.attachmentUploadId,
-        AudioTranscriptionJobs.audioUploadId,
-      ),
+      Attachments,
+      eq(Attachments.attachmentId, AudioTranscriptionJobs.audioUploadId),
     )
     .where(
       and(
         eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
-        eq(AttachmentUploads.userId, userId),
+        eq(Attachments.userId, userId),
       ),
     )
     .limit(1);
@@ -84,10 +76,10 @@ export type JobSummary = {
 /** The projection behind JobSummary — the list page needs no more. */
 const audioJobColumns = {
   audioUploadId: AudioTranscriptionJobs.audioUploadId,
-  fileName: AttachmentUploads.fileName,
+  fileName: Attachments.fileName,
   source: AudioTranscriptionJobs.source,
   status: AudioTranscriptionJobs.status,
-  createdAt: AttachmentUploads.createdAt,
+  createdAt: Attachments.createdAt,
   error: AudioTranscriptionJobs.error,
 };
 
@@ -135,29 +127,26 @@ export async function findUserJobsPage(
     .select(audioJobColumns)
     .from(AudioTranscriptionJobs)
     .innerJoin(
-      AttachmentUploads,
-      eq(
-        AttachmentUploads.attachmentUploadId,
-        AudioTranscriptionJobs.audioUploadId,
-      ),
+      Attachments,
+      eq(Attachments.attachmentId, AudioTranscriptionJobs.audioUploadId),
     )
     .where(
       and(
-        eq(AttachmentUploads.userId, userId),
-        eq(AttachmentUploads.kind, "audio"),
+        eq(Attachments.userId, userId),
+        eq(Attachments.kind, "audio"),
         status ? eq(AudioTranscriptionJobs.status, status) : undefined,
         searchQuery
-          ? ilike(AttachmentUploads.fileName, `%${searchQuery}%`)
+          ? ilike(Attachments.fileName, `%${searchQuery}%`)
           : undefined,
         afterCursor(
-          AttachmentUploads.createdAt,
+          Attachments.createdAt,
           AudioTranscriptionJobs.audioUploadId,
           cursor,
         ),
       ),
     )
     .orderBy(
-      desc(AttachmentUploads.createdAt),
+      desc(Attachments.createdAt),
       desc(AudioTranscriptionJobs.audioUploadId),
     )
     .limit(fetchCount);
@@ -189,9 +178,9 @@ export async function createAudioJob(job: {
   } = job;
 
   await db.transaction(async (tx) => {
-    await createAttachmentUpload(
+    await createAttachment(
       {
-        attachmentUploadId: audioUploadId,
+        attachmentId: audioUploadId,
         kind: "audio",
         userId,
         fileName,
@@ -213,9 +202,9 @@ export async function createAudioJob(job: {
 }
 
 export async function deleteAudioJob(userId: string, audioUploadId: string) {
-  const deletedAudioUploadId = await deleteOwnedUnattachedAttachmentUpload({
+  const deletedAudioUploadId = await deleteOwnedUnattachedAttachment({
     userId,
-    attachmentUploadId: audioUploadId,
+    attachmentId: audioUploadId,
     kind: "audio",
   });
 
@@ -241,20 +230,17 @@ export async function findTerminalCaptionUpload(
     .select({
       audioUploadId: AudioTranscriptionJobs.audioUploadId,
       captionUploadId: AudioTranscriptionJobs.captionUploadId,
-      userId: AttachmentUploads.userId,
+      userId: Attachments.userId,
     })
     .from(AudioTranscriptionJobs)
     .innerJoin(
-      AttachmentUploads,
-      eq(
-        AttachmentUploads.attachmentUploadId,
-        AudioTranscriptionJobs.audioUploadId,
-      ),
+      Attachments,
+      eq(Attachments.attachmentId, AudioTranscriptionJobs.audioUploadId),
     )
     .where(
       and(
         eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
-        userId ? eq(AttachmentUploads.userId, userId) : undefined,
+        userId ? eq(Attachments.userId, userId) : undefined,
         isNotNull(AudioTranscriptionJobs.captionUploadId),
         inArray(AudioTranscriptionJobs.status, ["completed", "failed"]),
       ),
@@ -309,11 +295,11 @@ export async function claimAudioJob(
 
   const [upload] = await db
     .select({
-      userId: AttachmentUploads.userId,
-      fileName: AttachmentUploads.fileName,
+      userId: Attachments.userId,
+      fileName: Attachments.fileName,
     })
-    .from(AttachmentUploads)
-    .where(eq(AttachmentUploads.attachmentUploadId, audioUploadId))
+    .from(Attachments)
+    .where(eq(Attachments.attachmentId, audioUploadId))
     .limit(1);
 
   return upload ? { ...job, ...upload, claimToken } : null;

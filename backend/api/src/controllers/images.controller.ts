@@ -6,8 +6,8 @@ import {
   uploadImageToBucket,
 } from "../../../shared/bucket";
 import {
-  createImageUpload,
-  deleteOwnedUnattachedImageUpload,
+  createImageAttachment,
+  deleteOwnedUnattachedImageAttachment,
   resolveImages,
 } from "../../../shared/data/images.data";
 import { CTX_KEYS } from "../../../shared/keys";
@@ -34,7 +34,7 @@ export async function handleImageUpload(c: Context) {
     IMAGE_URL_TTL_SECONDS,
   );
 
-  await createImageUpload({ userId, imageUploadId, file, signedUrl });
+  await createImageAttachment({ userId, imageUploadId, file, signedUrl });
 
   return c.json({
     message: "File uploaded",
@@ -66,7 +66,7 @@ export async function handleGetImage(c: Context) {
 export async function handleDeleteImage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const imageUploadId = c.get(CTX_KEYS.imageUploadId);
-  await deleteOwnedUnattachedImageUpload(userId, imageUploadId);
+  await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
 
   return c.json({ message: "Image deleted" });
 }

@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
 import {
-  AttachmentUploads,
-  ChatMessageAttachments,
+  Attachments,
+  ChatMessageAttachmentLinks,
   ChatMessages,
   db,
   type Executor,
@@ -13,10 +13,10 @@ import {
 } from "../bucket";
 import type { UploadId } from "../types";
 import {
-  createAttachmentUpload,
-  deleteOwnedUnattachedAttachmentUpload,
-  deleteOwnedUnattachedAttachmentUploads,
-  userOwnsAttachmentUploads,
+  createAttachment,
+  deleteOwnedUnattachedAttachment,
+  deleteOwnedUnattachedAttachments,
+  userOwnsAttachments,
 } from "./attachments.data";
 
 /**
@@ -25,16 +25,16 @@ import {
  * metadata the client is handed. `userId` is a predicate here, not an output,
  * so it stays out.
  */
-const imageUploadColumns = {
-  imageUploadId: AttachmentUploads.attachmentUploadId,
-  fileName: AttachmentUploads.fileName,
-  mimeType: AttachmentUploads.mimeType,
-  sizeBytes: AttachmentUploads.sizeBytes,
-  signedUrl: AttachmentUploads.signedUrl,
-  signedUrlExpiresAt: AttachmentUploads.signedUrlExpiresAt,
+const imageAttachmentColumns = {
+  imageUploadId: Attachments.attachmentId,
+  fileName: Attachments.fileName,
+  mimeType: Attachments.mimeType,
+  sizeBytes: Attachments.sizeBytes,
+  signedUrl: Attachments.signedUrl,
+  signedUrlExpiresAt: Attachments.signedUrlExpiresAt,
 };
 
-type ImageUploadRow = {
+type ImageAttachmentRow = {
   imageUploadId: string;
   fileName: string;
   mimeType: string | null;
@@ -64,14 +64,14 @@ function getSignedUrlExpiryDate() {
  * rather than making it, so the caller can hand the same URL straight back to
  * the client instead of reading it out again.
  */
-export async function createImageUpload(upload: {
+export async function createImageAttachment(upload: {
   userId: string;
   imageUploadId: UploadId;
   file: File;
   signedUrl: string;
 }) {
-  await createAttachmentUpload({
-    attachmentUploadId: upload.imageUploadId,
+  await createAttachment({
+    attachmentId: upload.imageUploadId,
     kind: "image",
     userId: upload.userId,
     fileName: upload.file.name,
@@ -84,7 +84,7 @@ export async function createImageUpload(upload: {
 
 /** The subset of an image row needed to decide whether its url must be re-signed. */
 type SignableImageRow = Pick<
-  ImageUploadRow,
+  ImageAttachmentRow,
   "imageUploadId" | "signedUrl" | "signedUrlExpiresAt"
 >;
 
@@ -99,28 +99,25 @@ function hasFreshSignedUrl(row: SignableImageRow) {
  * Every read here is scoped to one owner, so `userId` is the constant part of
  * the predicate and the caller supplies only what narrows it further.
  */
-async function findImageUploads(
+async function findImageAttachments(
   userId: string,
   imageUploadIds: readonly string[],
   filter: SQL | undefined,
-): Promise<ImageUploadRow[]> {
+): Promise<ImageAttachmentRow[]> {
   return db
-    .select(imageUploadColumns)
-    .from(AttachmentUploads)
+    .select(imageAttachmentColumns)
+    .from(Attachments)
     .where(
       and(
-        userOwnsAttachmentUploads({
+        userOwnsAttachments({
           userId,
-          attachmentUploadIds: imageUploadIds,
+          attachmentIds: imageUploadIds,
           kind: "image",
         }),
         filter,
       ),
     )
-    .orderBy(
-      asc(AttachmentUploads.createdAt),
-      asc(AttachmentUploads.attachmentUploadId),
-    );
+    .orderBy(asc(Attachments.createdAt), asc(Attachments.attachmentId));
 }
 
 /**
@@ -128,7 +125,7 @@ async function findImageUploads(
  * signature on) only those whose stored url has expired. Takes just the fields
  * it reads, so a projection from a join can be passed straight in.
  */
-export async function resolveImageUploadUrls(
+export async function resolveImageAttachmentUrls(
   userId: string,
   rows: readonly SignableImageRow[],
 ): Promise<Map<string, string>> {
@@ -156,16 +153,16 @@ export async function resolveImageUploadUrls(
       if (!url) return;
       urlByImageUploadId.set(row.imageUploadId, url);
       return db
-        .update(AttachmentUploads)
+        .update(Attachments)
         .set({ signedUrl: url, signedUrlExpiresAt: expiresAt })
-        .where(eq(AttachmentUploads.attachmentUploadId, row.imageUploadId));
+        .where(eq(Attachments.attachmentId, row.imageUploadId));
     }),
   );
 
   return urlByImageUploadId;
 }
 
-function toResolvedImage(row: ImageUploadRow, url: string): ResolvedImage {
+function toResolvedImage(row: ImageAttachmentRow, url: string): ResolvedImage {
   // `url`, not `signedUrl`: the same key POST /upload/image and a message's
   // attachments use, so the client reads one field name everywhere.
   return {
@@ -183,7 +180,7 @@ function toResolvedImage(row: ImageUploadRow, url: string): ResolvedImage {
  */
 async function resolveImagesWhere(
   // Plain strings, not UploadId: these arrive from the wire (a request body or
-  // a stored row), and are only trusted after findImageUploads matches them
+  // a stored row), and are only trusted after findImageAttachments matches them
   // against rows this user owns.
   userId: string,
   imageUploadIds: readonly string[],
@@ -191,10 +188,10 @@ async function resolveImagesWhere(
 ): Promise<ResolvedImage[]> {
   if (imageUploadIds.length === 0) return [];
 
-  const rows = await findImageUploads(userId, imageUploadIds, filter);
+  const rows = await findImageAttachments(userId, imageUploadIds, filter);
   if (rows.length === 0) return [];
 
-  const urlByImageUploadId = await resolveImageUploadUrls(userId, rows);
+  const urlByImageUploadId = await resolveImageAttachmentUrls(userId, rows);
   const rowByImageUploadId = new Map(
     rows.map((row) => [row.imageUploadId, row]),
   );
@@ -228,30 +225,27 @@ export async function resolveMessageImages(
 
   const rows = await db
     .select({
-      ...imageUploadColumns,
-      messageId: ChatMessageAttachments.messageId,
+      ...imageAttachmentColumns,
+      messageId: ChatMessageAttachmentLinks.messageId,
     })
-    .from(ChatMessageAttachments)
+    .from(ChatMessageAttachmentLinks)
     .innerJoin(
-      AttachmentUploads,
-      eq(
-        AttachmentUploads.attachmentUploadId,
-        ChatMessageAttachments.attachmentUploadId,
-      ),
+      Attachments,
+      eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
     )
     .where(
       and(
-        userOwnsAttachmentUploads({ userId, kind: "image" }),
-        inArray(ChatMessageAttachments.messageId, [...messageIds]),
+        userOwnsAttachments({ userId, kind: "image" }),
+        inArray(ChatMessageAttachmentLinks.messageId, [...messageIds]),
       ),
     )
     .orderBy(
-      asc(ChatMessageAttachments.messageId),
-      asc(ChatMessageAttachments.position),
+      asc(ChatMessageAttachmentLinks.messageId),
+      asc(ChatMessageAttachmentLinks.position),
     );
   if (rows.length === 0) return imagesByMessageId;
 
-  const urlByImageUploadId = await resolveImageUploadUrls(userId, rows);
+  const urlByImageUploadId = await resolveImageAttachmentUrls(userId, rows);
 
   for (const row of rows) {
     const url = urlByImageUploadId.get(row.imageUploadId);
@@ -265,34 +259,31 @@ export async function resolveMessageImages(
   return imagesByMessageId;
 }
 
-async function findAttachedImageUploadIdsWhere(
+async function findAttachedImageAttachmentIdsWhere(
   userId: string,
   filter: SQL | undefined,
 ) {
   const rows = await db
-    .select({ imageUploadId: AttachmentUploads.attachmentUploadId })
-    .from(ChatMessageAttachments)
+    .select({ imageUploadId: Attachments.attachmentId })
+    .from(ChatMessageAttachmentLinks)
     .innerJoin(
-      AttachmentUploads,
-      eq(
-        AttachmentUploads.attachmentUploadId,
-        ChatMessageAttachments.attachmentUploadId,
-      ),
+      Attachments,
+      eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
     )
-    .where(and(userOwnsAttachmentUploads({ userId, kind: "image" }), filter));
+    .where(and(userOwnsAttachments({ userId, kind: "image" }), filter));
 
   return rows.map((row) => row.imageUploadId);
 }
 
 /** Same, for every message in a conversation about to be deleted. */
-export async function findConversationImageUploadIds(
+export async function findConversationImageAttachmentIds(
   userId: string,
   conversationId: string,
 ) {
-  return findAttachedImageUploadIdsWhere(
+  return findAttachedImageAttachmentIdsWhere(
     userId,
     inArray(
-      ChatMessageAttachments.messageId,
+      ChatMessageAttachmentLinks.messageId,
       db
         .select({ id: ChatMessages.id })
         .from(ChatMessages)
@@ -301,15 +292,15 @@ export async function findConversationImageUploadIds(
   );
 }
 
-export async function deleteOwnedUnattachedImageUpload(
+export async function deleteOwnedUnattachedImageAttachment(
   userId: string,
   imageUploadId: string,
 ) {
   await db.transaction(async (transaction) => {
-    const deletedUploadId = await deleteOwnedUnattachedAttachmentUpload(
+    const deletedUploadId = await deleteOwnedUnattachedAttachment(
       {
         userId,
-        attachmentUploadId: imageUploadId,
+        attachmentId: imageUploadId,
         kind: "image",
       },
       transaction,
@@ -321,15 +312,15 @@ export async function deleteOwnedUnattachedImageUpload(
   });
 }
 
-export async function deleteOrphanedImageUploads(
+export async function deleteOrphanedImageAttachments(
   userId: string,
   candidateImageUploadIds: readonly string[],
   executor: Executor = db,
 ) {
-  return deleteOwnedUnattachedAttachmentUploads(
+  return deleteOwnedUnattachedAttachments(
     {
       userId,
-      attachmentUploadIds: candidateImageUploadIds,
+      attachmentIds: candidateImageUploadIds,
       kind: "image",
     },
     executor,

@@ -31,7 +31,7 @@ import {
   releaseConversationTurn,
 } from "../../../shared/data/conversations.data";
 import {
-  resolveImageUploadUrls,
+  resolveImageAttachmentUrls,
   resolveImages,
   resolveMessageImages,
   type ResolvedImage,
@@ -44,7 +44,7 @@ import {
 } from "../../../shared/data/transcripts.data";
 import type { MessageAttachmentInput } from "../schema/messages.schema";
 import {
-  reserveAttachmentUploads,
+  reserveAttachments,
   releaseAttachmentReservations,
 } from "../../../shared/data/attachments.data";
 
@@ -224,7 +224,7 @@ async function assembleConversationContext(
   );
   const [transcripts, urlByImageUploadId] = await Promise.all([
     findTranscripts(userId, audioUploadIds),
-    resolveImageUploadUrls(
+    resolveImageAttachmentUrls(
       userId,
       admitted.flatMap((entry) => entry.imageSlots),
     ),
@@ -307,7 +307,7 @@ type MessageRequest = {
   conversationId: string;
   content: string;
   chosenModelId: string;
-  attachmentUploadIds: string[];
+  attachmentIds: string[];
   imageUploadIds: string[];
   audioUploadIds: string[];
   expectedLastMessageId: string | null;
@@ -322,7 +322,7 @@ function messageRequestFrom(c: Context): MessageRequest {
     conversationId: c.get(CTX_KEYS.conversationId),
     content: c.get(CTX_KEYS.messageContent),
     chosenModelId: c.get(CTX_KEYS.chosenModelId),
-    attachmentUploadIds: attachments.map((attachment) =>
+    attachmentIds: attachments.map((attachment) =>
       attachment.type === "image"
         ? attachment.imageUploadId
         : attachment.audioUploadId,
@@ -478,9 +478,9 @@ export async function handleCreateMessage(c: Context) {
       return c.json({ message: "Invalid model: must accept image input" }, 400);
     }
 
-    const reserved = await reserveAttachmentUploads(
+    const reserved = await reserveAttachments(
       messageInput.userId,
-      messageInput.attachmentUploadIds,
+      messageInput.attachmentIds,
       claimToken,
     );
     if (!reserved) {
@@ -522,7 +522,7 @@ export async function handleCreateMessage(c: Context) {
         userId: messageInput.userId,
         conversationId: messageInput.conversationId,
         content: messageInput.content,
-        attachmentUploadIds: messageInput.attachmentUploadIds,
+        attachmentIds: messageInput.attachmentIds,
         chosenModelId: messageInput.chosenModelId,
         assistantContent,
         conversationTitle: await conversationTitlePromise,
@@ -679,7 +679,7 @@ export async function handlePatchMessage(c: Context) {
       conversationId: request.conversationId,
       messageId,
       content: request.content,
-      attachmentUploadIds: request.attachmentUploadIds,
+      attachmentIds: request.attachmentIds,
       claimToken,
     });
     if (patchResult.status === "claim_lost") {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDeleteOwnedUnattachedImageUpload } = vi.hoisted(() => ({
-  mockDeleteOwnedUnattachedImageUpload: vi.fn(),
+const { mockDeleteOwnedUnattachedImageAttachment } = vi.hoisted(() => ({
+  mockDeleteOwnedUnattachedImageAttachment: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -11,7 +11,8 @@ vi.mock("../../shared/db", async () => ({
 
 vi.mock("../../shared/data/images.data", async (importActual) => ({
   ...(await importActual<typeof import("../../shared/data/images.data")>()),
-  deleteOwnedUnattachedImageUpload: mockDeleteOwnedUnattachedImageUpload,
+  deleteOwnedUnattachedImageAttachment:
+    mockDeleteOwnedUnattachedImageAttachment,
 }));
 
 import { createApp } from "../../api/app";
@@ -31,7 +32,7 @@ async function deleteImage(userId = "user_01OWNER") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockDeleteOwnedUnattachedImageUpload.mockResolvedValue(undefined);
+  mockDeleteOwnedUnattachedImageAttachment.mockResolvedValue(undefined);
 });
 
 describe("DELETE /upload/image/:imageUploadId", () => {
@@ -40,7 +41,7 @@ describe("DELETE /upload/image/:imageUploadId", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ message: "Image deleted" });
-    expect(mockDeleteOwnedUnattachedImageUpload).toHaveBeenCalledWith(
+    expect(mockDeleteOwnedUnattachedImageAttachment).toHaveBeenCalledWith(
       "user_01OWNER",
       imageUploadId,
     );
@@ -55,7 +56,7 @@ describe("DELETE /upload/image/:imageUploadId", () => {
     });
 
     expect(response.status).toBe(400);
-    expect(mockDeleteOwnedUnattachedImageUpload).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedUnattachedImageAttachment).not.toHaveBeenCalled();
   });
 
   it("requires authentication", async () => {
@@ -67,11 +68,11 @@ describe("DELETE /upload/image/:imageUploadId", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(mockDeleteOwnedUnattachedImageUpload).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedUnattachedImageAttachment).not.toHaveBeenCalled();
   });
 
   it("reports deletion failures", async () => {
-    mockDeleteOwnedUnattachedImageUpload.mockRejectedValueOnce(
+    mockDeleteOwnedUnattachedImageAttachment.mockRejectedValueOnce(
       new Error("storage unavailable"),
     );
 
