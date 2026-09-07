@@ -397,7 +397,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   }
 
-  it("rejects an upload deleted after validation before starting either model call", async () => {
+  it("rejects an attachment that cannot be reserved before starting either model call", async () => {
     mockResolveImages.mockResolvedValueOnce([resolvedImage]);
     mockReserveAttachments.mockResolvedValueOnce(false);
 
@@ -474,6 +474,209 @@ describe("POST /conversations/:conversationId/messages", () => {
       "claim-token",
     );
     expect(mockReleaseConversationTurn).toHaveBeenCalled();
+  });
+
+  it("reserves attachments while history is still loading", async () => {
+    const history = Promise.withResolvers<CreateMessageHistory[]>();
+    mockFindCreateMessageHistory.mockReturnValueOnce(history.promise);
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
+    mockChatAI.mockResolvedValueOnce("Description");
+
+    const responsePromise = postMessage({
+      messageContent: "Describe this",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+    });
+
+    await vi.waitFor(() =>
+      expect(mockReserveAttachments).toHaveBeenCalledWith(
+        userId,
+        [imageUploadId],
+        "claim-token",
+      ),
+    );
+    expect(mockChatAI).not.toHaveBeenCalled();
+    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    history.resolve([]);
+
+    const response = await responsePromise;
+    expect(await response.text()).toContain("event: done");
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+      "claim-token",
+    );
+    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+  });
+
+  it("settles late acquisitions before cleanup when a concurrent read fails", async () => {
+    const claim = Promise.withResolvers<string>();
+    const reservation = Promise.withResolvers<boolean>();
+    mockClaimConversationTurn.mockReturnValueOnce(claim.promise);
+    mockReserveAttachments.mockReturnValueOnce(reservation.promise);
+    mockFindCreateMessageHistory.mockRejectedValueOnce(
+      new Error("history unavailable"),
+    );
+
+    const responsePromise = postMessage({
+      messageContent: "Describe this",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+    });
+
+    await vi.waitFor(() =>
+      expect(mockFindCreateMessageHistory).toHaveBeenCalled(),
+    );
+    expect(mockReserveAttachments).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    claim.resolve("claim-token");
+    await vi.waitFor(() => expect(mockReserveAttachments).toHaveBeenCalled());
+    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    reservation.resolve(true);
+
+    expect((await responsePromise).status).toBe(500);
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+      "claim-token",
+    );
+    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+    expect(mockChatAI).not.toHaveBeenCalled();
+  });
+
+  it("cleans up the conversation claim when reservation fails", async () => {
+    mockReserveAttachments.mockRejectedValueOnce(
+      new Error("reservation unavailable"),
+    );
+
+    const response = await postMessage({
+      messageContent: "Describe this",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+    });
+
+    expect(response.status).toBe(500);
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+      "claim-token",
+    );
+    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+    expect(mockChatAI).not.toHaveBeenCalled();
+    expect(mockGenerateTitle).not.toHaveBeenCalled();
+  });
+
+  it("does not reserve or release anything when claiming fails", async () => {
+    mockClaimConversationTurn.mockRejectedValueOnce(
+      new Error("claim unavailable"),
+    );
+
+    const response = await postMessage({
+      messageContent: "Hi",
+      chosenModelId: modelId,
+    });
+
+    expect(response.status).toBe(500);
+    expect(mockReserveAttachments).not.toHaveBeenCalled();
+    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("releases reservations when transcript validation fails", async () => {
+    const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
+    const response = await postMessage({
+      messageContent: "Summarize this",
+      chosenModelId: modelId,
+      audioUploadIds: [audioUploadId],
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ message: "Transcript not found" });
+    expect(mockReserveAttachments).toHaveBeenCalledWith(
+      userId,
+      [audioUploadId],
+      "claim-token",
+    );
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+      "claim-token",
+    );
+    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+  });
+
+  it.each(["reservations", "conversation"])(
+    "preserves validation errors when %s cleanup fails",
+    async (cleanup) => {
+      if (cleanup === "reservations") {
+        mockReleaseAttachmentReservations.mockRejectedValueOnce(
+          new Error("cleanup unavailable"),
+        );
+      } else {
+        mockReleaseConversationTurn.mockRejectedValueOnce(
+          new Error("cleanup unavailable"),
+        );
+      }
+
+      const response = await postMessage({
+        messageContent: "Describe this",
+        chosenModelId: modelId,
+        imageUploadIds: [imageUploadId],
+      });
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ message: "Image not found" });
+      expect(mockReleaseAttachmentReservations).toHaveBeenCalledOnce();
+      expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps protection through persistence after the client disconnects", async () => {
+    const client = new AbortController();
+    const generation = Promise.withResolvers<string>();
+    const persistence = Promise.withResolvers<string>();
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
+    mockChatAI.mockReturnValueOnce(generation.promise);
+    mockPersistChatTurn.mockReturnValueOnce(persistence.promise);
+
+    const response = await postMessage(
+      {
+        messageContent: "Describe this",
+        chosenModelId: modelId,
+        imageUploadIds: [imageUploadId],
+      },
+      client.signal,
+    );
+    client.abort();
+    await response.text().catch(() => {});
+    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+
+    generation.resolve("Description");
+    await vi.waitFor(() => expect(mockPersistChatTurn).toHaveBeenCalled());
+    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    persistence.resolve(assistantRow.id);
+
+    await vi.waitFor(() =>
+      expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+        userId,
+        conversationId,
+        "claim-token",
+      ),
+    );
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+      "claim-token",
+    );
   });
 
   it("requires the client to identify the conversation head", async () => {
@@ -567,6 +770,9 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(res.status).toBe(409);
+    expect(mockReserveAttachments).not.toHaveBeenCalled();
+    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
     expect(await res.json()).toEqual({
       message: "Conversation changed or a response is already in progress",
     });
@@ -971,7 +1177,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       });
       expect(response.status).toBe(413);
       expect(await response.json()).toEqual({
-        message: "Transcripts are too long for one message",
+        message: "Message is too long for one message",
         maxChars: MAX_CONTEXT_CHARS,
         chars: expect.any(Number),
       });
@@ -1074,7 +1280,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
-  it("rejects an attachment that is not the user's, or already sent", async () => {
+  it("rejects an image that is missing or belongs to another user", async () => {
     mockResolveImages.mockResolvedValueOnce([]);
 
     const res = await postMessage({
@@ -1084,7 +1290,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ message: "Attachment not found" });
+    expect(await res.json()).toEqual({ message: "Image not found" });
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
   });
@@ -1104,7 +1310,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ message: "Attachment not found" });
+    expect(await res.json()).toEqual({ message: "Image not found" });
     expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
     expect(mockChatAI).not.toHaveBeenCalled();
   });

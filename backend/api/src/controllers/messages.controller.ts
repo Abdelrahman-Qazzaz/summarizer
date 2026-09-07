@@ -337,6 +337,15 @@ function messageRequestFrom(c: Context): MessageRequest {
   };
 }
 
+class MessageRequestError extends Error {
+  constructor(
+    readonly status: 400 | 404 | 409 | 413,
+    readonly body: { message: string; maxChars?: number; chars?: number },
+  ) {
+    super(body.message);
+  }
+}
+
 /**
  * POST /conversations/:conversationId/messages — build the model context, stream
  * the reply over SSE, and persist the turn without the client waiting on it.
@@ -352,172 +361,128 @@ function messageRequestFrom(c: Context): MessageRequest {
  */
 
 export async function handleCreateMessage(c: Context) {
-  // NEW TURN, memory only: read the request data prepared by middleware.
   const messageInput = messageRequestFrom(c);
+  const responseReady = Promise.withResolvers<Response>();
 
-  // STARTS BEFORE Promise.all, DB: claim this conversation head for the new turn.
-  const claimPromise = claimConversationTurn(
-    messageInput.userId,
-    messageInput.conversationId,
-    messageInput.expectedLastMessageId,
-  );
-
-  let requestData;
-  try {
-    requestData = await Promise.all([
+  // The HTTP response can be ready before the task that owns the claims finishes.
+  void (async () => {
+    const claimPromise = claimConversationTurn(
+      messageInput.userId,
+      messageInput.conversationId,
+      messageInput.expectedLastMessageId,
+    );
+    const claimPromises = [
       claimPromise,
-      resolveImages(messageInput.userId, messageInput.imageUploadIds),
-      findTranscripts(messageInput.userId, messageInput.audioUploadIds),
-      findCreateMessageHistory({
-        userId: messageInput.userId,
-        conversationId: messageInput.conversationId,
-        newMessageContentCharCount: messageInput.content.length,
-        newTranscriptUploadIds: messageInput.audioUploadIds,
-        transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
-        maximumContextCharCount: MAX_CONTEXT_CHARS,
-        maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
-        maximumImageCount: MAX_CONTEXT_IMAGES,
-      }),
-    ]);
-  } catch (error) {
-    const acquiredClaimToken = await claimPromise.catch(() => null);
-    if (acquiredClaimToken) {
-      await releaseConversationClaimSafely(
-        messageInput.userId,
-        messageInput.conversationId,
-        acquiredClaimToken,
-      );
-    }
-    throw error;
-  }
+      claimPromise.then((claimToken) =>
+        claimToken
+          ? reserveAttachments(
+              messageInput.userId,
+              messageInput.attachmentIds,
+              claimToken,
+            )
+          : false,
+      ),
+    ] as const;
+    const events = new SSEEventQueue();
+    let streamResponse: Response | undefined;
 
-  const [
-    claimToken,
-    resolvedImages,
-    transcriptContentsByAudioUploadId,
-    history,
-  ] = requestData;
-  if (!claimToken) {
-    const ownedConversation = await findOwnedConversation(
-      messageInput.userId,
-      messageInput.conversationId,
-    );
-
-    return ownedConversation
-      ? c.json(
-          {
-            message:
-              "Conversation changed or a response is already in progress",
-          },
-          409,
-        )
-      : c.json({ message: "Conversation not found" }, 404);
-  }
-
-  const releaseClaim = async () => {
     try {
-      await releaseAttachmentReservations(claimToken);
-    } catch (error) {
-      log.error("Failed to release attachment reservations", error, {
-        conversationId: messageInput.conversationId,
-      });
-    }
-    await releaseConversationClaimSafely(
-      messageInput.userId,
-      messageInput.conversationId,
-      claimToken,
-    );
-  };
+      const [
+        claimToken,
+        attachmentsReserved,
+        resolvedImages,
+        transcriptContentsByAudioUploadId,
+        history,
+      ] = await Promise.all([
+        ...claimPromises,
+        resolveImages(messageInput.userId, messageInput.imageUploadIds),
+        findTranscripts(messageInput.userId, messageInput.audioUploadIds),
+        findCreateMessageHistory({
+          userId: messageInput.userId,
+          conversationId: messageInput.conversationId,
+          newMessageContentCharCount: messageInput.content.length,
+          newTranscriptUploadIds: messageInput.audioUploadIds,
+          transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
+          maximumContextCharCount: MAX_CONTEXT_CHARS,
+          maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
+          maximumImageCount: MAX_CONTEXT_IMAGES,
+        }),
+      ]);
 
-  let turns: ChatTurn[];
-  let newMessageContextCharCount: number;
-  try {
-    if (resolvedImages.length !== messageInput.imageUploadIds.length) {
-      await releaseClaim();
-      return c.json({ message: "Image not found" }, 404);
-    }
-    if (
-      transcriptContentsByAudioUploadId.size !==
-      messageInput.audioUploadIds.length
-    ) {
-      await releaseClaim();
-      return c.json({ message: "Transcript not found" }, 404);
-    }
+      if (!claimToken) {
+        const ownedConversation = await findOwnedConversation(
+          messageInput.userId,
+          messageInput.conversationId,
+        );
+        throw ownedConversation
+          ? new MessageRequestError(409, {
+              message:
+                "Conversation changed or a response is already in progress",
+            })
+          : new MessageRequestError(404, { message: "Conversation not found" });
+      }
+      if (resolvedImages.length !== messageInput.imageUploadIds.length) {
+        throw new MessageRequestError(404, { message: "Image not found" });
+      }
+      if (
+        transcriptContentsByAudioUploadId.size !==
+        messageInput.audioUploadIds.length
+      ) {
+        throw new MessageRequestError(404, { message: "Transcript not found" });
+      }
 
-    const transcripts = messageInput.audioUploadIds.map(
-      (audioUploadId) =>
-        transcriptContentsByAudioUploadId.get(audioUploadId) as string,
-    );
-
-    const newTurnContent = withTranscripts(messageInput.content, transcripts);
-    newMessageContextCharCount = newTurnContent.length;
-    if (newTurnContent.length >= MAX_CONTEXT_CHARS) {
-      await releaseClaim();
-      return c.json(
-        {
+      const transcripts = messageInput.audioUploadIds.map(
+        (audioUploadId) =>
+          transcriptContentsByAudioUploadId.get(audioUploadId) as string,
+      );
+      const newTurnContent = withTranscripts(messageInput.content, transcripts);
+      const newMessageContextCharCount = newTurnContent.length;
+      if (newTurnContent.length >= MAX_CONTEXT_CHARS) {
+        throw new MessageRequestError(413, {
           message: "Message is too long for one message",
           maxChars: MAX_CONTEXT_CHARS,
           chars: newTurnContent.length,
-        },
-        413,
+        });
+      }
+
+      const turns = assembleCreateMessageContext(
+        history,
+        buildUserTurn(
+          newTurnContent,
+          resolvedImages.map((image) => image.url),
+        ),
       );
-    }
+      if (
+        containsImageInput(turns) &&
+        !(await validateChatModelInput(messageInput.chosenModelId, "image"))
+      ) {
+        throw new MessageRequestError(400, {
+          message: "Invalid model: must accept image input",
+        });
+      }
+      if (!attachmentsReserved) {
+        throw new MessageRequestError(404, { message: "Attachment not found" });
+      }
 
-    turns = assembleCreateMessageContext(
-      history,
-      buildUserTurn(
-        newTurnContent,
-        resolvedImages.map((image) => image.url),
-      ),
-    );
-    if (
-      containsImageInput(turns) &&
-      !(await validateChatModelInput(messageInput.chosenModelId, "image"))
-    ) {
-      await releaseClaim();
-      return c.json({ message: "Invalid model: must accept image input" }, 400);
-    }
+      streamResponse = streamSSE(c, (stream) =>
+        events.pipeTo(stream, c.req.raw.signal),
+      );
+      responseReady.resolve(streamResponse);
 
-    const reserved = await reserveAttachments(
-      messageInput.userId,
-      messageInput.attachmentIds,
-      claimToken,
-    );
-    if (!reserved) {
-      await releaseClaim();
-      return c.json({ message: "Attachment not found" }, 404);
-    }
-  } catch (error) {
-    await releaseClaim();
-    throw error;
-  }
-
-  const conversationTitlePromise =
-    messageInput.expectedLastMessageId === null
-      ? titleForFirstTurn(messageInput.content, messageInput.conversationId)
-      : Promise.resolve(undefined);
-
-  const events = new SSEEventQueue();
-  const disconnectSignal = c.req.raw.signal;
-
-  void (async () => {
-    try {
+      const conversationTitlePromise =
+        messageInput.expectedLastMessageId === null
+          ? titleForFirstTurn(messageInput.content, messageInput.conversationId)
+          : Promise.resolve(undefined);
       const assistantContent = await chatAI(messageInput.chosenModelId, turns, {
         onDelta: async (delta) => events.push("delta", { delta }),
         maxOutputTokens: MAX_RESPONSE_TOKENS,
         sessionId: messageInput.conversationId,
       });
-
-      // AFTER provider, memory only: cache the full history size for the next turn.
       const contextWindowMessageCount = countMessagesInContextWindow([
         assistantContent.length,
         newMessageContextCharCount,
         ...history.map((message) => message.contextCharCount),
       ]);
-
-      // NEW TURN, DB transaction: store user + assistant messages, link attachments,
-      // update the conversation head, and clear the claim. History is not written.
-      // Inside it, assistant insert + attachment links share a Promise.all after user insert.
       const lastMessageId = await persistChatTurn({
         userId: messageInput.userId,
         conversationId: messageInput.conversationId,
@@ -530,27 +495,43 @@ export async function handleCreateMessage(c: Context) {
         claimToken,
       });
 
-      // STREAM, memory only: queue completion and close the queue.
       events.push("done", { lastMessageId });
-      events.end();
+      return streamResponse;
     } catch (error) {
-      // CLEANUP, DB: release the claim if generation or persistence fails.
-      await releaseClaim();
+      if (!streamResponse) {
+        if (error instanceof MessageRequestError) {
+          return c.json(error.body, error.status);
+        }
+        throw error;
+      }
 
-      // LOG only: record the failed background task.
       log.error("Chat completion run failed", error, {
         conversationId: messageInput.conversationId,
         chosenModelId: messageInput.chosenModelId,
       });
-
-      // STREAM, memory only: queue the failure and close the queue.
       events.push("error", { message: "Model response failed" });
+      return streamResponse;
+    } finally {
+      // A failed read does not cancel acquisition; settle it before releasing anything.
+      const [claimResult] = await Promise.allSettled(claimPromises);
+      if (claimResult.status === "fulfilled" && claimResult.value) {
+        const claimToken = claimResult.value;
+        await releaseAttachmentReservations(claimToken).catch((error) => {
+          log.error("Failed to release attachment reservations", error, {
+            conversationId: messageInput.conversationId,
+          });
+        });
+        await releaseConversationClaimSafely(
+          messageInput.userId,
+          messageInput.conversationId,
+          claimToken,
+        );
+      }
       events.end();
     }
-  })();
+  })().then(responseReady.resolve, responseReady.reject);
 
-  // HTTP stream: pipe queued events to the client; no DB or bucket work here.
-  return streamSSE(c, (stream) => events.pipeTo(stream, disconnectSignal));
+  return responseReady.promise;
 }
 
 /** PATCH /conversations/:conversationId/messages/:messageId */
