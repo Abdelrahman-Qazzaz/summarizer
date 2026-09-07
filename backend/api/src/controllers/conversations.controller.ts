@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
 import { deleteFilesFromBucket } from "../../../shared/bucket";
 import {
-  deleteOrphanedImageAttachments,
+  deleteOwnedUnlinkedUnreservedImageAttachments,
   findConversationImageAttachmentIds,
 } from "../../../shared/data/images.data";
 import {
@@ -89,10 +89,8 @@ export async function handleDeleteConversation(c: Context) {
     return c.json({ message: "A response is already in progress" }, 409);
   }
 
-  const orphanedImageUploadIds = await deleteOrphanedImageAttachments(
-    userId,
-    imageUploadIds,
-  );
-  await deleteFilesFromBucket(userId, orphanedImageUploadIds);
+  const deletedImageAttachmentIds =
+    await deleteOwnedUnlinkedUnreservedImageAttachments(userId, imageUploadIds);
+  await deleteFilesFromBucket(userId, deletedImageAttachmentIds);
   return c.json({ message: "Conversation deleted" }, 200);
 }

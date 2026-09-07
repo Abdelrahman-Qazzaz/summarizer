@@ -6,7 +6,7 @@ import {
   type Executor,
 } from "../db";
 
-export function attachmentIsUnattached(executor: Executor) {
+export function attachmentIsUnlinked(executor: Executor) {
   return notExists(
     executor
       .select({ messageId: ChatMessageAttachmentLinks.messageId })
@@ -17,7 +17,7 @@ export function attachmentIsUnattached(executor: Executor) {
   );
 }
 
-export async function attachUploadsToMessage(
+export async function linkAttachmentsToMessage(
   messageId: string,
   attachmentIds: readonly string[],
   executor: Executor = db,

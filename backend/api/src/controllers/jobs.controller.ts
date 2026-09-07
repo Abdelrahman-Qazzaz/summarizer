@@ -95,7 +95,10 @@ export async function handleDeleteTranscribeJob(c: Context) {
   ];
   const deleted = await deleteAudioJob(userId, audioUploadId);
   if (!deleted) {
-    return c.json({ message: "Source is attached to a message" }, 409);
+    return c.json(
+      { message: "Source is linked to a message or reserved for a response" },
+      409,
+    );
   }
 
   await deleteFilesFromBucket(userId, uploadIds);

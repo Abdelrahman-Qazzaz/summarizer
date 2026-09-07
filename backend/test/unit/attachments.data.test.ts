@@ -38,8 +38,8 @@ vi.mock("../../shared/db", async () => ({
 
 import {
   createAttachment,
-  deleteOwnedUnattachedAttachment,
-  deleteOwnedUnattachedAttachments,
+  deleteOwnedUnlinkedUnreservedAttachment,
+  deleteOwnedUnlinkedUnreservedAttachments,
 } from "../../shared/data/attachments.data";
 import { Attachments, ChatMessageAttachmentLinks } from "../../shared/db";
 
@@ -67,9 +67,9 @@ beforeEach(() => {
   mockDeleteWhere.mockReturnValue({ returning: mockReturning });
 });
 
-describe("attachment uploads", () => {
-  it("creates an attachment upload", async () => {
-    const upload = {
+describe("attachments", () => {
+  it("creates an attachment", async () => {
+    const attachment = {
       attachmentId: "550e8400-e29b-41d4-a716-446655440000",
       kind: "image" as const,
       userId: "user-1",
@@ -80,13 +80,13 @@ describe("attachment uploads", () => {
       signedUrlExpiresAt: new Date("2026-09-06T00:00:00.000Z"),
     };
 
-    await createAttachment(upload);
+    await createAttachment(attachment);
 
     expect(mockInsert).toHaveBeenCalledWith(Attachments);
-    expect(mockValues).toHaveBeenCalledWith(upload);
+    expect(mockValues).toHaveBeenCalledWith(attachment);
   });
 
-  it("creates an attachment upload through the supplied executor", async () => {
+  it("creates an attachment through the supplied executor", async () => {
     const transactionValues = vi.fn().mockResolvedValue(undefined);
     const transactionInsert = vi.fn().mockReturnValue({
       values: transactionValues,
@@ -94,7 +94,7 @@ describe("attachment uploads", () => {
     const transactionExecutor = {
       insert: transactionInsert,
     } as unknown as AttachmentExecutor;
-    const upload = {
+    const attachment = {
       attachmentId: "650e8400-e29b-41d4-a716-446655440111",
       kind: "audio" as const,
       userId: "user-1",
@@ -103,23 +103,25 @@ describe("attachment uploads", () => {
       sizeBytes: 256,
     };
 
-    await createAttachment(upload, transactionExecutor);
+    await createAttachment(attachment, transactionExecutor);
 
     expect(transactionInsert).toHaveBeenCalledWith(Attachments);
-    expect(transactionValues).toHaveBeenCalledWith(upload);
+    expect(transactionValues).toHaveBeenCalledWith(attachment);
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it("returns the upload deleted by the guarded delete", async () => {
-    mockReturning.mockResolvedValueOnce([{ attachmentId: "image-upload-1" }]);
+  it("returns the attachment deleted by the guarded delete", async () => {
+    mockReturning.mockResolvedValueOnce([
+      { attachmentId: "image-attachment-1" },
+    ]);
 
     await expect(
-      deleteOwnedUnattachedAttachment({
+      deleteOwnedUnlinkedUnreservedAttachment({
         userId: "user-1",
-        attachmentId: "image-upload-1",
+        attachmentId: "image-attachment-1",
         kind: "image",
       }),
-    ).resolves.toBe("image-upload-1");
+    ).resolves.toBe("image-attachment-1");
   });
 
   it("uses the supplied executor for the delete and its attachment check", async () => {
@@ -134,7 +136,7 @@ describe("attachment uploads", () => {
     });
     const transactionReturning = vi
       .fn()
-      .mockResolvedValue([{ attachmentId: "image-upload-1" }]);
+      .mockResolvedValue([{ attachmentId: "image-attachment-1" }]);
     const transactionDeleteWhere = vi.fn().mockReturnValue({
       returning: transactionReturning,
     });
@@ -147,15 +149,15 @@ describe("attachment uploads", () => {
     } as unknown as AttachmentExecutor;
 
     await expect(
-      deleteOwnedUnattachedAttachments(
+      deleteOwnedUnlinkedUnreservedAttachments(
         {
           userId: "user-1",
-          attachmentIds: ["image-upload-1"],
+          attachmentIds: ["image-attachment-1"],
           kind: "image",
         },
         transactionExecutor,
       ),
-    ).resolves.toEqual(["image-upload-1"]);
+    ).resolves.toEqual(["image-attachment-1"]);
 
     expect(transactionDelete).toHaveBeenCalledWith(Attachments);
     expect(transactionFrom).toHaveBeenCalledWith(ChatMessageAttachmentLinks);

@@ -36,7 +36,7 @@ describe("session cookie attributes", () => {
 
   it("is SameSite=None and Secure in production", async () => {
     // The client and API are on different registrable domains there, so a Lax
-    // cookie would never be attached to the client's requests. None is only
+    // cookie would never be sent with the client's requests. None is only
     // honoured together with Secure.
     const header = (await setCookieHeaderFor("production")).toLowerCase();
     expect(header).toContain(`${COOKIE_KEYS.session.toLowerCase()}=`);

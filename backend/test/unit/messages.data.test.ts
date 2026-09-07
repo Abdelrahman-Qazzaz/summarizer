@@ -12,7 +12,7 @@ const {
   mockUpdate,
   mockSet,
   mockUpdateWhere,
-  mockAttachTranscriptions,
+  mockLinkTranscriptions,
   mockCompleteConversationTurn,
 } = vi.hoisted(() => ({
   mockTransaction: vi.fn(),
@@ -26,7 +26,7 @@ const {
   mockUpdate: vi.fn(),
   mockSet: vi.fn(),
   mockUpdateWhere: vi.fn(),
-  mockAttachTranscriptions: vi.fn(),
+  mockLinkTranscriptions: vi.fn(),
   mockCompleteConversationTurn: vi.fn(),
 }));
 
@@ -43,7 +43,7 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 vi.mock("../../shared/data/images.data", () => ({
-  attachImagesToMessage: vi.fn(),
+  linkImagesToMessage: vi.fn(),
 }));
 
 vi.mock("../../shared/data/conversations.data", () => ({
@@ -51,7 +51,7 @@ vi.mock("../../shared/data/conversations.data", () => ({
 }));
 
 vi.mock("../../shared/data/transcripts.data", () => ({
-  attachTranscriptionsToMessage: mockAttachTranscriptions,
+  linkTranscriptionsToMessage: mockLinkTranscriptions,
   findMessageTranscriptAttachments: vi.fn(),
 }));
 
@@ -228,7 +228,7 @@ describe("patchOwnedUserMessage", () => {
       status: "patched",
       imageUploadIds: ["image-old", "image-tail"],
     });
-    expect(mockAttachTranscriptions).toHaveBeenCalledWith(
+    expect(mockLinkTranscriptions).toHaveBeenCalledWith(
       "message-2",
       ["audio-2", "audio-1"],
       transaction,

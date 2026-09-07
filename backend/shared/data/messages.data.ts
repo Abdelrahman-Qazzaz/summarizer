@@ -20,11 +20,11 @@ import {
   type Executor,
 } from "../db";
 import {
-  deleteOrphanedImageAttachments,
+  deleteOwnedUnlinkedUnreservedImageAttachments,
   resolveImageAttachmentUrls,
 } from "./images.data";
 import { completeConversationTurn } from "./conversations.data";
-import { attachUploadsToMessage } from "./messageAttachments.data";
+import { linkAttachmentsToMessage } from "./messageAttachmentLinks.data";
 import { releaseAttachmentReservations } from "./attachments.data";
 import {
   findMessageTranscriptAttachments,
@@ -575,11 +575,12 @@ export async function deleteOwnedMessage(
       .where(deleteFilter)
       .returning({ id: ChatMessages.id });
 
-    const deletedImageUploadIds = await deleteOrphanedImageAttachments(
-      userId,
-      imageRows.map((image) => image.imageUploadId),
-      tx,
-    );
+    const deletedImageUploadIds =
+      await deleteOwnedUnlinkedUnreservedImageAttachments(
+        userId,
+        imageRows.map((image) => image.imageUploadId),
+        tx,
+      );
 
     await tx
       .update(Conversations)
@@ -645,7 +646,7 @@ export async function patchOwnedUserMessage(input: {
     if (target.role !== "user") return { status: "not_user" } as const;
 
     if (input.attachmentIds.length > 0) {
-      const ownedUploads = await tx
+      const ownedAttachments = await tx
         .select({
           attachmentId: Attachments.attachmentId,
         })
@@ -657,7 +658,7 @@ export async function patchOwnedUserMessage(input: {
           ),
         )
         .for("update");
-      if (ownedUploads.length !== input.attachmentIds.length)
+      if (ownedAttachments.length !== input.attachmentIds.length)
         return { status: "attachments_changed" } as const;
     }
 
@@ -704,13 +705,14 @@ export async function patchOwnedUserMessage(input: {
     await tx
       .delete(ChatMessageAttachmentLinks)
       .where(eq(ChatMessageAttachmentLinks.messageId, target.id));
-    await attachUploadsToMessage(target.id, input.attachmentIds, tx);
+    await linkAttachmentsToMessage(target.id, input.attachmentIds, tx);
 
-    const deletedImageUploadIds = await deleteOrphanedImageAttachments(
-      input.userId,
-      removedImageRows.map((image) => image.imageUploadId),
-      tx,
-    );
+    const deletedImageUploadIds =
+      await deleteOwnedUnlinkedUnreservedImageAttachments(
+        input.userId,
+        removedImageRows.map((image) => image.imageUploadId),
+        tx,
+      );
 
     await tx
       .update(ChatMessages)
@@ -730,8 +732,8 @@ export async function patchOwnedUserMessage(input: {
 }
 
 /**
- * Persists a completed turn as one transaction: the user message, the images it
- * claimed, the assistant reply, and the conversation's new head.
+ * Persists a completed turn as one transaction: the user message, its
+ * attachments, the assistant reply, and the conversation's new head.
  * All-or-nothing, so a mid-write failure can't leave a turn half-recorded — a
  * user message with no reply, or a reply the conversation never points at.
  */
@@ -767,7 +769,7 @@ export async function persistChatTurn(turn: {
         },
         tx,
       ),
-      attachUploadsToMessage(userMessage.id, turn.attachmentIds, tx),
+      linkAttachmentsToMessage(userMessage.id, turn.attachmentIds, tx),
     ]);
     const completed = await completeConversationTurn(
       turn.userId,

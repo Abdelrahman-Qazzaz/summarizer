@@ -7,7 +7,7 @@ import {
   type Executor,
 } from "../db";
 import { CLAIM_LEASE_MS } from "./conversations.data";
-import { attachmentIsUnattached } from "./messageAttachments.data";
+import { attachmentIsUnlinked } from "./messageAttachmentLinks.data";
 
 type AttachmentValues = Pick<
   typeof Attachments.$inferInsert,
@@ -21,13 +21,13 @@ type AttachmentValues = Pick<
   | "signedUrlExpiresAt"
 >;
 
-type OwnedUnattachedAttachment = {
+type DeleteAttachmentInput = {
   userId: string;
   attachmentId: string;
   kind: AttachmentValues["kind"];
 };
 
-type OwnedUnattachedAttachments = {
+type DeleteAttachmentsInput = {
   userId: string;
   attachmentIds: readonly string[];
   kind: AttachmentValues["kind"];
@@ -49,23 +49,27 @@ export function userOwnsAttachments(input: OwnedAttachments) {
   );
 }
 
-function ownedUnattachedAttachments(
-  input: OwnedUnattachedAttachments,
+function ownedUnlinkedUnreservedAttachments(
+  input: DeleteAttachmentsInput,
   executor: Executor,
 ) {
-  // A slow provider may outlive the lease while its conversation claim still owns the turn.
   return and(
     userOwnsAttachments(input),
-    attachmentIsUnattached(executor),
-    sql`not exists (
-      select 1 from ${AttachmentTurnReservations}
-      where ${AttachmentTurnReservations.attachmentId} = ${Attachments.attachmentId}
-        and (${AttachmentTurnReservations.expiresAt} > now() or exists (
-          select 1 from ${Conversations}
-          where ${Conversations.activeTurnClaimToken} = ${AttachmentTurnReservations.claimToken}
-        ))
-    )`,
+    attachmentIsUnlinked(executor),
+    attachmentIsUnreserved(),
   );
+}
+
+function attachmentIsUnreserved() {
+  // A slow provider may outlive the lease while its conversation claim still owns the turn.
+  return sql`not exists (
+    select 1 from ${AttachmentTurnReservations}
+    where ${AttachmentTurnReservations.attachmentId} = ${Attachments.attachmentId}
+      and (${AttachmentTurnReservations.expiresAt} > now() or exists (
+        select 1 from ${Conversations}
+        where ${Conversations.activeTurnClaimToken} = ${AttachmentTurnReservations.claimToken}
+      ))
+  )`;
 }
 
 async function lockOwnedAttachments(
@@ -129,11 +133,11 @@ export async function createAttachment(
   await executor.insert(Attachments).values(values);
 }
 
-export async function deleteOwnedUnattachedAttachment(
-  input: OwnedUnattachedAttachment,
+export async function deleteOwnedUnlinkedUnreservedAttachment(
+  input: DeleteAttachmentInput,
   executor: Executor = db,
 ) {
-  const [deletedAttachmentId] = await deleteOwnedUnattachedAttachments(
+  const [deletedAttachmentId] = await deleteOwnedUnlinkedUnreservedAttachments(
     {
       userId: input.userId,
       attachmentIds: [input.attachmentId],
@@ -145,8 +149,8 @@ export async function deleteOwnedUnattachedAttachment(
   return deletedAttachmentId ?? null;
 }
 
-export async function deleteOwnedUnattachedAttachments(
-  input: OwnedUnattachedAttachments,
+export async function deleteOwnedUnlinkedUnreservedAttachments(
+  input: DeleteAttachmentsInput,
   executor: Executor = db,
 ): Promise<string[]> {
   const attachmentIds = [...new Set(input.attachmentIds)];
@@ -154,7 +158,7 @@ export async function deleteOwnedUnattachedAttachments(
 
   if (executor === db) {
     return db.transaction((transaction) =>
-      deleteOwnedUnattachedAttachments(input, transaction),
+      deleteOwnedUnlinkedUnreservedAttachments(input, transaction),
     );
   }
 
@@ -163,7 +167,9 @@ export async function deleteOwnedUnattachedAttachments(
 
   const deletedAttachments = await executor
     .delete(Attachments)
-    .where(ownedUnattachedAttachments({ ...input, attachmentIds }, executor))
+    .where(
+      ownedUnlinkedUnreservedAttachments({ ...input, attachmentIds }, executor),
+    )
     .returning({
       attachmentId: Attachments.attachmentId,
     });

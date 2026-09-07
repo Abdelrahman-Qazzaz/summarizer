@@ -12,7 +12,7 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 vi.mock("../../shared/data/images.data", () => ({
-  deleteOrphanedImageAttachments: vi.fn(),
+  deleteOwnedUnlinkedUnreservedImageAttachments: vi.fn(),
   resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
 }));
 

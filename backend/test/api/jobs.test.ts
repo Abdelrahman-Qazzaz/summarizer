@@ -252,7 +252,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
     ]);
   });
 
-  it("preserves a source that is attached to a message", async () => {
+  it("preserves a source that is linked to a message", async () => {
     mockDeleteAudioJob.mockResolvedValueOnce(false);
 
     const response = await (
@@ -264,7 +264,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
-      message: "Source is attached to a message",
+      message: "Source is linked to a message or reserved for a response",
     });
     expect(mockDeleteFilesFromBucket).not.toHaveBeenCalled();
   });

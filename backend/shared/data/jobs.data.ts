@@ -16,7 +16,7 @@ import type { jobStatusEnum } from "../db";
 import type { UploadId } from "../types";
 import {
   createAttachment,
-  deleteOwnedUnattachedAttachment,
+  deleteOwnedUnlinkedUnreservedAttachment,
 } from "./attachments.data";
 
 /**
@@ -202,7 +202,7 @@ export async function createAudioJob(job: {
 }
 
 export async function deleteAudioJob(userId: string, audioUploadId: string) {
-  const deletedAudioUploadId = await deleteOwnedUnattachedAttachment({
+  const deletedAudioUploadId = await deleteOwnedUnlinkedUnreservedAttachment({
     userId,
     attachmentId: audioUploadId,
     kind: "audio",

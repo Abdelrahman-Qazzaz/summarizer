@@ -8,7 +8,7 @@ import { fileField } from "./upload.schema";
 /**
  * POST /upload/image — a standalone image (dropped into the chat, or uploaded
  * from the navbar mode). No model/job involved: it's stored for later
- * reference and handed to the chat model as vision input once attached to a
+ * reference and handed to the chat model as vision input once linked to a
  * sent message.
  */
 export const imageUploadSchema = z

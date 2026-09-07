@@ -53,11 +53,11 @@ import {
   users,
 } from "../../shared/db";
 import {
-  deleteOwnedUnattachedAttachments,
+  deleteOwnedUnlinkedUnreservedAttachments,
   releaseAttachmentReservations,
   reserveAttachments,
 } from "../../shared/data/attachments.data";
-import { deleteOwnedUnattachedImageAttachment } from "../../shared/data/images.data";
+import { deleteOwnedUnlinkedUnreservedImageAttachment } from "../../shared/data/images.data";
 import { persistChatTurn } from "../../shared/data/messages.data";
 
 const userId = "reservation-owner";
@@ -140,7 +140,7 @@ describe.skipIf(!testState.databaseUrl)(
       ]);
     });
 
-    it("reserves all requested uploads or none, with ownership checks", async () => {
+    it("reserves all requested attachments or none, with ownership checks", async () => {
       expect(
         await reserveAttachments(
           userId,
@@ -162,10 +162,10 @@ describe.skipIf(!testState.databaseUrl)(
           claimToken,
         ),
       ).toBe(true);
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
       expect(
-        await deleteOwnedUnattachedAttachments({
+        await deleteOwnedUnlinkedUnreservedAttachments({
           userId,
           attachmentIds: [audioUploadId],
           kind: "audio",
@@ -186,19 +186,19 @@ describe.skipIf(!testState.databaseUrl)(
         2,
       );
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
     });
 
-    it("releases only the failed turn's reservation when uploads are shared", async () => {
+    it("releases only the failed turn's reservation when attachments are shared", async () => {
       const otherClaimToken = randomUUID();
       await reserveAttachments(userId, [imageUploadId], claimToken);
       await reserveAttachments(userId, [imageUploadId], otherClaimToken);
       await releaseAttachmentReservations(claimToken);
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
       await releaseAttachmentReservations(otherClaimToken);
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledWith(userId, [
         imageUploadId,
       ]);
@@ -228,7 +228,7 @@ describe.skipIf(!testState.databaseUrl)(
         1,
       );
       await releaseAttachmentReservations(claimToken);
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledWith(userId, [
         imageUploadId,
       ]);
@@ -239,22 +239,22 @@ describe.skipIf(!testState.databaseUrl)(
       await db
         .update(AttachmentTurnReservations)
         .set({ expiresAt: new Date(0) });
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).not.toHaveBeenCalled();
 
       await db.update(Conversations).set({ activeTurnClaimToken: null });
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledWith(userId, [
         imageUploadId,
       ]);
     });
 
-    it("rolls back a failed bucket deletion so the upload can be retried", async () => {
+    it("rolls back a failed bucket deletion so the attachment can be retried", async () => {
       testState.deleteFilesFromBucket.mockRejectedValueOnce(
         new Error("storage unavailable"),
       );
       await expect(
-        deleteOwnedUnattachedImageAttachment(userId, imageUploadId),
+        deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId),
       ).rejects.toThrow("storage unavailable");
       expect(
         await db
@@ -262,7 +262,7 @@ describe.skipIf(!testState.databaseUrl)(
           .from(Attachments)
           .where(eq(Attachments.attachmentId, imageUploadId)),
       ).toHaveLength(1);
-      await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFilesFromBucket).toHaveBeenCalledTimes(2);
     });
 
@@ -273,7 +273,7 @@ describe.skipIf(!testState.databaseUrl)(
         storageStarted.resolve();
         await finishStorage.promise;
       });
-      const deletion = deleteOwnedUnattachedImageAttachment(
+      const deletion = deleteOwnedUnlinkedUnreservedImageAttachment(
         userId,
         imageUploadId,
       );
@@ -293,7 +293,7 @@ describe.skipIf(!testState.databaseUrl)(
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
     });
 
-    it("rechecks reservations after a delete waits for the upload lock", async () => {
+    it("rechecks reservations after a delete waits for the attachment lock", async () => {
       const reservationStarted = deferred();
       const finishReservation = deferred();
       const reservation = db.transaction(async (transaction) => {
@@ -316,7 +316,7 @@ describe.skipIf(!testState.databaseUrl)(
         await finishReservation.promise;
       });
       await reservationStarted.promise;
-      const deletion = deleteOwnedUnattachedImageAttachment(
+      const deletion = deleteOwnedUnlinkedUnreservedImageAttachment(
         userId,
         imageUploadId,
       );

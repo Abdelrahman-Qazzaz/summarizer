@@ -7,7 +7,7 @@ import {
 } from "../../../shared/bucket";
 import {
   createImageAttachment,
-  deleteOwnedUnattachedImageAttachment,
+  deleteOwnedUnlinkedUnreservedImageAttachment,
   resolveImages,
 } from "../../../shared/data/images.data";
 import { CTX_KEYS } from "../../../shared/keys";
@@ -62,11 +62,11 @@ export async function handleGetImage(c: Context) {
   return c.json(image);
 }
 
-/** DELETE /upload/image/:imageUploadId — delete an unused image. */
+/** DELETE /upload/image/:imageUploadId — delete an unlinked, unreserved image attachment. */
 export async function handleDeleteImage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const imageUploadId = c.get(CTX_KEYS.imageUploadId);
-  await deleteOwnedUnattachedImageAttachment(userId, imageUploadId);
+  await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
 
   return c.json({ message: "Image deleted" });
 }

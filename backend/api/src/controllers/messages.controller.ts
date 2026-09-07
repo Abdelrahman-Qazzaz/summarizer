@@ -515,9 +515,9 @@ export async function handleCreateMessage(c: Context) {
         ...history.map((message) => message.contextCharCount),
       ]);
 
-      // NEW TURN, DB transaction: store user + assistant messages, link uploads,
+      // NEW TURN, DB transaction: store user + assistant messages, link attachments,
       // update the conversation head, and clear the claim. History is not written.
-      // Inside it, assistant insert + upload links share a Promise.all after user insert.
+      // Inside it, assistant insert + attachment links share a Promise.all after user insert.
       const lastMessageId = await persistChatTurn({
         userId: messageInput.userId,
         conversationId: messageInput.conversationId,

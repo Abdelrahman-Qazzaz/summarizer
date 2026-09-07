@@ -7,7 +7,7 @@ import { getApiEnv } from "../../../shared/env";
  * In production the client and the API sit on different registrable domains —
  * each Railway service gets its own `*.up.railway.app` host, and `railway.app`
  * is a public suffix — so the browser treats every client → API call as
- * cross-site and refuses to attach a `Lax` cookie. `None` is the only value
+ * cross-site and refuses to send a `Lax` cookie. `None` is the only value
  * that survives that, and browsers only honour it alongside `Secure`, which is
  * why both derive from one flag rather than being set independently.
  *

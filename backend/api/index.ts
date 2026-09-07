@@ -18,7 +18,7 @@ const app = await createApp();
 export const port = env.PORT;
 const log = logger.child({ component: "api-queue" });
 
-// Listening starts here; the socket server then attaches to this same server,
+// Listening starts here; the socket server then uses this same server,
 // so the API and the websocket share one port.
 const server = serve({ fetch: app.fetch, port });
 export const io = startSocketServer(server);
@@ -63,7 +63,7 @@ const cancelConsumers = await Promise.all([
  */
 onShutdown(async () => {
   await Promise.all(cancelConsumers.map((cancel) => cancel()));
-  // io owns the HTTP server it was attached to, so closing it closes both.
+  // io owns its HTTP server, so closing it closes both.
   // The second close is a belt-and-braces no-op and must not reject on
   // "server is not running".
   await new Promise<void>((resolve) => io.close(() => resolve()));

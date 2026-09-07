@@ -9,7 +9,7 @@ import { verifySessionToken } from "../auth/sessionToken";
 const log = logger.child({ component: "socket" });
 
 /**
- * Attaches to the API's own HTTP server rather than listening on a port of its
+ * Uses the API's own HTTP server rather than listening on a port of its
  * own. Socket.IO claims the /socket.io/ path and the upgrade handshake; Hono
  * keeps everything else.
  *

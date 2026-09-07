@@ -11,6 +11,16 @@ RabbitMQ message queue and a shared Postgres database:
 They are the same artifact started at different entrypoints, not independently
 deployable services. See [Why it isn't microservices](#why-it-isnt-microservices).
 
+## Attachment vocabulary
+
+- **Attachment** is the stored database object. Use **upload** for uploading operations.
+- **Linked / unlinked** describes whether a saved message references an attachment. Use **link / unlink** for changing that relationship.
+- **Reserved / unreserved** describes whether an active turn reservation protects an attachment. Use **reserve / release** for changing that protection.
+- Linking and reservation are independent. Deletion requires ownership and an attachment that is both **unlinked and unreserved**. Spell out both states in deletion helpers.
+
+Backend TypeScript uses `Attachments`, `attachmentId`, and `ChatMessageAttachmentLinks`.
+Physical SQL names and API fields such as `imageUploadId` and `audioUploadId` retain their existing names.
+
 ## External dependencies
 
 Each process runs a **fail-fast preflight** on boot (`startup.ts` →
@@ -56,14 +66,14 @@ job's `audioUploadId` and publishes `transcribe`. The worker deletes a temporary
 caption object and clears its ID after finishing.
 
 Completed transcripts are immutable. The API has no rerun route, and a source
-attached to a message cannot be deleted. Trying another transcription requires
-a new upload and job, so old conversation history cannot change underneath a
-message.
+linked to a message or reserved for a response cannot be deleted. Trying another
+transcription requires a new upload and job, so old conversation history cannot
+change underneath a message.
 
 **Transcripts are not summarized.** The transcript is stored in Postgres under
 the audio job's `audioUploadId`. The user feeds one or more completed jobs to a
-model through `chat_message_transcriptions`, which preserves their attachment
-order. There is no second job pipeline: the prompt contains the attached
+model through `chat_message_attachments`, which preserves their link
+order. There is no second job pipeline: the prompt contains the linked
 transcripts plus whatever the user types, and the reply streams over the same
 SSE endpoint every other chat turn uses.
 

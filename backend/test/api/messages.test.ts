@@ -99,7 +99,7 @@ vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   >()),
   findMessageTranscriptAttachments: mockFindMessageTranscriptAttachments,
   findTranscripts: mockFindTranscripts,
-  attachTranscriptionsToMessage: vi.fn(),
+  linkTranscriptionsToMessage: vi.fn(),
 }));
 
 vi.mock("../../shared/bucket", () => ({
@@ -865,7 +865,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
-  describe("with transcription jobs attached", () => {
+  describe("with transcript attachments", () => {
     const firstAudioUploadId = "950e8400-e29b-41d4-a716-446655440444";
     const secondAudioUploadId = "a50e8400-e29b-41d4-a716-446655440555";
     const firstTranscript = "the interview transcript";
@@ -1039,7 +1039,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
   });
 
-  it("sends attachments as vision input and binds them to the user turn", async () => {
+  it("sends attachments as vision input and links them to the user turn", async () => {
     mockResolveImages.mockResolvedValueOnce([resolvedImage]);
     mockChatAI.mockResolvedValueOnce("Hello world");
 

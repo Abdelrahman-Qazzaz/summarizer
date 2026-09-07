@@ -38,7 +38,7 @@ export const users = pgTable("users", {
     .notNull(),
 });
 
-/** Durable user uploads that can be attached to one or more chat messages. */
+/** Stored attachments that can be linked to one or more chat messages. */
 export const Attachments = pgTable(
   "attachment_uploads",
   {
@@ -68,7 +68,7 @@ export const Attachments = pgTable(
   ],
 );
 
-/** Transcription processing state for an audio attachment upload. */
+/** Transcription processing state for an audio attachment. */
 export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
   audioUploadId: text("audio_upload_id")
     .notNull()
@@ -207,7 +207,7 @@ export const ChatMessageAttachmentLinks = pgTable(
   ],
 );
 
-/** Uploads held by an in-flight message until that turn is persisted or fails. */
+/** Attachments reserved by a turn until it is persisted or fails. */
 export const AttachmentTurnReservations = pgTable(
   "attachment_turn_reservations",
   {

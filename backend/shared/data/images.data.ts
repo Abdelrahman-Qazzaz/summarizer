@@ -14,8 +14,8 @@ import {
 import type { UploadId } from "../types";
 import {
   createAttachment,
-  deleteOwnedUnattachedAttachment,
-  deleteOwnedUnattachedAttachments,
+  deleteOwnedUnlinkedUnreservedAttachment,
+  deleteOwnedUnlinkedUnreservedAttachments,
   userOwnsAttachments,
 } from "./attachments.data";
 
@@ -64,20 +64,20 @@ function getSignedUrlExpiryDate() {
  * rather than making it, so the caller can hand the same URL straight back to
  * the client instead of reading it out again.
  */
-export async function createImageAttachment(upload: {
+export async function createImageAttachment(input: {
   userId: string;
   imageUploadId: UploadId;
   file: File;
   signedUrl: string;
 }) {
   await createAttachment({
-    attachmentId: upload.imageUploadId,
+    attachmentId: input.imageUploadId,
     kind: "image",
-    userId: upload.userId,
-    fileName: upload.file.name,
-    mimeType: upload.file.type,
-    sizeBytes: upload.file.size,
-    signedUrl: upload.signedUrl,
+    userId: input.userId,
+    fileName: input.file.name,
+    mimeType: input.file.type,
+    sizeBytes: input.file.size,
+    signedUrl: input.signedUrl,
     signedUrlExpiresAt: getSignedUrlExpiryDate(),
   });
 }
@@ -259,7 +259,7 @@ export async function resolveMessageImages(
   return imagesByMessageId;
 }
 
-async function findAttachedImageAttachmentIdsWhere(
+async function findLinkedImageAttachmentIdsWhere(
   userId: string,
   filter: SQL | undefined,
 ) {
@@ -280,7 +280,7 @@ export async function findConversationImageAttachmentIds(
   userId: string,
   conversationId: string,
 ) {
-  return findAttachedImageAttachmentIdsWhere(
+  return findLinkedImageAttachmentIdsWhere(
     userId,
     inArray(
       ChatMessageAttachmentLinks.messageId,
@@ -292,12 +292,12 @@ export async function findConversationImageAttachmentIds(
   );
 }
 
-export async function deleteOwnedUnattachedImageAttachment(
+export async function deleteOwnedUnlinkedUnreservedImageAttachment(
   userId: string,
   imageUploadId: string,
 ) {
   await db.transaction(async (transaction) => {
-    const deletedUploadId = await deleteOwnedUnattachedAttachment(
+    const deletedAttachmentId = await deleteOwnedUnlinkedUnreservedAttachment(
       {
         userId,
         attachmentId: imageUploadId,
@@ -305,22 +305,22 @@ export async function deleteOwnedUnattachedImageAttachment(
       },
       transaction,
     );
-    if (!deletedUploadId) return;
+    if (!deletedAttachmentId) return;
 
     // Hold the deletion lock through storage cleanup; rollback keeps failed deletes retryable.
-    await deleteFilesFromBucket(userId, [deletedUploadId]);
+    await deleteFilesFromBucket(userId, [deletedAttachmentId]);
   });
 }
 
-export async function deleteOrphanedImageAttachments(
+export async function deleteOwnedUnlinkedUnreservedImageAttachments(
   userId: string,
-  candidateImageUploadIds: readonly string[],
+  candidateAttachmentIds: readonly string[],
   executor: Executor = db,
 ) {
-  return deleteOwnedUnattachedAttachments(
+  return deleteOwnedUnlinkedUnreservedAttachments(
     {
       userId,
-      attachmentIds: candidateImageUploadIds,
+      attachmentIds: candidateAttachmentIds,
       kind: "image",
     },
     executor,

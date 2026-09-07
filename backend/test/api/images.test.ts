@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDeleteOwnedUnattachedImageAttachment } = vi.hoisted(() => ({
-  mockDeleteOwnedUnattachedImageAttachment: vi.fn(),
+const { mockDeleteOwnedUnlinkedUnreservedImageAttachment } = vi.hoisted(() => ({
+  mockDeleteOwnedUnlinkedUnreservedImageAttachment: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -11,8 +11,8 @@ vi.mock("../../shared/db", async () => ({
 
 vi.mock("../../shared/data/images.data", async (importActual) => ({
   ...(await importActual<typeof import("../../shared/data/images.data")>()),
-  deleteOwnedUnattachedImageAttachment:
-    mockDeleteOwnedUnattachedImageAttachment,
+  deleteOwnedUnlinkedUnreservedImageAttachment:
+    mockDeleteOwnedUnlinkedUnreservedImageAttachment,
 }));
 
 import { createApp } from "../../api/app";
@@ -32,19 +32,18 @@ async function deleteImage(userId = "user_01OWNER") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockDeleteOwnedUnattachedImageAttachment.mockResolvedValue(undefined);
+  mockDeleteOwnedUnlinkedUnreservedImageAttachment.mockResolvedValue(undefined);
 });
 
 describe("DELETE /upload/image/:imageUploadId", () => {
-  it("deletes an owned, unattached image", async () => {
+  it("deletes an owned, unlinked, unreserved image attachment", async () => {
     const response = await deleteImage();
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ message: "Image deleted" });
-    expect(mockDeleteOwnedUnattachedImageAttachment).toHaveBeenCalledWith(
-      "user_01OWNER",
-      imageUploadId,
-    );
+    expect(
+      mockDeleteOwnedUnlinkedUnreservedImageAttachment,
+    ).toHaveBeenCalledWith("user_01OWNER", imageUploadId);
   });
 
   it("rejects an invalid upload id", async () => {
@@ -56,7 +55,9 @@ describe("DELETE /upload/image/:imageUploadId", () => {
     });
 
     expect(response.status).toBe(400);
-    expect(mockDeleteOwnedUnattachedImageAttachment).not.toHaveBeenCalled();
+    expect(
+      mockDeleteOwnedUnlinkedUnreservedImageAttachment,
+    ).not.toHaveBeenCalled();
   });
 
   it("requires authentication", async () => {
@@ -68,11 +69,13 @@ describe("DELETE /upload/image/:imageUploadId", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(mockDeleteOwnedUnattachedImageAttachment).not.toHaveBeenCalled();
+    expect(
+      mockDeleteOwnedUnlinkedUnreservedImageAttachment,
+    ).not.toHaveBeenCalled();
   });
 
   it("reports deletion failures", async () => {
-    mockDeleteOwnedUnattachedImageAttachment.mockRejectedValueOnce(
+    mockDeleteOwnedUnlinkedUnreservedImageAttachment.mockRejectedValueOnce(
       new Error("storage unavailable"),
     );
 

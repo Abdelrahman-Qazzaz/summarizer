@@ -18,7 +18,7 @@ export async function createApp() {
   const app = new Hono();
   app.use("*", cors({ origin: env.CLIENT_URL, credentials: true }));
   // The session cookie is SameSite=None in production (see cookies/session.ts),
-  // so the browser attaches it to cross-site requests too. CORS alone does not
+  // so the browser sends it with cross-site requests too. CORS alone does not
   // cover that: multipart/form-data is a safelisted content type, so POSTs to
   // /upload are sent without a preflight and any site could forge one. This
   // rejects the form-style content types unless the Origin is the client.
