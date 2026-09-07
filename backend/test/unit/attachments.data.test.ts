@@ -1,22 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  mockTransaction,
+  mockLock,
   mockDelete,
   mockDeleteWhere,
   mockFrom,
   mockInsert,
-  mockLimit,
   mockReturning,
   mockSelect,
   mockSelectWhere,
   mockSubqueryWhere,
   mockValues,
 } = vi.hoisted(() => ({
+  mockTransaction: vi.fn(),
+  mockLock: vi.fn(),
   mockDelete: vi.fn(),
   mockDeleteWhere: vi.fn(),
   mockFrom: vi.fn(),
   mockInsert: vi.fn(),
-  mockLimit: vi.fn(),
   mockReturning: vi.fn(),
   mockSelect: vi.fn(),
   mockSelectWhere: vi.fn(),
@@ -26,6 +28,7 @@ const {
 
 vi.mock("../../shared/db", async () => ({
   db: {
+    transaction: mockTransaction,
     delete: mockDelete,
     insert: mockInsert,
     select: mockSelect,
@@ -37,7 +40,6 @@ import {
   createAttachmentUpload,
   deleteOwnedUnattachedAttachmentUpload,
   deleteOwnedUnattachedAttachmentUploads,
-  findOwnedUnattachedAttachmentUploadId,
 } from "../../shared/data/attachments.data";
 import { AttachmentUploads, ChatMessageAttachments } from "../../shared/db";
 
@@ -47,6 +49,10 @@ type AttachmentExecutor = NonNullable<
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransaction.mockImplementation((callback) =>
+    callback({ select: mockSelect, insert: mockInsert, delete: mockDelete }),
+  );
+  mockLock.mockResolvedValue([]);
   mockInsert.mockReturnValue({ values: mockValues });
   mockValues.mockResolvedValue(undefined);
   mockSelect.mockReturnValue({ from: mockFrom });
@@ -55,7 +61,9 @@ beforeEach(() => {
       ? { where: mockSelectWhere }
       : { where: mockSubqueryWhere },
   );
-  mockSelectWhere.mockReturnValue({ limit: mockLimit });
+  mockSelectWhere.mockReturnValue({
+    orderBy: () => ({ for: mockLock }),
+  });
   mockSubqueryWhere.mockReturnValue({});
   mockDelete.mockReturnValue({ where: mockDeleteWhere });
   mockDeleteWhere.mockReturnValue({ returning: mockReturning });
@@ -104,20 +112,6 @@ describe("attachment uploads", () => {
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it("returns null when no matching unattached upload exists", async () => {
-    mockLimit.mockResolvedValueOnce([]);
-
-    await expect(
-      findOwnedUnattachedAttachmentUploadId({
-        userId: "user-1",
-        attachmentUploadId: "missing-upload",
-        kind: "image",
-      }),
-    ).resolves.toBeNull();
-
-    expect(mockFrom).toHaveBeenCalledWith(ChatMessageAttachments);
-  });
-
   it("returns the upload deleted by the guarded delete", async () => {
     mockReturning.mockResolvedValueOnce([
       { attachmentUploadId: "image-upload-1" },
@@ -133,7 +127,9 @@ describe("attachment uploads", () => {
   });
 
   it("uses the supplied executor for the delete and its attachment check", async () => {
-    const transactionSubqueryWhere = vi.fn().mockReturnValue({});
+    const transactionSubqueryWhere = vi
+      .fn()
+      .mockReturnValue({ orderBy: () => ({ for: mockLock }) });
     const transactionFrom = vi.fn().mockReturnValue({
       where: transactionSubqueryWhere,
     });

@@ -60,6 +60,12 @@ export const tableStubs = {
     position: "position",
   },
 
+  AttachmentTurnReservations: {
+    attachmentUploadId: "attachment_upload_id",
+    claimToken: "claim_token",
+    expiresAt: "expires_at",
+  },
+
   TranscriptContents: {
     audioUploadId: "audio_upload_id",
     content: "content",

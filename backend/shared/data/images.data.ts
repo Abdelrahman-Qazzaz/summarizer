@@ -6,13 +6,16 @@ import {
   db,
   type Executor,
 } from "../db";
-import { IMAGE_URL_TTL_SECONDS, createSignedUrls } from "../bucket";
+import {
+  IMAGE_URL_TTL_SECONDS,
+  createSignedUrls,
+  deleteFilesFromBucket,
+} from "../bucket";
 import type { UploadId } from "../types";
 import {
   createAttachmentUpload,
   deleteOwnedUnattachedAttachmentUpload,
   deleteOwnedUnattachedAttachmentUploads,
-  findOwnedUnattachedAttachmentUploadId,
   userOwnsAttachmentUploads,
 } from "./attachments.data";
 
@@ -298,25 +301,23 @@ export async function findConversationImageUploadIds(
   );
 }
 
-export async function findOwnedUnattachedImageUploadId(
-  userId: string,
-  imageUploadId: string,
-) {
-  return findOwnedUnattachedAttachmentUploadId({
-    userId,
-    attachmentUploadId: imageUploadId,
-    kind: "image",
-  });
-}
-
 export async function deleteOwnedUnattachedImageUpload(
   userId: string,
   imageUploadId: string,
 ) {
-  await deleteOwnedUnattachedAttachmentUpload({
-    userId,
-    attachmentUploadId: imageUploadId,
-    kind: "image",
+  await db.transaction(async (transaction) => {
+    const deletedUploadId = await deleteOwnedUnattachedAttachmentUpload(
+      {
+        userId,
+        attachmentUploadId: imageUploadId,
+        kind: "image",
+      },
+      transaction,
+    );
+    if (!deletedUploadId) return;
+
+    // Hold the deletion lock through storage cleanup; rollback keeps failed deletes retryable.
+    await deleteFilesFromBucket(userId, [deletedUploadId]);
   });
 }
 
