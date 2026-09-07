@@ -43,6 +43,10 @@ import {
   type StoredTranscriptAttachment,
 } from "../../../shared/data/transcripts.data";
 import type { MessageAttachmentInput } from "../schema/messages.schema";
+import {
+  reserveAttachmentUploads,
+  releaseAttachmentReservations,
+} from "../../../shared/data/attachments.data";
 
 const log = logger.child({ controller: "messages" });
 
@@ -410,12 +414,20 @@ export async function handleCreateMessage(c: Context) {
       : c.json({ message: "Conversation not found" }, 404);
   }
 
-  const releaseClaim = () =>
-    releaseConversationClaimSafely(
+  const releaseClaim = async () => {
+    try {
+      await releaseAttachmentReservations(claimToken);
+    } catch (error) {
+      log.error("Failed to release attachment reservations", error, {
+        conversationId: messageInput.conversationId,
+      });
+    }
+    await releaseConversationClaimSafely(
       messageInput.userId,
       messageInput.conversationId,
       claimToken,
     );
+  };
 
   let turns: ChatTurn[];
   let newMessageContextCharCount: number;
@@ -464,6 +476,16 @@ export async function handleCreateMessage(c: Context) {
     ) {
       await releaseClaim();
       return c.json({ message: "Invalid model: must accept image input" }, 400);
+    }
+
+    const reserved = await reserveAttachmentUploads(
+      messageInput.userId,
+      messageInput.attachmentUploadIds,
+      claimToken,
+    );
+    if (!reserved) {
+      await releaseClaim();
+      return c.json({ message: "Attachment not found" }, 404);
     }
   } catch (error) {
     await releaseClaim();

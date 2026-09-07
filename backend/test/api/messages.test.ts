@@ -21,6 +21,8 @@ const {
   mockValidateModelInput,
   mockChatAI,
   mockGenerateTitle,
+  mockReserveAttachmentUploads,
+  mockReleaseAttachmentReservations,
 } = vi.hoisted(() => ({
   mockFindOwnedConversation: vi.fn(),
   mockClaimConversationTurn: vi.fn(),
@@ -42,6 +44,16 @@ const {
   mockValidateModelInput: vi.fn(),
   mockChatAI: vi.fn(),
   mockGenerateTitle: vi.fn(),
+  mockReserveAttachmentUploads: vi.fn(),
+  mockReleaseAttachmentReservations: vi.fn(),
+}));
+
+vi.mock("../../shared/data/attachments.data", async (importActual) => ({
+  ...(await importActual<
+    typeof import("../../shared/data/attachments.data")
+  >()),
+  reserveAttachmentUploads: mockReserveAttachmentUploads,
+  releaseAttachmentReservations: mockReleaseAttachmentReservations,
 }));
 
 // The data layer is mocked directly — these tests drive the controller's
@@ -232,6 +244,8 @@ beforeEach(() => {
   mockFindOwnedConversation.mockResolvedValue(ownedConversation);
   mockClaimConversationTurn.mockResolvedValue("claim-token");
   mockReleaseConversationTurn.mockResolvedValue(undefined);
+  mockReserveAttachmentUploads.mockResolvedValue(true);
+  mockReleaseAttachmentReservations.mockResolvedValue(undefined);
   mockFindCreateMessageHistory.mockResolvedValue([]);
   mockFindMessagePatchContext.mockResolvedValue({
     target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
@@ -382,6 +396,85 @@ describe("POST /conversations/:conversationId/messages", () => {
       ),
     );
   }
+
+  it("rejects an upload deleted after validation before starting either model call", async () => {
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
+    mockReserveAttachmentUploads.mockResolvedValueOnce(false);
+
+    const response = await postMessage({
+      messageContent: "Describe this",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+    });
+
+    expect(response.status).toBe(404);
+    expect(mockChatAI).not.toHaveBeenCalled();
+    expect(mockGenerateTitle).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      "claim-token",
+    );
+  });
+
+  it("holds image and transcript reservations while generation is pending", async () => {
+    const audioUploadId = "950e8400-e29b-41d4-a716-446655440444";
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
+    mockFindTranscripts.mockResolvedValueOnce(
+      new Map([[audioUploadId, "Transcript"]]),
+    );
+    let finishGeneration!: (content: string) => void;
+    mockChatAI.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishGeneration = resolve;
+        }),
+    );
+
+    const response = await postMessage({
+      messageContent: "Summarize these",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+      audioUploadIds: [audioUploadId],
+    });
+
+    expect(mockReserveAttachmentUploads).toHaveBeenCalledWith(
+      userId,
+      [imageUploadId, audioUploadId],
+      "claim-token",
+    );
+    expect(
+      mockReserveAttachmentUploads.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockChatAI.mock.invocationCallOrder[0]);
+    expect(
+      mockReserveAttachmentUploads.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockGenerateTitle.mock.invocationCallOrder[0]);
+    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+
+    finishGeneration("Summary");
+    expect(await response.text()).toContain("event: done");
+  });
+
+  it("releases reservations when persistence fails after generation", async () => {
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
+    mockChatAI.mockResolvedValueOnce("Answer");
+    mockPersistChatTurn.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+
+    const response = await postMessage({
+      messageContent: "Describe this",
+      chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
+    });
+
+    expect(await response.text()).toContain("event: error");
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(
+      "claim-token",
+    );
+    expect(mockReleaseConversationTurn).toHaveBeenCalled();
+  });
 
   it("requires the client to identify the conversation head", async () => {
     const res = await (
@@ -936,6 +1029,9 @@ describe("POST /conversations/:conversationId/messages", () => {
     // The writes only run once a reply is known, so a failed turn saves nothing.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(
+      "claim-token",
+    );
     expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
