@@ -27,11 +27,11 @@ function historyRow(
     messageId: string | null;
     role: "user" | "assistant" | null;
     content: string | null;
-    createdAt: Date | null;
+    createdAt: string | null;
     attachmentId: string | null;
     attachmentKind: "image" | "audio" | null;
     signedUrl: string | null;
-    signedUrlExpiresAt: Date | null;
+    signedUrlExpiresAt: string | null;
     transcriptContent: string | null;
     transcriptCharCount: number | null;
   }> = {},
@@ -42,7 +42,7 @@ function historyRow(
     messageId: "message-1",
     role: "user" as const,
     content: "Question",
-    createdAt,
+    createdAt: createdAt.toISOString(),
     attachmentId: null,
     attachmentKind: null,
     signedUrl: null,
@@ -76,7 +76,7 @@ describe("findCreateMessageHistory", () => {
         attachmentId: "image-1",
         attachmentKind: "image",
         signedUrl: "old-url",
-        signedUrlExpiresAt: createdAt,
+        signedUrlExpiresAt: createdAt.toISOString(),
       }),
       historyRow({
         messageId: "message-0",

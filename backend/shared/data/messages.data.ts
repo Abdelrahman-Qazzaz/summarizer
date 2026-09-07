@@ -127,11 +127,11 @@ type CreateMessageHistoryRow = {
   messageId: string | null;
   role: MessageRow["role"] | null;
   content: string | null;
-  createdAt: Date | null;
+  createdAt: string | null;
   attachmentId: string | null;
   attachmentKind: "image" | "audio" | null;
   signedUrl: string | null;
-  signedUrlExpiresAt: Date | null;
+  signedUrlExpiresAt: string | null;
   transcriptContent: string | null;
   transcriptCharCount: number | null;
 };
@@ -272,7 +272,7 @@ export async function findCreateMessageHistory(input: {
         id: row.messageId,
         role: row.role,
         content: row.content,
-        createdAt: row.createdAt,
+        createdAt: new Date(row.createdAt),
         transcriptContents: [],
         images: [],
         contextCharCount: row.content.length,
@@ -292,7 +292,9 @@ export async function findCreateMessageHistory(input: {
       message.images.push({
         imageUploadId: row.attachmentId,
         signedUrl: row.signedUrl,
-        signedUrlExpiresAt: row.signedUrlExpiresAt,
+        signedUrlExpiresAt: row.signedUrlExpiresAt
+          ? new Date(row.signedUrlExpiresAt)
+          : null,
       });
     }
   }
