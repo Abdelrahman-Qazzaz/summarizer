@@ -22,6 +22,7 @@ vi.mock("../../shared/cache/cache", () => ({
 }));
 
 import {
+  DEFAULT_TRANSCRIBE_MODEL,
   getTranscribeModelData,
   isValidTranscribeModel,
 } from "../../shared/ai/ai_transcribe_client";
@@ -29,7 +30,7 @@ import {
 const sttResponse = {
   stt: [
     {
-      name: "nova-3",
+      name: "general",
       canonical_name: "nova-3-general",
       architecture: "nova-3",
       languages: ["en"],
@@ -39,7 +40,7 @@ const sttResponse = {
       streaming: true,
       formatted_output: true,
     },
-    { name: "nova-2", canonical_name: "nova-2-general", uuid: "u2" },
+    { name: "general", canonical_name: "nova-2-general", uuid: "u2" },
   ],
 };
 
@@ -65,7 +66,7 @@ describe("getTranscribeModelData", () => {
     // Keyed by canonical_name.
     expect(Object.keys(data)).toEqual(["nova-3-general", "nova-2-general"]);
     expect(data["nova-3-general"]).toMatchObject({
-      name: "nova-3",
+      name: "general",
       canonicalName: "nova-3-general",
       formattedOutput: true,
     });
@@ -88,7 +89,11 @@ describe("isValidTranscribeModel", () => {
   });
 
   it("accepts a model by its display name", async () => {
-    expect(await isValidTranscribeModel("nova-3")).toBe(true);
+    expect(await isValidTranscribeModel("general")).toBe(true);
+  });
+
+  it("accepts the default when display names differ from model IDs", async () => {
+    expect(await isValidTranscribeModel(DEFAULT_TRANSCRIBE_MODEL)).toBe(true);
   });
 
   it("rejects a model that is not in the catalog", async () => {

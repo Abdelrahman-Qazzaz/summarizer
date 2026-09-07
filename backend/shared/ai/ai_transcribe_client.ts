@@ -116,4 +116,4 @@ export async function isValidTranscribeModel(
   );
 }
 
-export const DEFAULT_TRANSCRIBE_MODEL = "nova-3";
+export const DEFAULT_TRANSCRIBE_MODEL = "nova-3-general";

@@ -37,7 +37,7 @@ export type TranscriptionModelInfo = {
 };
 
 export const DEFAULT_TEXT_MODEL = "openai/gpt-4o-mini";
-export const DEFAULT_TRANSCRIPTION_MODEL = "nova-3";
+export const DEFAULT_TRANSCRIPTION_MODEL = "nova-3-general";
 
 export async function fetchChatModels(): Promise<Record<string, ModelInfo>> {
   const data = await apiJson<{ modelData: Record<string, ModelInfo> }>(
