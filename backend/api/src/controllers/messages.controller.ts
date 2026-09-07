@@ -1,6 +1,7 @@
 // TODO: stop referring to ONLY images as attachments. attachments means both in one var, seperated by "kind" attr.
 // TODO: refactor and fix patching&deletion handlers.
 
+import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { SSEEventQueue } from "../utils/sse";
@@ -363,24 +364,63 @@ class MessageRequestError extends Error {
 export async function handleCreateMessage(c: Context) {
   const messageInput = messageRequestFrom(c);
   const responseReady = Promise.withResolvers<Response>();
+  const preparationStartedAt = performance.now();
+  const preparationLog = log.child({
+    requestId: randomUUID(),
+    conversationId: messageInput.conversationId,
+  });
+
+  async function measurePreparation<T>(
+    operation: string,
+    run: () => Promise<T>,
+    dependsOn?: string,
+  ): Promise<T> {
+    const startedAt = performance.now();
+    let outcome = "fulfilled";
+    try {
+      return await run();
+    } catch (error) {
+      outcome = "rejected";
+      throw error;
+    } finally {
+      const finishedAt = performance.now();
+      preparationLog.info("Message preparation operation completed", {
+        operation,
+        dependsOn,
+        outcome,
+        durationMs: Math.round((finishedAt - startedAt) * 100) / 100,
+        startOffsetMs:
+          Math.round((startedAt - preparationStartedAt) * 100) / 100,
+        completedAfterMs:
+          Math.round((finishedAt - preparationStartedAt) * 100) / 100,
+      });
+    }
+  }
 
   // The HTTP response can be ready before the task that owns the claims finishes.
   void (async () => {
-    const claimPromise = claimConversationTurn(
-      messageInput.userId,
-      messageInput.conversationId,
-      messageInput.expectedLastMessageId,
+    const claimPromise = measurePreparation("claimConversationTurn", () =>
+      claimConversationTurn(
+        messageInput.userId,
+        messageInput.conversationId,
+        messageInput.expectedLastMessageId,
+      ),
     );
     const claimPromises = [
       claimPromise,
-      claimPromise.then((claimToken) =>
-        claimToken
-          ? reserveAttachments(
-              messageInput.userId,
-              messageInput.attachmentIds,
-              claimToken,
-            )
-          : false,
+      measurePreparation(
+        "reserveAttachments",
+        () =>
+          claimPromise.then((claimToken) =>
+            claimToken
+              ? reserveAttachments(
+                  messageInput.userId,
+                  messageInput.attachmentIds,
+                  claimToken,
+                )
+              : false,
+          ),
+        "claimConversationTurn",
       ),
     ] as const;
     const events = new SSEEventQueue();
@@ -395,18 +435,24 @@ export async function handleCreateMessage(c: Context) {
         history,
       ] = await Promise.all([
         ...claimPromises,
-        resolveImages(messageInput.userId, messageInput.imageUploadIds),
-        findTranscripts(messageInput.userId, messageInput.audioUploadIds),
-        findCreateMessageHistory({
-          userId: messageInput.userId,
-          conversationId: messageInput.conversationId,
-          newMessageContentCharCount: messageInput.content.length,
-          newTranscriptUploadIds: messageInput.audioUploadIds,
-          transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
-          maximumContextCharCount: MAX_CONTEXT_CHARS,
-          maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
-          maximumImageCount: MAX_CONTEXT_IMAGES,
-        }),
+        measurePreparation("resolveImages", () =>
+          resolveImages(messageInput.userId, messageInput.imageUploadIds),
+        ),
+        measurePreparation("findTranscripts", () =>
+          findTranscripts(messageInput.userId, messageInput.audioUploadIds),
+        ),
+        measurePreparation("findCreateMessageHistory", () =>
+          findCreateMessageHistory({
+            userId: messageInput.userId,
+            conversationId: messageInput.conversationId,
+            newMessageContentCharCount: messageInput.content.length,
+            newTranscriptUploadIds: messageInput.audioUploadIds,
+            transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
+            maximumContextCharCount: MAX_CONTEXT_CHARS,
+            maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
+            maximumImageCount: MAX_CONTEXT_IMAGES,
+          }),
+        ),
       ]);
 
       if (!claimToken) {
