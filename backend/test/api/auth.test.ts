@@ -34,7 +34,7 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 import { createApp } from "../../api/app";
-import { authedHeaders, sessionCookieHeader } from "../helpers/session";
+import { authedHeaders } from "../helpers/session";
 import { WORKOS_REDIRECT_URI } from "../../api/src/auth/auth";
 import { COOKIE_KEYS } from "../../shared/keys";
 
