@@ -53,6 +53,17 @@ describe("conversation turn claims", () => {
     ).resolves.toBeNull();
   });
 
+  it("uses a supplied token so other reservations can start independently", async () => {
+    mockReturning.mockResolvedValueOnce([{ id: "conversation-1" }]);
+
+    await expect(
+      claimConversationTurn("user-1", "conversation-1", null, "shared-token"),
+    ).resolves.toBe("shared-token");
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ activeTurnClaimToken: "shared-token" }),
+    );
+  });
+
   it("releases only the caller's claim token", async () => {
     await releaseConversationTurn("user-1", "conversation-1", "claim-1");
 

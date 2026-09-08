@@ -88,8 +88,8 @@ export async function claimConversationTurn(
   userId: string,
   conversationId: string,
   expectedLastMessageId: string | null,
+  claimToken: string = randomUUID(),
 ) {
-  const claimToken = randomUUID();
   const [row] = await db
     .update(Conversations)
     .set({
