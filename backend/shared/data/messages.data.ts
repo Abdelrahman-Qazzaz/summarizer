@@ -242,7 +242,6 @@ export async function findCreateMessageHistory(input: {
       recent_messages.message_id desc,
       ${ChatMessageAttachmentLinks.position} asc
   `);
-
   const currentTurn = rows[0];
   if (
     !currentTurn ||

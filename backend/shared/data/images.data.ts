@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { measurePreparation } from "../preparationMetrics";
 import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
 import {
   Attachments,
@@ -129,37 +131,59 @@ export async function resolveImageAttachmentUrls(
   userId: string,
   rows: readonly SignableImageRow[],
 ): Promise<Map<string, string>> {
-  const urlByImageUploadId = new Map<string, string>();
-  const needsSigning: SignableImageRow[] = [];
+  const details = { imageCount: rows.length, cachedUrlCount: 0, urlsToSign: 0 };
+  return measurePreparation(
+    "imageUrls.resolve",
+    undefined,
+    async () => {
+      const urlByImageUploadId = new Map<string, string>();
+      const needsSigning: SignableImageRow[] = [];
 
-  for (const row of rows) {
-    if (hasFreshSignedUrl(row))
-      urlByImageUploadId.set(row.imageUploadId, row.signedUrl as string);
-    else needsSigning.push(row);
-  }
-  if (needsSigning.length === 0) return urlByImageUploadId;
+      for (const row of rows) {
+        if (hasFreshSignedUrl(row))
+          urlByImageUploadId.set(row.imageUploadId, row.signedUrl as string);
+        else needsSigning.push(row);
+      }
+      details.cachedUrlCount = rows.length - needsSigning.length;
+      details.urlsToSign = needsSigning.length;
+      if (needsSigning.length === 0) return urlByImageUploadId;
 
-  const freshlySigned = await createSignedUrls(
-    needsSigning.map((row) => ({
-      userId,
-      storageObjectId: row.imageUploadId,
-    })),
+      const freshlySigned = await measurePreparation(
+        "bucket.createSignedUrls",
+        undefined,
+        () =>
+          createSignedUrls(
+            needsSigning.map((row) => ({
+              userId,
+              storageObjectId: row.imageUploadId,
+            })),
+          ),
+        { imageCount: needsSigning.length },
+      );
+      const expiresAt = getSignedUrlExpiryDate();
+      const persistUrlsPromiseAllId = randomUUID();
+
+      await Promise.all(
+        needsSigning.map((row) => {
+          const url = freshlySigned.get(row.imageUploadId);
+          if (!url) return;
+          urlByImageUploadId.set(row.imageUploadId, url);
+          return measurePreparation(
+            "db.persistSignedUrl",
+            persistUrlsPromiseAllId,
+            () =>
+              db
+                .update(Attachments)
+                .set({ signedUrl: url, signedUrlExpiresAt: expiresAt })
+                .where(eq(Attachments.attachmentId, row.imageUploadId)),
+          );
+        }),
+      );
+
+      return urlByImageUploadId;
+    },
+    details,
   );
-  const expiresAt = getSignedUrlExpiryDate();
-
-  await Promise.all(
-    needsSigning.map((row) => {
-      const url = freshlySigned.get(row.imageUploadId);
-      if (!url) return;
-      urlByImageUploadId.set(row.imageUploadId, url);
-      return db
-        .update(Attachments)
-        .set({ signedUrl: url, signedUrlExpiresAt: expiresAt })
-        .where(eq(Attachments.attachmentId, row.imageUploadId));
-    }),
-  );
-
-  return urlByImageUploadId;
 }
 
 function toResolvedImage(row: ImageAttachmentRow, url: string): ResolvedImage {
@@ -188,7 +212,12 @@ async function resolveImagesWhere(
 ): Promise<ResolvedImage[]> {
   if (imageUploadIds.length === 0) return [];
 
-  const rows = await findImageAttachments(userId, imageUploadIds, filter);
+  const rows = await measurePreparation(
+    "db.findImageAttachments",
+    undefined,
+    () => findImageAttachments(userId, imageUploadIds, filter),
+    { imageCount: imageUploadIds.length },
+  );
   if (rows.length === 0) return [];
 
   const urlByImageUploadId = await resolveImageAttachmentUrls(userId, rows);

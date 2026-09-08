@@ -27,6 +27,10 @@ import {
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
 import {
+  measurePreparation,
+  withPreparationMetrics,
+} from "../../../shared/preparationMetrics";
+import {
   claimConversationTurn,
   findOwnedConversation,
   releaseConversationTurn,
@@ -370,35 +374,13 @@ export async function handleCreateMessage(c: Context) {
     conversationId: messageInput.conversationId,
   });
 
-  async function measurePreparation<T>(
-    operation: string,
-    promiseAllId: string,
-    run: () => Promise<T>,
-  ): Promise<T> {
-    const startedAt = performance.now();
-    let outcome = "fulfilled";
-    try {
-      return await run();
-    } catch (error) {
-      outcome = "rejected";
-      throw error;
-    } finally {
-      const finishedAt = performance.now();
-      preparationLog.info("Message preparation operation completed", {
-        operation,
-        promiseAllId,
-        outcome,
-        durationMs: Math.round((finishedAt - startedAt) * 100) / 100,
-        startOffsetMs:
-          Math.round((startedAt - preparationStartedAt) * 100) / 100,
-        completedAfterMs:
-          Math.round((finishedAt - preparationStartedAt) * 100) / 100,
-      });
-    }
-  }
+  const metricsContext = {
+    log: preparationLog,
+    startedAt: preparationStartedAt,
+  };
 
   // The HTTP response can be ready before the task that owns the claims finishes.
-  void (async () => {
+  void withPreparationMetrics(metricsContext, async () => {
     const preparationPromiseAllId = randomUUID();
     const claimToken = randomUUID();
     const claimPromises = [
@@ -498,7 +480,9 @@ export async function handleCreateMessage(c: Context) {
       );
       if (
         containsImageInput(turns) &&
-        !(await validateChatModelInput(messageInput.chosenModelId, "image"))
+        !(await measurePreparation("validateChatModelInput", undefined, () =>
+          validateChatModelInput(messageInput.chosenModelId, "image"),
+        ))
       ) {
         throw new MessageRequestError(400, {
           message: "Invalid model: must accept image input",
@@ -517,8 +501,24 @@ export async function handleCreateMessage(c: Context) {
         messageInput.expectedLastMessageId === null
           ? titleForFirstTurn(messageInput.content, messageInput.conversationId)
           : Promise.resolve(undefined);
+      const modelStartedAt = performance.now();
+      let firstTokenRecorded = false;
       const assistantContent = await chatAI(messageInput.chosenModelId, turns, {
-        onDelta: async (delta) => events.push("delta", { delta }),
+        onDelta: async (delta) => {
+          if (delta.length > 0 && !firstTokenRecorded) {
+            firstTokenRecorded = true;
+            const firstTokenAt = performance.now();
+            preparationLog.info("Message first token generated", {
+              modelStartedAfterMs:
+                Math.round((modelStartedAt - preparationStartedAt) * 100) / 100,
+              modelTimeToFirstTokenMs:
+                Math.round((firstTokenAt - modelStartedAt) * 100) / 100,
+              firstTokenAfterMs:
+                Math.round((firstTokenAt - preparationStartedAt) * 100) / 100,
+            });
+          }
+          events.push("delta", { delta });
+        },
         maxOutputTokens: MAX_RESPONSE_TOKENS,
         sessionId: messageInput.conversationId,
       });
@@ -570,7 +570,7 @@ export async function handleCreateMessage(c: Context) {
       );
       events.end();
     }
-  })().then(responseReady.resolve, responseReady.reject);
+  }).then(responseReady.resolve, responseReady.reject);
 
   return responseReady.promise;
 }
