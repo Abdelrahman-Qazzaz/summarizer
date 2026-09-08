@@ -374,7 +374,6 @@ export async function handleCreateMessage(c: Context) {
     operation: string,
     promiseAllId: string,
     run: () => Promise<T>,
-    dependsOn?: string,
   ): Promise<T> {
     const startedAt = performance.now();
     let outcome = "fulfilled";
@@ -388,7 +387,6 @@ export async function handleCreateMessage(c: Context) {
       preparationLog.info("Message preparation operation completed", {
         operation,
         promiseAllId,
-        dependsOn,
         outcome,
         durationMs: Math.round((finishedAt - startedAt) * 100) / 100,
         startOffsetMs:
@@ -402,32 +400,22 @@ export async function handleCreateMessage(c: Context) {
   // The HTTP response can be ready before the task that owns the claims finishes.
   void (async () => {
     const preparationPromiseAllId = randomUUID();
-    const claimPromise = measurePreparation(
-      "claimConversationTurn",
-      preparationPromiseAllId,
-      () =>
+    const claimToken = randomUUID();
+    const claimPromises = [
+      measurePreparation("claimConversationTurn", preparationPromiseAllId, () =>
         claimConversationTurn(
           messageInput.userId,
           messageInput.conversationId,
           messageInput.expectedLastMessageId,
+          claimToken,
         ),
-    );
-    const claimPromises = [
-      claimPromise,
-      measurePreparation(
-        "reserveAttachments",
-        preparationPromiseAllId,
-        () =>
-          claimPromise.then((claimToken) =>
-            claimToken
-              ? reserveAttachments(
-                  messageInput.userId,
-                  messageInput.attachmentIds,
-                  claimToken,
-                )
-              : false,
-          ),
-        "claimConversationTurn",
+      ),
+      measurePreparation("reserveAttachments", preparationPromiseAllId, () =>
+        reserveAttachments(
+          messageInput.userId,
+          messageInput.attachmentIds,
+          claimToken,
+        ),
       ),
     ] as const;
     const events = new SSEEventQueue();
@@ -435,7 +423,7 @@ export async function handleCreateMessage(c: Context) {
 
     try {
       const [
-        claimToken,
+        acquiredClaimToken,
         attachmentsReserved,
         resolvedImages,
         transcriptContentsByAudioUploadId,
@@ -465,7 +453,7 @@ export async function handleCreateMessage(c: Context) {
         ),
       ]);
 
-      if (!claimToken) {
+      if (!acquiredClaimToken) {
         const ownedConversation = await findOwnedConversation(
           messageInput.userId,
           messageInput.conversationId,
@@ -569,20 +557,17 @@ export async function handleCreateMessage(c: Context) {
       return streamResponse;
     } finally {
       // A failed read does not cancel acquisition; settle it before releasing anything.
-      const [claimResult] = await Promise.allSettled(claimPromises);
-      if (claimResult.status === "fulfilled" && claimResult.value) {
-        const claimToken = claimResult.value;
-        await releaseAttachmentReservations(claimToken).catch((error) => {
-          log.error("Failed to release attachment reservations", error, {
-            conversationId: messageInput.conversationId,
-          });
+      await Promise.allSettled(claimPromises);
+      await releaseAttachmentReservations(claimToken).catch((error) => {
+        log.error("Failed to release attachment reservations", error, {
+          conversationId: messageInput.conversationId,
         });
-        await releaseConversationClaimSafely(
-          messageInput.userId,
-          messageInput.conversationId,
-          claimToken,
-        );
-      }
+      });
+      await releaseConversationClaimSafely(
+        messageInput.userId,
+        messageInput.conversationId,
+        claimToken,
+      );
       events.end();
     }
   })().then(responseReady.resolve, responseReady.reject);

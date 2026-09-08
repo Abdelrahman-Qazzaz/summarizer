@@ -242,7 +242,10 @@ function messageRequestBody(body: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockFindOwnedConversation.mockResolvedValue(ownedConversation);
-  mockClaimConversationTurn.mockResolvedValue("claim-token");
+  mockClaimConversationTurn.mockImplementation(
+    (_userId, _conversationId, _lastMessageId, claimToken = "claim-token") =>
+      Promise.resolve(claimToken),
+  );
   mockReleaseConversationTurn.mockResolvedValue(undefined);
   mockReserveAttachments.mockResolvedValue(true);
   mockReleaseAttachmentReservations.mockResolvedValue(undefined);
@@ -379,6 +382,10 @@ describe("GET /conversations/:conversationId/messages", () => {
 });
 
 describe("POST /conversations/:conversationId/messages", () => {
+  function requestClaimToken(): string {
+    return mockClaimConversationTurn.mock.calls[0][3];
+  }
+
   function postMessage(body: unknown, signal?: AbortSignal) {
     const requestBody =
       body && typeof body === "object" && !Array.isArray(body)
@@ -413,7 +420,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
   });
 
@@ -441,7 +448,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockReserveAttachments).toHaveBeenCalledWith(
       userId,
       [imageUploadId, audioUploadId],
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReserveAttachments.mock.invocationCallOrder[0]).toBeLessThan(
       mockChatAI.mock.invocationCallOrder[0],
@@ -471,7 +478,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(await response.text()).toContain("event: error");
     expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReleaseConversationTurn).toHaveBeenCalled();
   });
@@ -492,7 +499,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(mockReserveAttachments).toHaveBeenCalledWith(
         userId,
         [imageUploadId],
-        "claim-token",
+        requestClaimToken(),
       ),
     );
     expect(mockChatAI).not.toHaveBeenCalled();
@@ -502,12 +509,12 @@ describe("POST /conversations/:conversationId/messages", () => {
     const response = await responsePromise;
     expect(await response.text()).toContain("event: done");
     expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
   });
 
@@ -529,9 +536,9 @@ describe("POST /conversations/:conversationId/messages", () => {
     await vi.waitFor(() =>
       expect(mockFindCreateMessageHistory).toHaveBeenCalled(),
     );
-    expect(mockReserveAttachments).not.toHaveBeenCalled();
+    expect(mockReserveAttachments).toHaveBeenCalled();
     expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
-    claim.resolve("claim-token");
+    claim.resolve(requestClaimToken());
     await vi.waitFor(() => expect(mockReserveAttachments).toHaveBeenCalled());
     expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
@@ -539,12 +546,12 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect((await responsePromise).status).toBe(500);
     expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockChatAI).not.toHaveBeenCalled();
   });
@@ -562,31 +569,49 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(response.status).toBe(500);
     expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockChatAI).not.toHaveBeenCalled();
     expect(mockGenerateTitle).not.toHaveBeenCalled();
   });
 
-  it("does not reserve or release anything when claiming fails", async () => {
+  it("waits for a late reservation and releases it when claiming fails", async () => {
+    const reservation = Promise.withResolvers<boolean>();
+    mockReserveAttachments.mockReturnValueOnce(reservation.promise);
     mockClaimConversationTurn.mockRejectedValueOnce(
       new Error("claim unavailable"),
     );
 
-    const response = await postMessage({
+    const responsePromise = postMessage({
       messageContent: "Hi",
       chosenModelId: modelId,
+      imageUploadIds: [imageUploadId],
     });
 
-    expect(response.status).toBe(500);
-    expect(mockReserveAttachments).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mockReserveAttachments).toHaveBeenCalled());
+    expect(mockReserveAttachments).toHaveBeenCalledWith(
+      userId,
+      [imageUploadId],
+      requestClaimToken(),
+    );
     expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    reservation.resolve(true);
+
+    expect((await responsePromise).status).toBe(500);
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+      requestClaimToken(),
+    );
+    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+      userId,
+      conversationId,
+      requestClaimToken(),
+    );
   });
 
   it("releases reservations when transcript validation fails", async () => {
@@ -602,15 +627,15 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockReserveAttachments).toHaveBeenCalledWith(
       userId,
       [audioUploadId],
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
   });
 
@@ -671,11 +696,11 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
         userId,
         conversationId,
-        "claim-token",
+        requestClaimToken(),
       ),
     );
     expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
-      "claim-token",
+      requestClaimToken(),
     );
   });
 
@@ -712,11 +737,12 @@ describe("POST /conversations/:conversationId/messages", () => {
       userId,
       conversationId,
       messageId,
+      requestClaimToken(),
     );
     expect(mockGenerateTitle).not.toHaveBeenCalled();
   });
 
-  it("fetches message context while the conversation claim is pending", async () => {
+  it("starts the attachment reservation and context reads while the conversation claim is pending", async () => {
     let resolveClaim!: (claimToken: string) => void;
     mockClaimConversationTurn.mockImplementationOnce(
       () =>
@@ -732,11 +758,16 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     await vi.waitFor(() => {
+      expect(mockReserveAttachments).toHaveBeenCalledWith(
+        userId,
+        [],
+        requestClaimToken(),
+      );
       expect(mockResolveImages).toHaveBeenCalled();
       expect(mockFindCreateMessageHistory).toHaveBeenCalled();
     });
 
-    resolveClaim("claim-token");
+    resolveClaim(requestClaimToken());
     const res = await responsePromise;
     expect(res.status).toBe(200);
     await res.text();
@@ -756,7 +787,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockChatAI).not.toHaveBeenCalled();
   });
@@ -770,9 +801,19 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(res.status).toBe(409);
-    expect(mockReserveAttachments).not.toHaveBeenCalled();
-    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    expect(mockReserveAttachments).toHaveBeenCalledWith(
+      userId,
+      [],
+      requestClaimToken(),
+    );
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+      requestClaimToken(),
+    );
+    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+      userId,
+      conversationId,
+      requestClaimToken(),
+    );
     expect(await res.json()).toEqual({
       message: "Conversation changed or a response is already in progress",
     });
@@ -865,7 +906,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         attachmentIds: [],
         contextWindowMessageCount: 2,
         conversationTitle: "Friendly greeting",
-        claimToken: "claim-token",
+        claimToken: requestClaimToken(),
       }),
     );
     expect(mockGenerateTitle).toHaveBeenCalledWith("conversation", "Hi there");
@@ -1043,7 +1084,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
   });
 
@@ -1236,12 +1277,12 @@ describe("POST /conversations/:conversationId/messages", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
     expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(
-      "claim-token",
+      requestClaimToken(),
     );
     expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
-      "claim-token",
+      requestClaimToken(),
     );
   });
 

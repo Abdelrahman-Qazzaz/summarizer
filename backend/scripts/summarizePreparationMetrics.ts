@@ -11,7 +11,6 @@ type PreparationMetric = {
   durationMs: number;
   startOffsetMs: number;
   completedAfterMs: number;
-  dependsOn?: string;
 };
 
 type HappyPathResult = {
@@ -75,7 +74,6 @@ const summaries = [...groups.entries()].map(([promiseAllId, metrics]) => {
       operation: metric.operation,
       durationMs: metric.durationMs,
       outcome: metric.outcome,
-      dependsOn: metric.dependsOn,
       startOffsetMs: metric.startOffsetMs,
       completedAfterMs: metric.completedAfterMs,
     })),
