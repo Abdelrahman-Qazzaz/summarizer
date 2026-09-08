@@ -372,6 +372,7 @@ export async function handleCreateMessage(c: Context) {
 
   async function measurePreparation<T>(
     operation: string,
+    promiseAllId: string,
     run: () => Promise<T>,
     dependsOn?: string,
   ): Promise<T> {
@@ -386,6 +387,7 @@ export async function handleCreateMessage(c: Context) {
       const finishedAt = performance.now();
       preparationLog.info("Message preparation operation completed", {
         operation,
+        promiseAllId,
         dependsOn,
         outcome,
         durationMs: Math.round((finishedAt - startedAt) * 100) / 100,
@@ -399,17 +401,22 @@ export async function handleCreateMessage(c: Context) {
 
   // The HTTP response can be ready before the task that owns the claims finishes.
   void (async () => {
-    const claimPromise = measurePreparation("claimConversationTurn", () =>
-      claimConversationTurn(
-        messageInput.userId,
-        messageInput.conversationId,
-        messageInput.expectedLastMessageId,
-      ),
+    const preparationPromiseAllId = randomUUID();
+    const claimPromise = measurePreparation(
+      "claimConversationTurn",
+      preparationPromiseAllId,
+      () =>
+        claimConversationTurn(
+          messageInput.userId,
+          messageInput.conversationId,
+          messageInput.expectedLastMessageId,
+        ),
     );
     const claimPromises = [
       claimPromise,
       measurePreparation(
         "reserveAttachments",
+        preparationPromiseAllId,
         () =>
           claimPromise.then((claimToken) =>
             claimToken
@@ -435,23 +442,26 @@ export async function handleCreateMessage(c: Context) {
         history,
       ] = await Promise.all([
         ...claimPromises,
-        measurePreparation("resolveImages", () =>
+        measurePreparation("resolveImages", preparationPromiseAllId, () =>
           resolveImages(messageInput.userId, messageInput.imageUploadIds),
         ),
-        measurePreparation("findTranscripts", () =>
+        measurePreparation("findTranscripts", preparationPromiseAllId, () =>
           findTranscripts(messageInput.userId, messageInput.audioUploadIds),
         ),
-        measurePreparation("findCreateMessageHistory", () =>
-          findCreateMessageHistory({
-            userId: messageInput.userId,
-            conversationId: messageInput.conversationId,
-            newMessageContentCharCount: messageInput.content.length,
-            newTranscriptUploadIds: messageInput.audioUploadIds,
-            transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
-            maximumContextCharCount: MAX_CONTEXT_CHARS,
-            maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
-            maximumImageCount: MAX_CONTEXT_IMAGES,
-          }),
+        measurePreparation(
+          "findCreateMessageHistory",
+          preparationPromiseAllId,
+          () =>
+            findCreateMessageHistory({
+              userId: messageInput.userId,
+              conversationId: messageInput.conversationId,
+              newMessageContentCharCount: messageInput.content.length,
+              newTranscriptUploadIds: messageInput.audioUploadIds,
+              transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
+              maximumContextCharCount: MAX_CONTEXT_CHARS,
+              maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
+              maximumImageCount: MAX_CONTEXT_IMAGES,
+            }),
         ),
       ]);
 
