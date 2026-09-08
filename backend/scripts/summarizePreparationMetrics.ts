@@ -17,6 +17,7 @@ type PreparationMetric = {
 type HappyPathResult = {
   label: string;
   conversationId?: string;
+  timeToFirstTokenMs?: number;
 };
 
 const [logPath, resultsPath, outputPath] = process.argv.slice(2);
@@ -32,11 +33,11 @@ const [logContents, resultsContents] = await Promise.all([
 const { results } = JSON.parse(resultsContents) as {
   results: HappyPathResult[];
 };
-const scenariosByConversation = new Map<string, string[]>();
+const scenariosByConversation = new Map<string, HappyPathResult[]>();
 for (const result of results) {
   if (!result.conversationId) continue;
   const scenarios = scenariosByConversation.get(result.conversationId) ?? [];
-  scenarios.push(result.label);
+  scenarios.push(result);
   scenariosByConversation.set(result.conversationId, scenarios);
 }
 
@@ -56,15 +57,12 @@ for (const rawLine of logContents.split("\n")) {
 const summaries = [...groups.entries()].map(([promiseAllId, metrics]) => {
   metrics.sort((first, second) => second.durationMs - first.durationMs);
   const slowest = metrics[0]!;
-  const scenario = scenariosByConversation.get(slowest.conversationId)?.shift();
-  assert(scenario, "No matching happy-path scenario for preparation group");
   assert(metrics.every((metric) => metric.requestId === slowest.requestId));
   assert.equal(
     new Set(metrics.map((metric) => metric.operation)).size,
     metrics.length,
   );
   return {
-    scenario,
     durationMs: slowest.durationMs,
     bottleneck: slowest.operation,
     promiseAllId,
@@ -84,13 +82,49 @@ const summaries = [...groups.entries()].map(([promiseAllId, metrics]) => {
   };
 });
 assert(summaries.length > 0, "No matching preparation logs found");
+const groupsByRequest = new Map<string, typeof summaries>();
+for (const summary of summaries) {
+  const requestGroups = groupsByRequest.get(summary.requestId) ?? [];
+  requestGroups.push(summary);
+  groupsByRequest.set(summary.requestId, requestGroups);
+}
+const requests = [...groupsByRequest.entries()].map(
+  ([requestId, requestGroups]) => {
+    requestGroups.sort((first, second) => second.durationMs - first.durationMs);
+    const conversationId = requestGroups[0]!.conversationId;
+    const scenario = scenariosByConversation.get(conversationId)?.shift();
+    assert(scenario, "No matching happy-path scenario for request");
+    const timeToFirstTokenMs = scenario.timeToFirstTokenMs;
+    assert(
+      typeof timeToFirstTokenMs === "number" &&
+        Number.isFinite(timeToFirstTokenMs) &&
+        timeToFirstTokenMs >= 0,
+      "Happy-path results must measure timeToFirstTokenMs from the live stream",
+    );
+    return {
+      scenario: scenario.label,
+      timeToFirstTokenMs,
+      requestId,
+      conversationId,
+      preparationGroups: requestGroups.map(
+        ({
+          requestId: _requestId,
+          conversationId: _conversationId,
+          ...group
+        }) => group,
+      ),
+    };
+  },
+);
 assert(
   [...scenariosByConversation.values()].every(
     (scenarios) => scenarios.length === 0,
   ),
 );
-summaries.sort((first, second) => second.durationMs - first.durationMs);
-await writeFile(outputPath, `${JSON.stringify(summaries, null, 2)}\n`);
+requests.sort(
+  (first, second) => second.timeToFirstTokenMs - first.timeToFirstTokenMs,
+);
+await writeFile(outputPath, `${JSON.stringify(requests, null, 2)}\n`);
 console.log(
-  `Wrote ${summaries.length} Promise.all groups, slowest first, to ${outputPath}`,
+  `Wrote ${requests.length} requests, longest time to first token first, to ${outputPath}`,
 );
