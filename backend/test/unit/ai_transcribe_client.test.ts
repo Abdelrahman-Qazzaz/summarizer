@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { CACHE_KEYS } from "../../shared/cache/cacheKeys";
 
 const { mockModelsList, mockGetCache, mockSetCache } = vi.hoisted(() => ({
   mockModelsList: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("@deepgram/sdk", () => ({
 }));
 
 vi.mock("../../shared/cache/cache", () => ({
+  CACHE_KEYS,
   getCache: mockGetCache,
   setCache: mockSetCache,
 }));
@@ -67,7 +69,10 @@ describe("getTranscribeModelData", () => {
       canonicalName: "nova-3-general",
       formattedOutput: true,
     });
-    expect(mockSetCache).toHaveBeenCalledWith("deepgramTranscribeModels", data);
+    expect(mockSetCache).toHaveBeenCalledWith(
+      CACHE_KEYS.deepgramTranscribeModels,
+      data,
+    );
   });
 });
 

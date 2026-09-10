@@ -1,7 +1,7 @@
 import { getBaseEnv } from "../env";
 import { OpenRouter } from "@openrouter/sdk";
 
-import { getCache, setCache } from "../cache/cache";
+import { CACHE_KEYS, getCache, setCache } from "../cache/cache";
 import type {
   ChatContentItems,
   InputModality,
@@ -132,7 +132,7 @@ type ChatModelData = {
 // keeps that check off the network. The in-memory tier of getCache also spares
 // each process the Redis round-trip once warm.
 export async function getChatModelData(): Promise<ChatModelData> {
-  const hit = await getCache<ChatModelData>("openRouterModels");
+  const hit = await getCache<ChatModelData>(CACHE_KEYS.openRouterModels);
   if (hit != null) return hit;
 
   // Only text-output models are ever chosen here (summary/chat); transcription
@@ -156,7 +156,7 @@ export async function getChatModelData(): Promise<ChatModelData> {
     ]),
   );
 
-  await setCache("openRouterModels", modelData);
+  await setCache(CACHE_KEYS.openRouterModels, modelData);
   return modelData;
 }
 

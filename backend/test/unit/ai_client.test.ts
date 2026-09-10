@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { CACHE_KEYS } from "../../shared/cache/cacheKeys";
 
 const { mockGetCache, mockSetCache, mockModelsList, mockChatSend } = vi.hoisted(
   () => ({
@@ -10,6 +11,7 @@ const { mockGetCache, mockSetCache, mockModelsList, mockChatSend } = vi.hoisted(
 );
 
 vi.mock("../../shared/cache/cache", () => ({
+  CACHE_KEYS,
   getCache: mockGetCache,
   setCache: mockSetCache,
 }));
@@ -74,7 +76,7 @@ describe("getChatModelData", () => {
     const result = await getChatModelData();
 
     expect(result).toEqual(sampleModelData);
-    expect(mockGetCache).toHaveBeenCalledWith("openRouterModels");
+    expect(mockGetCache).toHaveBeenCalledWith(CACHE_KEYS.openRouterModels);
     expect(mockModelsList).not.toHaveBeenCalled();
     expect(mockSetCache).not.toHaveBeenCalled();
   });
@@ -92,7 +94,7 @@ describe("getChatModelData", () => {
     // Only text-output models are relevant here; transcription is Deepgram's.
     expect(mockModelsList).toHaveBeenCalledWith({ outputModalities: "text" });
     expect(mockSetCache).toHaveBeenCalledWith(
-      "openRouterModels",
+      CACHE_KEYS.openRouterModels,
       sampleModelData,
     );
   });

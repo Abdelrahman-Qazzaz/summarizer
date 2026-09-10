@@ -1,6 +1,6 @@
 import { DeepgramClient } from "@deepgram/sdk";
 import { getBaseEnv } from "../env";
-import { getCache, setCache } from "../cache/cache";
+import { CACHE_KEYS, getCache, setCache } from "../cache/cache";
 
 const deepgram = new DeepgramClient({ apiKey: getBaseEnv().DEEPGRAM_API_KEY });
 
@@ -65,7 +65,9 @@ type TranscribeModelData = {
 };
 
 export async function getTranscribeModelData(): Promise<TranscribeModelData> {
-  const hit = await getCache<TranscribeModelData>("deepgramTranscribeModels");
+  const hit = await getCache<TranscribeModelData>(
+    CACHE_KEYS.deepgramTranscribeModels,
+  );
   if (hit != null) return hit;
 
   const response = await deepgram.manage.v1.models.list();
@@ -92,7 +94,7 @@ export async function getTranscribeModelData(): Promise<TranscribeModelData> {
     }),
   );
 
-  await setCache("deepgramTranscribeModels", modelData);
+  await setCache(CACHE_KEYS.deepgramTranscribeModels, modelData);
   return modelData;
 }
 
