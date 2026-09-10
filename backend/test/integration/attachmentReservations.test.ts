@@ -154,6 +154,43 @@ describe.skipIf(!testState.databaseUrl)(
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
     });
 
+    it("deduplicates IDs and retains the reservation expiry", async () => {
+      const startedAt = Date.now();
+      expect(
+        await reserveAttachments(
+          userId,
+          [imageUploadId, imageUploadId],
+          claimToken,
+        ),
+      ).toBe(true);
+      const rows = await db.select().from(AttachmentTurnReservations);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].expiresAt.getTime()).toBeGreaterThanOrEqual(
+        startedAt + 600_000,
+      );
+      expect(rows[0].claimToken).toBe(claimToken);
+    });
+
+    it("allows concurrent reservations with reversed input order", async () => {
+      expect(
+        await Promise.all([
+          reserveAttachments(
+            userId,
+            [imageUploadId, audioUploadId],
+            randomUUID(),
+          ),
+          reserveAttachments(
+            userId,
+            [audioUploadId, imageUploadId],
+            randomUUID(),
+          ),
+        ]),
+      ).toEqual([true, true]);
+      expect(await db.select().from(AttachmentTurnReservations)).toHaveLength(
+        4,
+      );
+    });
+
     it("protects images and transcripts until the completed turn links them", async () => {
       expect(
         await reserveAttachments(
