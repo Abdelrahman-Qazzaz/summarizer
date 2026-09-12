@@ -98,23 +98,36 @@ export async function reserveAttachments(
   const uniqueAttachmentIds = [...new Set(attachmentIds)];
   if (uniqueAttachmentIds.length === 0) return true;
 
-  return db.transaction(async (transaction) => {
-    const attachments = await lockOwnedAttachments(
-      userId,
-      uniqueAttachmentIds,
-      transaction,
-    );
-    if (attachments.length !== uniqueAttachmentIds.length) return false;
+  const [result] = await db.execute<{ reservationCount: number }>(sql`
+    with locked_attachments as materialized (
+      select ${Attachments.attachmentId}
+      from ${Attachments}
+      where ${Attachments.userId} = ${userId}
+        and ${inArray(Attachments.attachmentId, uniqueAttachmentIds)}
+      order by ${Attachments.attachmentId}
+      for update
+    ),
+    inserted_reservations as (
+      insert into ${AttachmentTurnReservations} (
+        ${sql.identifier(AttachmentTurnReservations.attachmentId.name)},
+        ${sql.identifier(AttachmentTurnReservations.claimToken.name)},
+        ${sql.identifier(AttachmentTurnReservations.expiresAt.name)}
+      )
+      select
+        ${sql.identifier(Attachments.attachmentId.name)},
+        ${claimToken},
+        ${new Date(Date.now() + CLAIM_LEASE_MS).toISOString()}::timestamptz
+      from locked_attachments
+      where (
+        select count(*) from locked_attachments
+      ) = ${uniqueAttachmentIds.length}
+      returning ${AttachmentTurnReservations.attachmentId}
+    )
+    select count(*)::integer as "reservationCount"
+    from inserted_reservations
+  `);
 
-    await transaction.insert(AttachmentTurnReservations).values(
-      uniqueAttachmentIds.map((attachmentId) => ({
-        attachmentId,
-        claimToken,
-        expiresAt: new Date(Date.now() + CLAIM_LEASE_MS),
-      })),
-    );
-    return true;
-  });
+  return result?.reservationCount === uniqueAttachmentIds.length;
 }
 
 export async function releaseAttachmentReservations(

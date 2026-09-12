@@ -6,7 +6,11 @@ import * as schema from "./schema";
 
 // Supabase Postgres. `prepare: false` keeps this compatible with Supabase's
 // transaction pooler (pgbouncer); it's harmless on a direct connection.
-const client = postgres(getBaseEnv().DATABASE_URL, { prepare: false });
+const connectionOptions = {
+  prepare: false,
+  fetch_types: false,
+} as const;
+const client = postgres(getBaseEnv().DATABASE_URL, connectionOptions);
 
 export const db = drizzle(client, { schema });
 
@@ -18,9 +22,15 @@ export const db = drizzle(client, { schema });
 export type Executor =
   typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+const DATABASE_CONNECTION_COUNT_TO_WARM = 5;
+
 /** Startup health check: fails if the database is unreachable. */
 export async function pingDb(): Promise<void> {
-  await db.execute(drizzleSql`select 1`);
+  await Promise.all(
+    Array.from({ length: DATABASE_CONNECTION_COUNT_TO_WARM }, () =>
+      db.execute(drizzleSql`select 1`),
+    ),
+  );
 }
 
 export * from "./schema";
