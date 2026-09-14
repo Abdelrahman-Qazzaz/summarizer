@@ -56,7 +56,13 @@ export function buildUserTurn(
   };
 }
 
+// Nothing else ends a stalled model call: OpenRouter's keep-alive comments keep
+// the connection open, and the SDK drops them before they reach us. Until the
+// call ends, the handler holds the conversation claim and attachment
+// reservations. The total stays under CLAIM_LEASE_MS (10 minutes) so the turn
+// can still be persisted afterwards.
 const CHAT_TOTAL_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes
+// Reasoning models can think for minutes before their first token.
 const CHAT_FIRST_TOKEN_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 const CHAT_BETWEEN_CHUNKS_TIMEOUT_MS = 30 * 1000; // 30 seconds
 const TITLE_TIMEOUT_MS = 15 * 1000; // 15 seconds
@@ -133,8 +139,15 @@ async function streamChatAI(
 
 type ChatOptions = {
   onDelta?: ((delta: string) => void | Promise<void>) | undefined;
+  /** Ceiling on the completion, so one call can't run up an unbounded bill. */
   maxOutputTokens?: number | undefined;
+  /**
+   * Groups a conversation's turns so OpenRouter routes them all to the same
+   * provider (sticky), keeping that provider's prompt cache warm across the
+   * turn's stable history prefix — the biggest lever on time-to-first-token.
+   */
   sessionId?: string | undefined;
+  /** Ceiling on the whole call. Defaults to CHAT_TOTAL_TIMEOUT_MS. */
   timeoutMs?: number | undefined;
 };
 
@@ -144,6 +157,9 @@ export async function chatAI(
   opts: ChatOptions = {},
 ): Promise<string> {
   const maxCompletionTokens = opts.maxOutputTokens;
+  // `sort: "latency"` routes to the lowest time-to-first-token endpoint (no load
+  // balancing); paired with the sticky sessionId, turns stay on one fast, warm
+  // provider.
   const routing: Routing = {
     provider: { sort: "latency" },
     sessionId: opts.sessionId,
