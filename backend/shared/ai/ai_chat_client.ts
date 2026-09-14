@@ -10,6 +10,14 @@ import type {
   PublicPricing,
   TopProviderInfo,
 } from "@openrouter/sdk/models";
+import { withTimeout } from "../abortController";
+
+type Routing = {
+  readonly provider: {
+    readonly sort: "latency";
+  };
+  readonly sessionId: string | undefined;
+};
 
 const ai_client = new OpenRouter({
   apiKey: getBaseEnv().OPENROUTER_API_KEY,
@@ -48,71 +56,130 @@ export function buildUserTurn(
   };
 }
 
-export async function chatAI(
+const CHAT_TOTAL_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes
+const CHAT_FIRST_TOKEN_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+const CHAT_BETWEEN_CHUNKS_TIMEOUT_MS = 30 * 1000; // 30 seconds
+const TITLE_TIMEOUT_MS = 15 * 1000; // 15 seconds
+
+async function nonStreamChatAI(
   model: string,
   messages: ChatTurn[],
-  opts: {
-    onDelta?: (delta: string) => void | Promise<void>;
-    /** Ceiling on the completion, so one call can't run up an unbounded bill. */
-    maxOutputTokens?: number;
-    /**
-     * Groups a conversation's turns so OpenRouter routes them all to the same
-     * provider (sticky), keeping that provider's prompt cache warm across the
-     * turn's stable history prefix — the biggest lever on time-to-first-token.
-     */
-    sessionId?: string;
-  } = {},
-): Promise<string> {
-  const maxCompletionTokens = opts.maxOutputTokens;
-  // `sort: "latency"` routes to the lowest time-to-first-token endpoint (no load
-  // balancing); paired with the sticky sessionId, turns stay on one fast, warm
-  // provider.
-  const routing = {
-    provider: { sort: "latency" },
-    sessionId: opts.sessionId,
-  } as const;
-
-  // Non-streaming
-  if (!opts.onDelta) {
-    const completion = await ai_client.chat.send({
+  maxCompletionTokens: number | undefined,
+  routing: Routing,
+  abortSignal: AbortSignal,
+) {
+  const completion = await ai_client.chat.send(
+    {
       chatRequest: {
         model,
         messages,
         maxCompletionTokens,
         ...routing,
       },
-    });
-
-    if (!("choices" in completion))
-      throw new Error("Expected a non-streaming chat response");
-    const content = completion.choices[0]?.message?.content;
-    return typeof content === "string" ? content : "";
-  }
-
-  // Streaming
-  const stream = await ai_client.chat.send({
-    chatRequest: {
-      model,
-      messages,
-      maxCompletionTokens,
-      stream: true,
-      ...routing,
     },
-  });
+    { signal: abortSignal },
+  );
+
+  if (!("choices" in completion))
+    throw new Error("Expected a non-streaming chat response");
+
+  const content = completion.choices[0]?.message?.content;
+  return typeof content === "string" ? content : "";
+}
+
+async function streamChatAI(
+  model: string,
+  messages: ChatTurn[],
+  maxCompletionTokens: number | undefined,
+  routing: Routing,
+  abortSignal: AbortSignal,
+  markProgress: () => void,
+  onDelta: (delta: string) => void | Promise<void>,
+) {
+  const stream = await ai_client.chat.send(
+    {
+      chatRequest: {
+        model,
+        messages,
+        maxCompletionTokens,
+        stream: true,
+        ...routing,
+      },
+    },
+    { signal: abortSignal },
+  );
 
   if (!(Symbol.asyncIterator in stream))
     throw new Error("Expected a streaming chat response");
+
   let full = "";
+
   for await (const chunk of stream) {
     if (chunk.error) throw new Error(chunk.error.message);
+
+    // Any received chunk means the stream is alive.
+    markProgress();
+
     const delta = chunk.choices[0]?.delta?.content;
+
     if (delta) {
       full += delta;
-      await opts.onDelta(delta);
+      await onDelta(delta);
     }
   }
 
   return full;
+}
+
+type ChatOptions = {
+  onDelta?: ((delta: string) => void | Promise<void>) | undefined;
+  maxOutputTokens?: number | undefined;
+  sessionId?: string | undefined;
+  timeoutMs?: number | undefined;
+};
+
+export async function chatAI(
+  model: string,
+  messages: ChatTurn[],
+  opts: ChatOptions = {},
+): Promise<string> {
+  const maxCompletionTokens = opts.maxOutputTokens;
+  const routing: Routing = {
+    provider: { sort: "latency" },
+    sessionId: opts.sessionId,
+  };
+
+  const timeoutOptions = {
+    timeoutMs: opts.timeoutMs ?? CHAT_TOTAL_TIMEOUT_MS,
+    firstProgressTimeoutMs: opts.onDelta
+      ? CHAT_FIRST_TOKEN_TIMEOUT_MS
+      : undefined,
+    progressTimeoutMs: opts.onDelta
+      ? CHAT_BETWEEN_CHUNKS_TIMEOUT_MS
+      : undefined,
+  };
+
+  return withTimeout(timeoutOptions, async ({ abortSignal, markProgress }) => {
+    if (!opts.onDelta) {
+      return nonStreamChatAI(
+        model,
+        messages,
+        maxCompletionTokens,
+        routing,
+        abortSignal,
+      );
+    }
+
+    return streamChatAI(
+      model,
+      messages,
+      maxCompletionTokens,
+      routing,
+      abortSignal,
+      markProgress,
+      opts.onDelta,
+    );
+  });
 }
 
 type ChatModelData = {
@@ -195,8 +262,6 @@ export async function validateChatModelInput(
   return Boolean(model?.inputModalities.includes(requiredModality));
 }
 
-export const DEFAULT_CHAT_MODEL = "openai/gpt-4o-mini";
-
 const MAX_TITLE_INPUT_CHARS = 12_000;
 const DEFAULT_TITLE_GENERATION_MODEL = "openai/gpt-4o-mini";
 
@@ -212,7 +277,7 @@ export async function generateTitle(
         content: `Generate a concise, descriptive title of at most eight words for this ${kind}. Return only the title.\n\n${content.slice(0, MAX_TITLE_INPUT_CHARS)}`,
       },
     ],
-    { maxOutputTokens: 24 },
+    { maxOutputTokens: 24, timeoutMs: TITLE_TIMEOUT_MS },
   );
 
   return title.trim();

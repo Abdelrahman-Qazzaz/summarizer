@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CACHE_KEYS } from "../../shared/cache/cacheKeys";
+import { CLAIM_LEASE_MS } from "../../shared/data/conversations.data";
 
 const { mockGetCache, mockSetCache, mockModelsList, mockChatSend } = vi.hoisted(
   () => ({
@@ -25,10 +26,15 @@ vi.mock("@openrouter/sdk", () => ({
 
 import {
   buildUserTurn,
+  CHAT_BETWEEN_CHUNKS_TIMEOUT_MS,
+  CHAT_FIRST_TOKEN_TIMEOUT_MS,
+  CHAT_TOTAL_TIMEOUT_MS,
   chatAI,
+  ChatTimeoutError,
   DEFAULT_CHAT_MODEL,
   generateTitle,
   getChatModelData,
+  TITLE_TIMEOUT_MS,
   validateChatModelInput,
   validateChatModelOutput,
 } from "../../shared/ai/ai_chat_client";
@@ -221,14 +227,159 @@ describe("chatAI", () => {
     );
 
     expect(result).toBe("hi");
-    expect(mockChatSend).toHaveBeenCalledWith({
-      chatRequest: expect.objectContaining({
-        model: DEFAULT_CHAT_MODEL,
-        maxCompletionTokens: 100,
-        provider: { sort: "latency" },
-        sessionId: "conversation-1",
-      }),
+    expect(mockChatSend).toHaveBeenCalledWith(
+      {
+        chatRequest: expect.objectContaining({
+          model: DEFAULT_CHAT_MODEL,
+          maxCompletionTokens: 100,
+          provider: { sort: "latency" },
+          sessionId: "conversation-1",
+        }),
+      },
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+});
+
+type SendOptions = { signal: AbortSignal };
+
+/**
+ * Waits `milliseconds` (forever when omitted), rejecting with the abort reason
+ * once `signal` aborts — how the real SDK's request and stream behave. chatAI
+ * relies on that, so a mock that ignored the signal would hide a regression.
+ */
+function abortableWait(signal: AbortSignal, milliseconds?: number) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const timer =
+      milliseconds === undefined
+        ? undefined
+        : setTimeout(resolve, milliseconds);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
+
+/** A send() that streams each chunk after its delay, then stalls (or ends, with `end`), like a provider sending only keep-alives. */
+function streamingSend(
+  chunks: { afterMs: number; content: string }[],
+  { end = false } = {},
+) {
+  return async (_request: unknown, { signal }: SendOptions) =>
+    (async function* () {
+      for (const chunk of chunks) {
+        await abortableWait(signal, chunk.afterMs);
+        yield { choices: [{ delta: { content: chunk.content } }] };
+      }
+      if (!end) await abortableWait(signal);
+    })();
+}
+
+function track(promise: Promise<unknown>) {
+  const outcome: { settled: boolean; value?: unknown } = { settled: false };
+  promise.then(
+    (value) => Object.assign(outcome, { settled: true, value }),
+    (error) => Object.assign(outcome, { settled: true, value: error }),
+  );
+  return outcome;
+}
+
+describe("chatAI timeouts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const streamChat = () =>
+    chatAI(DEFAULT_CHAT_MODEL, [{ role: "user", content: "yo" }], {
+      onDelta: () => {},
     });
+
+  it("stays under the claim lease", () => {
+    expect(CHAT_TOTAL_TIMEOUT_MS).toBeLessThan(CLAIM_LEASE_MS);
+  });
+
+  it("gives up when the stream goes quiet after the first token", async () => {
+    mockChatSend.mockImplementationOnce(
+      streamingSend([{ afterMs: 1_000, content: "hello" }]),
+    );
+    const outcome = track(streamChat());
+
+    await vi.advanceTimersByTimeAsync(
+      1_000 + CHAT_BETWEEN_CHUNKS_TIMEOUT_MS - 1,
+    );
+    expect(outcome.settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
+  });
+
+  it("waits longer for the first token than between chunks", async () => {
+    mockChatSend.mockImplementationOnce(streamingSend([]));
+    const outcome = track(streamChat());
+
+    await vi.advanceTimersByTimeAsync(CHAT_FIRST_TOKEN_TIMEOUT_MS - 1);
+    expect(outcome.settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
+  });
+
+  it("keeps a slow but steady stream going", async () => {
+    const chunks = Array.from({ length: 5 }, (_, index) => ({
+      afterMs: CHAT_BETWEEN_CHUNKS_TIMEOUT_MS - 1_000,
+      content: `t${index}`,
+    }));
+    const deltas: string[] = [];
+    mockChatSend.mockImplementationOnce(streamingSend(chunks, { end: true }));
+    const outcome = track(
+      chatAI(DEFAULT_CHAT_MODEL, [{ role: "user", content: "yo" }], {
+        onDelta: (delta) => {
+          deltas.push(delta);
+        },
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(5 * CHAT_BETWEEN_CHUNKS_TIMEOUT_MS);
+    expect(outcome.value).toBe("t0t1t2t3t4");
+    expect(deltas).toEqual(["t0", "t1", "t2", "t3", "t4"]);
+  });
+
+  it("ends a stream that never stops sending", async () => {
+    mockChatSend.mockImplementationOnce(
+      async (_request: unknown, { signal }: SendOptions) =>
+        (async function* () {
+          for (;;) {
+            await abortableWait(signal, 10_000);
+            yield { choices: [{ delta: { content: "." } }] };
+          }
+        })(),
+    );
+    const outcome = track(streamChat());
+
+    await vi.advanceTimersByTimeAsync(CHAT_TOTAL_TIMEOUT_MS - 1);
+    expect(outcome.settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
+  });
+
+  it("gives up on a title that never arrives", async () => {
+    mockChatSend.mockImplementationOnce(
+      (_request: unknown, { signal }: SendOptions) => abortableWait(signal),
+    );
+    const outcome = track(generateTitle("conversation", "hello"));
+
+    await vi.advanceTimersByTimeAsync(TITLE_TIMEOUT_MS - 1);
+    expect(outcome.settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
   });
 });
 
@@ -248,19 +399,22 @@ describe("generateTitle", () => {
     );
 
     expect(title).toBe("Quarterly planning");
-    expect(mockChatSend).toHaveBeenCalledWith({
-      chatRequest: expect.objectContaining({
-        model: DEFAULT_CHAT_MODEL,
-        messages: [
-          {
-            role: "user",
-            content: expect.stringContaining(
-              "How should we organize the next quarter?",
-            ),
-          },
-        ],
-        maxCompletionTokens: 24,
-      }),
-    });
+    expect(mockChatSend).toHaveBeenCalledWith(
+      {
+        chatRequest: expect.objectContaining({
+          model: DEFAULT_CHAT_MODEL,
+          messages: [
+            {
+              role: "user",
+              content: expect.stringContaining(
+                "How should we organize the next quarter?",
+              ),
+            },
+          ],
+          maxCompletionTokens: 24,
+        }),
+      },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 });
