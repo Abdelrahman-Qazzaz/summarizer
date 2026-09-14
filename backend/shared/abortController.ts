@@ -38,9 +38,9 @@ export async function withTimeout<T>(
   }
 
   const markProgress = () => {
-    if (!options.progressTimeoutMs) return;
-
     clearTimeout(progressTimer);
+
+    if (!options.progressTimeoutMs) return;
 
     progressTimer = abortAfter(
       options.progressTimeoutMs,
