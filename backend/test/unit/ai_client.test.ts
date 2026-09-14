@@ -26,25 +26,21 @@ vi.mock("@openrouter/sdk", () => ({
 
 import {
   buildUserTurn,
-  CHAT_BETWEEN_CHUNKS_TIMEOUT_MS,
-  CHAT_FIRST_TOKEN_TIMEOUT_MS,
-  CHAT_TOTAL_TIMEOUT_MS,
   chatAI,
-  ChatTimeoutError,
-  DEFAULT_CHAT_MODEL,
   generateTitle,
   getChatModelData,
-  TITLE_TIMEOUT_MS,
   validateChatModelInput,
   validateChatModelOutput,
 } from "../../shared/ai/ai_chat_client";
+
+const MODEL_ID = "openai/gpt-4o-mini";
 
 // The projection deliberately drops `description` — it is ~172KB of the
 // catalog and nothing reads it. The OpenRouter fixture below still carries it,
 // so this asserts the field is stripped rather than never supplied.
 const sampleModelData = {
-  [DEFAULT_CHAT_MODEL]: {
-    id: DEFAULT_CHAT_MODEL,
+  [MODEL_ID]: {
+    id: MODEL_ID,
     name: "GPT-4o Mini",
     knowledgeCutoff: null,
     topProvider: { contextLength: 128000, isModerated: true },
@@ -56,7 +52,7 @@ const sampleModelData = {
 };
 
 const openRouterListModel = {
-  id: DEFAULT_CHAT_MODEL,
+  id: MODEL_ID,
   name: "GPT-4o Mini",
   description: "Fast chat model",
   knowledgeCutoff: null,
@@ -115,17 +111,13 @@ describe("validateChatModelInput", () => {
   it("returns true for a modality the model accepts", async () => {
     mockGetCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(await validateChatModelInput(DEFAULT_CHAT_MODEL, "image")).toBe(
-      true,
-    );
+    expect(await validateChatModelInput(MODEL_ID, "image")).toBe(true);
   });
 
   it("returns false for a modality the model does not accept", async () => {
     mockGetCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(await validateChatModelInput(DEFAULT_CHAT_MODEL, "audio")).toBe(
-      false,
-    );
+    expect(await validateChatModelInput(MODEL_ID, "audio")).toBe(false);
   });
 
   it("returns false for an unknown model id", async () => {
@@ -171,7 +163,7 @@ describe("validateChatModelOutput", () => {
   it("returns true for a known model id from cache", async () => {
     mockGetCache.mockResolvedValueOnce(sampleModelData);
 
-    const result = await validateChatModelOutput(DEFAULT_CHAT_MODEL, "text");
+    const result = await validateChatModelOutput(MODEL_ID, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).not.toHaveBeenCalled();
@@ -195,7 +187,7 @@ describe("validateChatModelOutput", () => {
       result: { data: [openRouterListModel] },
     });
 
-    const result = await validateChatModelOutput(DEFAULT_CHAT_MODEL, "text");
+    const result = await validateChatModelOutput(MODEL_ID, "text");
 
     expect(result).toBe(true);
     expect(mockModelsList).toHaveBeenCalled();
@@ -204,9 +196,9 @@ describe("validateChatModelOutput", () => {
   it("returns false for a modality the model does not produce", async () => {
     mockGetCache.mockResolvedValueOnce(sampleModelData);
 
-    expect(
-      await validateChatModelOutput(DEFAULT_CHAT_MODEL, "transcription"),
-    ).toBe(false);
+    expect(await validateChatModelOutput(MODEL_ID, "transcription")).toBe(
+      false,
+    );
   });
 });
 
@@ -220,17 +212,16 @@ describe("chatAI", () => {
       choices: [{ message: { content: "hi" } }],
     });
 
-    const result = await chatAI(
-      DEFAULT_CHAT_MODEL,
-      [{ role: "user", content: "yo" }],
-      { maxOutputTokens: 100, sessionId: "conversation-1" },
-    );
+    const result = await chatAI(MODEL_ID, [{ role: "user", content: "yo" }], {
+      maxOutputTokens: 100,
+      sessionId: "conversation-1",
+    });
 
     expect(result).toBe("hi");
     expect(mockChatSend).toHaveBeenCalledWith(
       {
         chatRequest: expect.objectContaining({
-          model: DEFAULT_CHAT_MODEL,
+          model: MODEL_ID,
           maxCompletionTokens: 100,
           provider: { sort: "latency" },
           sessionId: "conversation-1",
@@ -281,6 +272,9 @@ function streamingSend(
     })();
 }
 
+const timedOut = (message: string) =>
+  expect.objectContaining({ name: "TimeoutError", message });
+
 function track(promise: Promise<unknown>) {
   const outcome: { settled: boolean; value?: unknown } = { settled: false };
   promise.then(
@@ -299,14 +293,15 @@ describe("chatAI timeouts", () => {
     vi.useRealTimers();
   });
 
+  const TOTAL_TIMEOUT_MS = 8 * 60_000;
+  const FIRST_TOKEN_TIMEOUT_MS = 2 * 60_000;
+  const BETWEEN_CHUNKS_TIMEOUT_MS = 30_000;
+  const TITLE_TIMEOUT_MS = 15_000;
+
   const streamChat = () =>
-    chatAI(DEFAULT_CHAT_MODEL, [{ role: "user", content: "yo" }], {
+    chatAI(MODEL_ID, [{ role: "user", content: "yo" }], {
       onDelta: () => {},
     });
-
-  it("stays under the claim lease", () => {
-    expect(CHAT_TOTAL_TIMEOUT_MS).toBeLessThan(CLAIM_LEASE_MS);
-  });
 
   it("gives up when the stream goes quiet after the first token", async () => {
     mockChatSend.mockImplementationOnce(
@@ -314,45 +309,43 @@ describe("chatAI timeouts", () => {
     );
     const outcome = track(streamChat());
 
-    await vi.advanceTimersByTimeAsync(
-      1_000 + CHAT_BETWEEN_CHUNKS_TIMEOUT_MS - 1,
-    );
+    await vi.advanceTimersByTimeAsync(1_000 + BETWEEN_CHUNKS_TIMEOUT_MS - 1);
     expect(outcome.settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
+    expect(outcome.value).toEqual(timedOut("No progress for 30000 ms"));
   });
 
   it("waits longer for the first token than between chunks", async () => {
     mockChatSend.mockImplementationOnce(streamingSend([]));
     const outcome = track(streamChat());
 
-    await vi.advanceTimersByTimeAsync(CHAT_FIRST_TOKEN_TIMEOUT_MS - 1);
+    await vi.advanceTimersByTimeAsync(FIRST_TOKEN_TIMEOUT_MS - 1);
     expect(outcome.settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
+    expect(outcome.value).toEqual(timedOut("No progress within 120000 ms"));
   });
 
   it("keeps a slow but steady stream going", async () => {
     const chunks = Array.from({ length: 5 }, (_, index) => ({
-      afterMs: CHAT_BETWEEN_CHUNKS_TIMEOUT_MS - 1_000,
+      afterMs: BETWEEN_CHUNKS_TIMEOUT_MS - 1_000,
       content: `t${index}`,
     }));
     const deltas: string[] = [];
     mockChatSend.mockImplementationOnce(streamingSend(chunks, { end: true }));
     const outcome = track(
-      chatAI(DEFAULT_CHAT_MODEL, [{ role: "user", content: "yo" }], {
+      chatAI(MODEL_ID, [{ role: "user", content: "yo" }], {
         onDelta: (delta) => {
           deltas.push(delta);
         },
       }),
     );
 
-    await vi.advanceTimersByTimeAsync(5 * CHAT_BETWEEN_CHUNKS_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(5 * BETWEEN_CHUNKS_TIMEOUT_MS);
     expect(outcome.value).toBe("t0t1t2t3t4");
     expect(deltas).toEqual(["t0", "t1", "t2", "t3", "t4"]);
   });
 
-  it("ends a stream that never stops sending", async () => {
+  it("ends a stream that never stops sending before the claim lease expires", async () => {
     mockChatSend.mockImplementationOnce(
       async (_request: unknown, { signal }: SendOptions) =>
         (async function* () {
@@ -364,10 +357,13 @@ describe("chatAI timeouts", () => {
     );
     const outcome = track(streamChat());
 
-    await vi.advanceTimersByTimeAsync(CHAT_TOTAL_TIMEOUT_MS - 1);
+    await vi.advanceTimersByTimeAsync(TOTAL_TIMEOUT_MS - 1);
     expect(outcome.settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
+    expect(outcome.value).toEqual(
+      timedOut("Operation took longer than 480000 ms"),
+    );
+    expect(TOTAL_TIMEOUT_MS).toBeLessThan(CLAIM_LEASE_MS);
   });
 
   it("gives up on a title that never arrives", async () => {
@@ -379,7 +375,9 @@ describe("chatAI timeouts", () => {
     await vi.advanceTimersByTimeAsync(TITLE_TIMEOUT_MS - 1);
     expect(outcome.settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(outcome.value).toBeInstanceOf(ChatTimeoutError);
+    expect(outcome.value).toEqual(
+      timedOut("Operation took longer than 15000 ms"),
+    );
   });
 });
 
@@ -402,7 +400,7 @@ describe("generateTitle", () => {
     expect(mockChatSend).toHaveBeenCalledWith(
       {
         chatRequest: expect.objectContaining({
-          model: DEFAULT_CHAT_MODEL,
+          model: MODEL_ID,
           messages: [
             {
               role: "user",

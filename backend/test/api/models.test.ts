@@ -38,11 +38,12 @@ vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
 
 import { createApp } from "../../api/app";
 import { sessionCookieHeader } from "../helpers/session";
-import { DEFAULT_CHAT_MODEL } from "../../shared/ai/ai_chat_client";
+
+const MODEL_ID = "openai/gpt-4o-mini";
 
 const sampleModelData = {
-  [DEFAULT_CHAT_MODEL]: {
-    id: DEFAULT_CHAT_MODEL,
+  [MODEL_ID]: {
+    id: MODEL_ID,
     name: "GPT-4o Mini",
     description: "Fast chat model",
     knowledgeCutoff: null,
@@ -85,7 +86,7 @@ describe("GET /models/chat", () => {
       Object.fromEntries(
         Array.from({ length: 40 }, (_, index) => [
           `vendor/model-${index}`,
-          sampleModelData[DEFAULT_CHAT_MODEL],
+          sampleModelData[MODEL_ID],
         ]),
       ),
     );
