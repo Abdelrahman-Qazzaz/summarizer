@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { withTimeout } from "../../shared/abortController";
+import { withTimeout } from "../../shared/withTimeout";
 
 describe("withTimeout", () => {
   beforeEach(() => {

@@ -10,7 +10,7 @@ import type {
   PublicPricing,
   TopProviderInfo,
 } from "@openrouter/sdk/models";
-import { withTimeout } from "../abortController";
+import { withTimeout } from "../withTimeout";
 
 type Routing = {
   readonly provider: {
