@@ -4,6 +4,7 @@ import { OpenRouter } from "@openrouter/sdk";
 import { CACHE_KEYS, getCache, setCache } from "../cache/cache";
 import type {
   ChatContentItems,
+  ChatRequest,
   InputModality,
   OutputModality,
   Parameter,
@@ -11,13 +12,6 @@ import type {
   TopProviderInfo,
 } from "@openrouter/sdk/models";
 import { withTimeout } from "../withTimeout";
-
-type Routing = {
-  readonly provider: {
-    readonly sort: "latency";
-  };
-  readonly sessionId: string | undefined;
-};
 
 const ai_client = new OpenRouter({
   apiKey: getBaseEnv().OPENROUTER_API_KEY,
@@ -68,21 +62,11 @@ const CHAT_BETWEEN_CHUNKS_TIMEOUT_MS = 30 * 1000; // 30 seconds
 const TITLE_TIMEOUT_MS = 15 * 1000; // 15 seconds
 
 async function nonStreamChatAI(
-  model: string,
-  messages: ChatTurn[],
-  maxCompletionTokens: number | undefined,
-  routing: Routing,
+  chatRequest: ChatRequest,
   abortSignal: AbortSignal,
 ) {
   const completion = await ai_client.chat.send(
-    {
-      chatRequest: {
-        model,
-        messages,
-        maxCompletionTokens,
-        ...routing,
-      },
-    },
+    { chatRequest },
     { signal: abortSignal },
   );
 
@@ -94,24 +78,15 @@ async function nonStreamChatAI(
 }
 
 async function streamChatAI(
-  model: string,
-  messages: ChatTurn[],
-  maxCompletionTokens: number | undefined,
-  routing: Routing,
-  abortSignal: AbortSignal,
-  markProgress: () => void,
+  chatRequest: ChatRequest,
   onDelta: (delta: string) => void | Promise<void>,
+  {
+    abortSignal,
+    markProgress,
+  }: { abortSignal: AbortSignal; markProgress: () => void },
 ) {
   const stream = await ai_client.chat.send(
-    {
-      chatRequest: {
-        model,
-        messages,
-        maxCompletionTokens,
-        stream: true,
-        ...routing,
-      },
-    },
+    { chatRequest: { ...chatRequest, stream: true } },
     { signal: abortSignal },
   );
 
@@ -156,11 +131,13 @@ export async function chatAI(
   messages: ChatTurn[],
   opts: ChatOptions = {},
 ): Promise<string> {
-  const maxCompletionTokens = opts.maxOutputTokens;
-  // `sort: "latency"` routes to the lowest time-to-first-token endpoint (no load
-  // balancing); paired with the sticky sessionId, turns stay on one fast, warm
-  // provider.
-  const routing: Routing = {
+  const chatRequest: ChatRequest = {
+    model,
+    messages,
+    maxCompletionTokens: opts.maxOutputTokens,
+    // `sort: "latency"` routes to the lowest time-to-first-token endpoint (no
+    // load balancing); paired with the sticky sessionId, turns stay on one fast,
+    // warm provider.
     provider: { sort: "latency" },
     sessionId: opts.sessionId,
   };
@@ -175,27 +152,11 @@ export async function chatAI(
       : undefined,
   };
 
-  return withTimeout(timeoutOptions, async ({ abortSignal, markProgress }) => {
-    if (!opts.onDelta) {
-      return nonStreamChatAI(
-        model,
-        messages,
-        maxCompletionTokens,
-        routing,
-        abortSignal,
-      );
-    }
-
-    return streamChatAI(
-      model,
-      messages,
-      maxCompletionTokens,
-      routing,
-      abortSignal,
-      markProgress,
-      opts.onDelta,
-    );
-  });
+  return withTimeout(timeoutOptions, (ctx) =>
+    opts.onDelta
+      ? streamChatAI(chatRequest, opts.onDelta, ctx)
+      : nonStreamChatAI(chatRequest, ctx.abortSignal),
+  );
 }
 
 type ChatModelData = {
