@@ -117,12 +117,12 @@ async function streamChatAI(
   for await (const chunk of stream) {
     if (chunk.error) throw new Error(chunk.error.message);
 
-    // Any received chunk means the stream is alive.
-    markProgress();
-
     const delta = chunk.choices[0]?.delta?.content;
 
+    // Only text counts: a stream can open with an empty chunk and then think
+    // silently for longer than the between-chunk limit.
     if (delta) {
+      markProgress();
       full += delta;
       await onDelta(delta);
     }

@@ -325,6 +325,21 @@ describe("chatAI timeouts", () => {
     expect(outcome.value).toEqual(timedOut("No progress within 120000 ms"));
   });
 
+  it("keeps waiting for the first token after an empty chunk", async () => {
+    mockChatSend.mockImplementationOnce(
+      async (_request: unknown, { signal }: SendOptions) =>
+        (async function* () {
+          yield { choices: [{ delta: { role: "assistant", content: "" } }] };
+          await abortableWait(signal, 60_000);
+          yield { choices: [{ delta: { content: "answer" } }] };
+        })(),
+    );
+    const outcome = track(streamChat());
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(outcome.value).toBe("answer");
+  });
+
   it("keeps a slow but steady stream going", async () => {
     const chunks = Array.from({ length: 5 }, (_, index) => ({
       afterMs: BETWEEN_CHUNKS_TIMEOUT_MS - 1_000,
