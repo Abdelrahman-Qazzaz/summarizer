@@ -172,33 +172,35 @@ type ChatModelData = {
   };
 };
 
+async function fetchChatModelData(): Promise<ChatModelData> {
+  // Only text-output models are ever chosen here (summary/chat); transcription
+  // is served by Deepgram. "text" is the SDK default — passed explicitly for
+  // clarity — and keeps the fetched + cached catalog small.
+  const models = (await ai_client.models.list({ outputModalities: "text" }))
+    .result.data;
+
+  return Object.fromEntries(
+    models.map((model) => [
+      model.id,
+      {
+        id: model.id,
+        name: model.name,
+        knowledgeCutoff: model.knowledgeCutoff,
+        topProvider: model.topProvider,
+        pricing: model.pricing,
+        supportedParameters: model.supportedParameters,
+        outputModalities: model.architecture.outputModalities,
+        inputModalities: model.architecture.inputModalities,
+      },
+    ]),
+  );
+}
+
 // Every send validates the chosen model against this catalog, so the cache
 // keeps that check off the network. The in-memory tier of getCache also spares
 // each process the Redis round-trip once warm.
 export function getChatModelData(): Promise<ChatModelData> {
-  return getOrSetCache(CACHE_KEYS.openRouterModels, async () => {
-    // Only text-output models are ever chosen here (summary/chat); transcription
-    // is served by Deepgram. "text" is the SDK default — passed explicitly for
-    // clarity — and keeps the fetched + cached catalog small.
-    const models = (await ai_client.models.list({ outputModalities: "text" }))
-      .result.data;
-
-    return Object.fromEntries(
-      models.map((model) => [
-        model.id,
-        {
-          id: model.id,
-          name: model.name,
-          knowledgeCutoff: model.knowledgeCutoff,
-          topProvider: model.topProvider,
-          pricing: model.pricing,
-          supportedParameters: model.supportedParameters,
-          outputModalities: model.architecture.outputModalities,
-          inputModalities: model.architecture.inputModalities,
-        },
-      ]),
-    );
-  });
+  return getOrSetCache(CACHE_KEYS.openRouterModels, fetchChatModelData);
 }
 
 /**

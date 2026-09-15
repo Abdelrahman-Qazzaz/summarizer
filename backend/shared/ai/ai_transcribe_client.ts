@@ -64,33 +64,38 @@ type TranscribeModelData = {
   [modelId: string]: TranscribeModel;
 };
 
-export function getTranscribeModelData(): Promise<TranscribeModelData> {
-  return getOrSetCache(CACHE_KEYS.deepgramTranscribeModels, async () => {
-    const response = await deepgram.manage.v1.models.list();
+async function fetchTranscribeModelData(): Promise<TranscribeModelData> {
+  const response = await deepgram.manage.v1.models.list();
 
-    return Object.fromEntries(
-      (response.stt ?? []).flatMap((model) => {
-        const id = model.canonical_name ?? model.name;
-        if (!id) return [];
-        return [
-          [
-            id,
-            {
-              name: model.name ?? id,
-              canonicalName: model.canonical_name ?? id,
-              architecture: model.architecture,
-              languages: model.languages,
-              version: model.version,
-              uuid: model.uuid,
-              batch: model.batch,
-              streaming: model.streaming,
-              formattedOutput: model.formatted_output,
-            },
-          ],
-        ];
-      }),
-    );
-  });
+  return Object.fromEntries(
+    (response.stt ?? []).flatMap((model) => {
+      const id = model.canonical_name ?? model.name;
+      if (!id) return [];
+      return [
+        [
+          id,
+          {
+            name: model.name ?? id,
+            canonicalName: model.canonical_name ?? id,
+            architecture: model.architecture,
+            languages: model.languages,
+            version: model.version,
+            uuid: model.uuid,
+            batch: model.batch,
+            streaming: model.streaming,
+            formattedOutput: model.formatted_output,
+          },
+        ],
+      ];
+    }),
+  );
+}
+
+export function getTranscribeModelData(): Promise<TranscribeModelData> {
+  return getOrSetCache(
+    CACHE_KEYS.deepgramTranscribeModels,
+    fetchTranscribeModelData,
+  );
 }
 
 /**
