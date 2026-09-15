@@ -35,6 +35,7 @@ const CACHE_ENTRIES = {
 >;
 
 const memo = new Map<CacheKey, { data: unknown; expiresAt: number }>();
+const inFlight = new Map<CacheKey, Promise<unknown>>();
 
 /**
  * Serves the in-process memo until it expires, otherwise reads Redis (whose hit
@@ -76,7 +77,39 @@ export async function setCache<T>(name: CacheKey, data: T): Promise<void> {
     logger.error("Cache write failed", error, { cacheKey: entry.redisKey });
 }
 
-/** Test-only: drops the in-process memo so cases don't leak entries into each other. */
+/**
+ * The read-through path: the two cache tiers, then `fetch` on a miss. Callers
+ * that miss together share one `fetch` per process instead of each starting
+ * their own — the difference between one catalog fetch and one per request
+ * whenever an entry expires, or whenever Redis is unreachable and every read
+ * reports a miss. The shared entry is dropped once it settles, so a failed
+ * fetch is retried rather than handed to every later caller.
+ */
+export async function getOrSetCache<T>(
+  name: CacheKey,
+  fetch: () => Promise<T>,
+): Promise<T> {
+  const hit = await getCache<T>(name);
+  if (hit != null) return hit;
+
+  const pending = inFlight.get(name);
+  if (pending) return pending as Promise<T>;
+
+  // Nothing is awaited between reading and writing inFlight, so a caller
+  // resuming from its own getCache always sees this entry.
+  const fetched = fetch()
+    .then((data) => {
+      void setCache(name, data);
+      return data;
+    })
+    .finally(() => inFlight.delete(name));
+
+  inFlight.set(name, fetched);
+  return fetched;
+}
+
+/** Test-only: drops the in-process state so cases don't leak entries into each other. */
 export function resetCacheMemo() {
   memo.clear();
+  inFlight.clear();
 }

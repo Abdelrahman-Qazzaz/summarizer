@@ -15,6 +15,7 @@ vi.mock("@upstash/redis", () => ({
 import {
   CACHE_KEYS,
   getCache,
+  getOrSetCache,
   setCache,
   resetCacheMemo,
 } from "../../shared/cache/cache";
@@ -86,5 +87,89 @@ describe("setCache", () => {
     await expect(
       setCache(CACHE_KEYS.openRouterModels, {}),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("getOrSetCache", () => {
+  it("returns a hit without fetching", async () => {
+    mockGet.mockResolvedValueOnce({ some: "catalog" });
+    const fetch = vi.fn();
+
+    expect(await getOrSetCache(CACHE_KEYS.openRouterModels, fetch)).toEqual({
+      some: "catalog",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("fetches on a miss and writes both tiers", async () => {
+    mockGet.mockResolvedValueOnce(null);
+    mockSet.mockResolvedValueOnce(undefined);
+
+    const result = await getOrSetCache(
+      CACHE_KEYS.openRouterModels,
+      async () => ({
+        some: "catalog",
+      }),
+    );
+
+    expect(result).toEqual({ some: "catalog" });
+    expect(mockSet).toHaveBeenCalledWith(
+      REDIS_KEY,
+      { some: "catalog" },
+      { ex: 24 * 60 * 60 },
+    );
+  });
+
+  it("shares one fetch between callers that miss together", async () => {
+    mockGet.mockResolvedValue(null);
+    mockSet.mockResolvedValue(undefined);
+    const fetch = vi.fn(async () => ({ some: "catalog" }));
+
+    const [first, second] = await Promise.all([
+      getOrSetCache(CACHE_KEYS.openRouterModels, fetch),
+      getOrSetCache(CACHE_KEYS.openRouterModels, fetch),
+    ]);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+  });
+
+  it("keeps each key's fetch separate", async () => {
+    mockGet.mockResolvedValue(null);
+    mockSet.mockResolvedValue(undefined);
+
+    const [models, transcribeModels] = await Promise.all([
+      getOrSetCache(CACHE_KEYS.openRouterModels, async () => "models"),
+      getOrSetCache(
+        CACHE_KEYS.deepgramTranscribeModels,
+        async () => "transcribe-models",
+      ),
+    ]);
+
+    expect(models).toBe("models");
+    expect(transcribeModels).toBe("transcribe-models");
+  });
+
+  it("rejects every waiter and fetches again after a failure", async () => {
+    mockGet.mockResolvedValue(null);
+    mockSet.mockResolvedValue(undefined);
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("upstream is down"))
+      .mockResolvedValueOnce({ some: "catalog" });
+
+    const [first, second] = await Promise.allSettled([
+      getOrSetCache(CACHE_KEYS.openRouterModels, fetch),
+      getOrSetCache(CACHE_KEYS.openRouterModels, fetch),
+    ]);
+
+    expect(first).toMatchObject({ reason: new Error("upstream is down") });
+    expect(second).toMatchObject({ reason: new Error("upstream is down") });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    expect(await getOrSetCache(CACHE_KEYS.openRouterModels, fetch)).toEqual({
+      some: "catalog",
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
