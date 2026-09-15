@@ -1,6 +1,6 @@
 import { DeepgramClient } from "@deepgram/sdk";
 import { getBaseEnv } from "../env";
-import { CACHE_KEYS, getCache, setCache } from "../cache/cache";
+import { CACHE_KEYS, getOrSetCache } from "../cache/cache";
 
 const deepgram = new DeepgramClient({ apiKey: getBaseEnv().DEEPGRAM_API_KEY });
 
@@ -64,38 +64,33 @@ type TranscribeModelData = {
   [modelId: string]: TranscribeModel;
 };
 
-export async function getTranscribeModelData(): Promise<TranscribeModelData> {
-  const hit = await getCache<TranscribeModelData>(
-    CACHE_KEYS.deepgramTranscribeModels,
-  );
-  if (hit != null) return hit;
+export function getTranscribeModelData(): Promise<TranscribeModelData> {
+  return getOrSetCache(CACHE_KEYS.deepgramTranscribeModels, async () => {
+    const response = await deepgram.manage.v1.models.list();
 
-  const response = await deepgram.manage.v1.models.list();
-  const modelData: TranscribeModelData = Object.fromEntries(
-    (response.stt ?? []).flatMap((model) => {
-      const id = model.canonical_name ?? model.name;
-      if (!id) return [];
-      return [
-        [
-          id,
-          {
-            name: model.name ?? id,
-            canonicalName: model.canonical_name ?? id,
-            architecture: model.architecture,
-            languages: model.languages,
-            version: model.version,
-            uuid: model.uuid,
-            batch: model.batch,
-            streaming: model.streaming,
-            formattedOutput: model.formatted_output,
-          },
-        ],
-      ];
-    }),
-  );
-
-  void setCache(CACHE_KEYS.deepgramTranscribeModels, modelData);
-  return modelData;
+    return Object.fromEntries(
+      (response.stt ?? []).flatMap((model) => {
+        const id = model.canonical_name ?? model.name;
+        if (!id) return [];
+        return [
+          [
+            id,
+            {
+              name: model.name ?? id,
+              canonicalName: model.canonical_name ?? id,
+              architecture: model.architecture,
+              languages: model.languages,
+              version: model.version,
+              uuid: model.uuid,
+              batch: model.batch,
+              streaming: model.streaming,
+              formattedOutput: model.formatted_output,
+            },
+          ],
+        ];
+      }),
+    );
+  });
 }
 
 /**

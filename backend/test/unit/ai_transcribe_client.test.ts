@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CACHE_KEYS } from "../../shared/cache/cacheKeys";
 
-const { mockModelsList, mockGetCache, mockSetCache } = vi.hoisted(() => ({
+const { mockModelsList, mockGetOrSetCache } = vi.hoisted(() => ({
   mockModelsList: vi.fn(),
-  mockGetCache: vi.fn(),
-  mockSetCache: vi.fn(),
+  mockGetOrSetCache: vi.fn(),
 }));
 
 vi.mock("@deepgram/sdk", () => ({
@@ -17,9 +16,11 @@ vi.mock("@deepgram/sdk", () => ({
 
 vi.mock("../../shared/cache/cache", () => ({
   CACHE_KEYS,
-  getCache: mockGetCache,
-  setCache: mockSetCache,
+  getOrSetCache: mockGetOrSetCache,
 }));
+
+/** Caching itself is covered in cache.test.ts; here the fetch always runs. */
+const runFetch = <T>(_name: unknown, fetch: () => Promise<T>) => fetch();
 
 import {
   DEFAULT_TRANSCRIBE_MODEL,
@@ -49,15 +50,20 @@ describe("getTranscribeModelData", () => {
     vi.clearAllMocks();
   });
 
-  it("returns the cached catalog without calling Deepgram", async () => {
+  it("serves the catalog through its cache entry", async () => {
     const cached = { "nova-3-general": { name: "nova-3" } };
-    mockGetCache.mockResolvedValue(cached);
+    mockGetOrSetCache.mockResolvedValue(cached);
+
     expect(await getTranscribeModelData()).toBe(cached);
+    expect(mockGetOrSetCache).toHaveBeenCalledWith(
+      CACHE_KEYS.deepgramTranscribeModels,
+      expect.any(Function),
+    );
     expect(mockModelsList).not.toHaveBeenCalled();
   });
 
-  it("fetches from Deepgram on a miss, shapes the stt models, and caches", async () => {
-    mockGetCache.mockResolvedValue(null);
+  it("shapes the stt models it fetches from Deepgram", async () => {
+    mockGetOrSetCache.mockImplementation(runFetch);
     mockModelsList.mockResolvedValue(sttResponse);
 
     const data = await getTranscribeModelData();
@@ -70,17 +76,13 @@ describe("getTranscribeModelData", () => {
       canonicalName: "nova-3-general",
       formattedOutput: true,
     });
-    expect(mockSetCache).toHaveBeenCalledWith(
-      CACHE_KEYS.deepgramTranscribeModels,
-      data,
-    );
   });
 });
 
 describe("isValidTranscribeModel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetCache.mockResolvedValue(null);
+    mockGetOrSetCache.mockImplementation(runFetch);
     mockModelsList.mockResolvedValue(sttResponse);
   });
 

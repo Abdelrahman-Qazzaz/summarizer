@@ -1,7 +1,7 @@
 import { getBaseEnv } from "../env";
 import { OpenRouter } from "@openrouter/sdk";
 
-import { CACHE_KEYS, getCache, setCache } from "../cache/cache";
+import { CACHE_KEYS, getOrSetCache } from "../cache/cache";
 import type {
   ChatContentItems,
   ChatRequest,
@@ -175,39 +175,30 @@ type ChatModelData = {
 // Every send validates the chosen model against this catalog, so the cache
 // keeps that check off the network. The in-memory tier of getCache also spares
 // each process the Redis round-trip once warm.
-export async function getChatModelData(): Promise<ChatModelData> {
-  const hit = await getCache<ChatModelData>(CACHE_KEYS.openRouterModels);
-  if (hit != null) return hit;
+export function getChatModelData(): Promise<ChatModelData> {
+  return getOrSetCache(CACHE_KEYS.openRouterModels, async () => {
+    // Only text-output models are ever chosen here (summary/chat); transcription
+    // is served by Deepgram. "text" is the SDK default — passed explicitly for
+    // clarity — and keeps the fetched + cached catalog small.
+    const models = (await ai_client.models.list({ outputModalities: "text" }))
+      .result.data;
 
-  // Only text-output models are ever chosen here (summary/chat); transcription
-  // is served by Deepgram. "text" is the SDK default — passed explicitly for
-  // clarity — and keeps the fetched + cached catalog small.
-  const models = (await ai_client.models.list({ outputModalities: "text" }))
-    .result.data;
-  const modelData: ChatModelData = Object.fromEntries(
-    models.map((model) => [
-      model.id,
-      {
-        id: model.id,
-        name: model.name,
-        knowledgeCutoff: model.knowledgeCutoff,
-        topProvider: model.topProvider,
-        pricing: model.pricing,
-        supportedParameters: model.supportedParameters,
-        outputModalities: model.architecture.outputModalities,
-        inputModalities: model.architecture.inputModalities,
-      },
-    ]),
-  );
-
-  // setCache fills the in-process memo synchronously and only its Redis write
-  // is async, and a failed write is logged rather than thrown. Awaiting it
-  // wouldn't stall the event loop — other requests are served meanwhile — but it
-  // would hold up whichever request took the miss, which is usually a
-  // create-message request, for the length of a ~335KB Redis write it has no
-  // use for.
-  void setCache(CACHE_KEYS.openRouterModels, modelData);
-  return modelData;
+    return Object.fromEntries(
+      models.map((model) => [
+        model.id,
+        {
+          id: model.id,
+          name: model.name,
+          knowledgeCutoff: model.knowledgeCutoff,
+          topProvider: model.topProvider,
+          pricing: model.pricing,
+          supportedParameters: model.supportedParameters,
+          outputModalities: model.architecture.outputModalities,
+          inputModalities: model.architecture.inputModalities,
+        },
+      ]),
+    );
+  });
 }
 
 /**
