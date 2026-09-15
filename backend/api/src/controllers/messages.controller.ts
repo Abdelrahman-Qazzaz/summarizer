@@ -365,6 +365,17 @@ class MessageRequestError extends Error {
  * saved; GET .../messages is the source of truth.
  */
 
+function mergeTranscriptsIntoContent(
+  messageInput: MessageRequest,
+  transcriptContentsByAudioUploadId: Map<string, string>,
+) {
+  const transcripts = messageInput.audioUploadIds.map(
+    (audioUploadId) =>
+      transcriptContentsByAudioUploadId.get(audioUploadId) as string,
+  );
+  return withTranscripts(messageInput.content, transcripts);
+}
+
 export async function handleCreateMessage(c: Context) {
   const messageInput = messageRequestFrom(c);
   const responseReady = Promise.withResolvers<Response>();
@@ -457,11 +468,10 @@ export async function handleCreateMessage(c: Context) {
         throw new MessageRequestError(404, { message: "Transcript not found" });
       }
 
-      const transcripts = messageInput.audioUploadIds.map(
-        (audioUploadId) =>
-          transcriptContentsByAudioUploadId.get(audioUploadId) as string,
+      const newTurnContent = mergeTranscriptsIntoContent(
+        messageInput,
+        transcriptContentsByAudioUploadId,
       );
-      const newTurnContent = withTranscripts(messageInput.content, transcripts);
       const newMessageContextCharCount = newTurnContent.length;
       if (newTurnContent.length >= MAX_CONTEXT_CHARS) {
         throw new MessageRequestError(413, {
