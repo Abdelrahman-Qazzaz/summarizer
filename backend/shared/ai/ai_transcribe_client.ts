@@ -94,7 +94,7 @@ export async function getTranscribeModelData(): Promise<TranscribeModelData> {
     }),
   );
 
-  await setCache(CACHE_KEYS.deepgramTranscribeModels, modelData);
+  void setCache(CACHE_KEYS.deepgramTranscribeModels, modelData);
   return modelData;
 }
 
