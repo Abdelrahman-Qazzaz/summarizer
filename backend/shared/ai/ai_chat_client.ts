@@ -200,7 +200,13 @@ export async function getChatModelData(): Promise<ChatModelData> {
     ]),
   );
 
-  await setCache(CACHE_KEYS.openRouterModels, modelData);
+  // setCache fills the in-process memo synchronously and only its Redis write
+  // is async, and a failed write is logged rather than thrown. Awaiting it
+  // wouldn't stall the event loop — other requests are served meanwhile — but it
+  // would hold up whichever request took the miss, which is usually a
+  // create-message request, for the length of a ~335KB Redis write it has no
+  // use for.
+  void setCache(CACHE_KEYS.openRouterModels, modelData);
   return modelData;
 }
 
