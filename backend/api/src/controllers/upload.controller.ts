@@ -1,40 +1,85 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { createAudioJob } from "../../../shared/data/jobs.data";
-import { uploadAudioToBucket } from "../../../shared/bucket";
+import { queueAudioTranscription } from "../../../shared/audioTranscription";
+import {
+  MAX_AUDIO_BYTES,
+  createAudioUploadUrl,
+  takeUploadedAudio,
+} from "../../../shared/bucket";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { CTX_KEYS } from "../../../shared/keys";
 import type { UploadId } from "../../../shared/types";
 
-/** POST /upload/audio — speech audio (from direct upload or client-extracted from video). */
-export async function handleAudioUpload(c: Context) {
+/**
+ * POST /upload/audio — a URL the browser PUTs speech audio to, straight into
+ * storage. The id is minted here rather than chosen by the client, so the key
+ * the URL is bound to is one nothing else is using.
+ *
+ * No row is written yet. An upload that never completes leaves at worst an
+ * unreferenced object, rather than a job stuck queued in the user's sources.
+ */
+export async function handleAudioUploadUrl(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
-  const file = c.get(CTX_KEYS.uploadFile);
-  const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
-
-  const source = c.get(CTX_KEYS.audioSource);
 
   const audioUploadId: UploadId = randomUUID();
-  await uploadAudioToBucket(userId, audioUploadId, file);
+  const signedUploadUrl = await createAudioUploadUrl(userId, audioUploadId);
 
-  await createAudioJob({
+  return c.json({ uploadId: audioUploadId, signedUploadUrl });
+}
+
+/**
+ * POST /upload/audio/confirm — the audio is in the bucket: check it, then
+ * start its transcription.
+ *
+ * The key carries the kind, so an id minted for an image finds nothing here.
+ */
+export async function handleAudioConfirm(c: Context) {
+  const userId = c.get(CTX_KEYS.userId);
+  const audioUploadId: UploadId = c.get(CTX_KEYS.audioUploadId);
+  const fileName = c.get(CTX_KEYS.fileName);
+  const source = c.get(CTX_KEYS.audioSource);
+  const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
+
+  const upload = await takeUploadedAudio(userId, audioUploadId);
+  if (!upload.ok) {
+    switch (upload.reason) {
+      case "missing":
+        return c.json({ message: "No uploaded audio to confirm" }, 404);
+      case "wrong-type":
+        return c.json(
+          {
+            message: `Expected an audio file, got: ${upload.contentType || "unknown"}`,
+          },
+          400,
+        );
+      case "too-large":
+        return c.json(
+          { message: "Audio file is too large", maxBytes: MAX_AUDIO_BYTES },
+          413,
+        );
+    }
+  }
+
+  const queued = await queueAudioTranscription({
     audioUploadId,
-    captionUploadId: null,
     userId,
     source,
-    fileName: file.name,
-    mimeType: file.type || null,
-    sizeBytes: file.size,
+    fileName,
+    mimeType: upload.contentType,
+    sizeBytes: upload.sizeBytes,
     transcriptModelId,
   });
+  if (!queued) {
+    return c.json({ message: "This upload was already confirmed" }, 409);
+  }
 
-  await mq.publish(mq.queues.TRANSCRIBE, { audioUploadId });
   return c.json({
     message: "File uploaded",
     audioUploadId,
-    fileName: file.name,
-    size: file.size,
-    mimeType: file.type || null,
+    fileName,
+    size: upload.sizeBytes,
+    mimeType: upload.contentType,
     source,
   });
 }

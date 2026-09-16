@@ -5,16 +5,14 @@ const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const {
   mockInsert,
   mockSendEvent,
-  mockUploadAudioToBucket,
-  mockUploadImageToBucket,
-  mockCreateSignedUrl,
+  mockCreateAudioUploadUrl,
+  mockTakeUploadedAudio,
   mockIsValidTranscribeModel,
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockSendEvent: vi.fn(),
-  mockUploadAudioToBucket: vi.fn(),
-  mockUploadImageToBucket: vi.fn(),
-  mockCreateSignedUrl: vi.fn(),
+  mockCreateAudioUploadUrl: vi.fn(),
+  mockTakeUploadedAudio: vi.fn(),
   mockIsValidTranscribeModel: vi.fn(),
 }));
 
@@ -41,14 +39,20 @@ vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
 });
 
 vi.mock("../../shared/db", async () => ({
-  db: { insert: mockInsert },
+  db: {
+    insert: mockInsert,
+    // createAudioJob writes both rows in one transaction; run it against the
+    // same insert mock so those writes are recorded like plain ones.
+    transaction: (run: (tx: unknown) => unknown) => run({ insert: mockInsert }),
+  },
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  uploadAudioToBucket: mockUploadAudioToBucket,
-  uploadImageToBucket: mockUploadImageToBucket,
-  createSignedImageUrl: mockCreateSignedUrl,
+  createAudioUploadUrl: mockCreateAudioUploadUrl,
+  takeUploadedAudio: mockTakeUploadedAudio,
+  uploadImageToBucket: vi.fn(),
+  createSignedImageUrl: vi.fn(),
   createSignedImageUrls: vi.fn(),
   // Literals (not the top-level consts): vi.mock factories can run during
   // import evaluation, before this module's own bindings initialize.
@@ -71,21 +75,15 @@ vi.mock("../../shared/message-queue/messageQueue", () => ({
 import { createApp } from "../../api/app";
 import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 
-function audioUploadBody(
-  sizeBytes: number,
-  options?: { source?: string; fileName?: string },
-): FormData {
-  const formData = new FormData();
-  formData.append(
-    "uploadFile",
-    new File([new Uint8Array(sizeBytes)], options?.fileName ?? "clip.mp3", {
-      type: "audio/mpeg",
-    }),
-  );
-  if (options?.source !== undefined) {
-    formData.append("audioSource", options.source);
-  }
-  return formData;
+async function postJson(path: string, body: unknown, userId = "user_01") {
+  return (await createApp()).request(`http://localhost${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await sessionCookieHeader(userId),
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 describe("POST /upload/text", () => {
@@ -104,99 +102,254 @@ describe("POST /upload/text", () => {
 describe("POST /upload/audio", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInsert.mockReturnValue({
-      values: vi.fn().mockResolvedValue(undefined),
+    mockCreateAudioUploadUrl.mockResolvedValue("https://storage.test/upload");
+  });
+
+  it("returns 401 without a session cookie", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/audio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
     });
-    mockUploadAudioToBucket.mockResolvedValue(undefined);
+
+    expect(res.status).toBe(401);
+    expect(mockCreateAudioUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("mints a fresh id and a URL bound to it", async () => {
+    const res = await postJson("/upload/audio", {});
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      uploadId: string;
+      signedUploadUrl: string;
+    };
+    expect(body.uploadId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.signedUploadUrl).toBe("https://storage.test/upload");
+    expect(mockCreateAudioUploadUrl).toHaveBeenCalledWith(
+      "user_01",
+      body.uploadId,
+    );
+  });
+
+  // Minting writes nothing: an upload that never lands leaves no job behind.
+  it("writes no row and queues nothing", async () => {
+    await postJson("/upload/audio", {});
+
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /upload/audio/confirm", () => {
+  const UPLOAD_ID = "11111111-1111-4111-8111-111111111111";
+  let mockValues: ReturnType<typeof vi.fn>;
+
+  function confirmBody(overrides: Record<string, unknown> = {}) {
+    return {
+      uploadId: UPLOAD_ID,
+      fileName: "talk.webm",
+      audioSource: "video",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockValues = vi.fn().mockResolvedValue(undefined);
+    mockInsert.mockReturnValue({ values: mockValues });
     mockSendEvent.mockResolvedValue(undefined);
     mockIsValidTranscribeModel.mockResolvedValue(true);
+    mockTakeUploadedAudio.mockResolvedValue({
+      ok: true,
+      sizeBytes: 2048,
+      contentType: "audio/webm",
+    });
   });
 
-  it("returns 400 when file field is missing", async () => {
+  it("returns 401 without a session cookie", async () => {
     const res = await (
       await createApp()
-    ).request("http://localhost/upload/audio", {
+    ).request("http://localhost/upload/audio/confirm", {
       method: "POST",
-      headers: await authedHeaders("user_01"),
-      body: new FormData(),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(confirmBody()),
     });
+
+    expect(res.status).toBe(401);
+    expect(mockTakeUploadedAudio).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an id that is not a uuid", async () => {
+    const res = await postJson(
+      "/upload/audio/confirm",
+      confirmBody({ uploadId: "not-a-uuid" }),
+    );
+
     expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "Invalid upload id" });
+    expect(mockTakeUploadedAudio).not.toHaveBeenCalled();
   });
 
-  // Streams a real 100MB+ body through multipart parsing, so it needs a
-  // generous timeout beyond the 5s default.
-  it("returns 413 when audio file is too large", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/audio", {
-      method: "POST",
-      headers: await authedHeaders("user_01"),
-      body: audioUploadBody(MAX_AUDIO_BYTES + 1),
-    });
-    expect(res.status).toBe(413);
-    expect(await res.json()).toEqual({
-      message: "Audio file is too large",
-      maxBytes: MAX_AUDIO_BYTES,
-    });
-  }, 20000);
+  it("returns 400 without a file name", async () => {
+    const res = await postJson(
+      "/upload/audio/confirm",
+      confirmBody({ fileName: "  " }),
+    );
 
-  it("returns 400 for invalid source", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/audio", {
-      method: "POST",
-      headers: await authedHeaders("user_01"),
-      body: audioUploadBody(100, { source: "invalid" }),
-    });
+    expect(res.status).toBe(400);
+    expect(mockTakeUploadedAudio).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an invalid source", async () => {
+    const res = await postJson(
+      "/upload/audio/confirm",
+      confirmBody({ audioSource: "invalid" }),
+    );
+
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
       message: 'Invalid source; use "video" or "audio" (or omit)',
     });
   });
 
-  it("uploads audio and enqueues transcribe", async () => {
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/audio", {
-      method: "POST",
-      headers: await authedHeaders("user_01"),
-      body: audioUploadBody(100, { source: "video", fileName: "clip.mp3" }),
+  // Also what an id minted for an image gets: its object is under images/.
+  it("returns 404 when no audio was uploaded under the id", async () => {
+    mockTakeUploadedAudio.mockResolvedValue({ ok: false, reason: "missing" });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      message: "No uploaded audio to confirm",
     });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      message: string;
-      fileName: string;
-      source: string;
-      audioUploadId: string;
-    };
-    expect(body.message).toBe("File uploaded");
-    expect(body.fileName).toBe("clip.mp3");
-    expect(body.source).toBe("video");
-    expect(typeof body.audioUploadId).toBe("string");
-    expect(mockUploadAudioToBucket).toHaveBeenCalledTimes(1);
-    expect(mockInsert).toHaveBeenCalledTimes(1);
-    expect(mockSendEvent).toHaveBeenCalledWith("transcribe", {
-      audioUploadId: body.audioUploadId,
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when storage holds something other than audio", async () => {
+    mockTakeUploadedAudio.mockResolvedValue({
+      ok: false,
+      reason: "wrong-type",
+      contentType: "application/zip",
+    });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      message: "Expected an audio file, got: application/zip",
+    });
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("names the type as unknown when storage recorded none", async () => {
+    mockTakeUploadedAudio.mockResolvedValue({
+      ok: false,
+      reason: "wrong-type",
+      contentType: "",
+    });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(await res.json()).toEqual({
+      message: "Expected an audio file, got: unknown",
     });
   });
 
-  it("rejects a multipart upload from a foreign origin", async () => {
-    // multipart/form-data is CORS-safelisted, so this request is sent without
-    // a preflight and carries the session cookie (SameSite=None in
-    // production). csrf() is the only thing standing between a hostile page
-    // and an upload made as the signed-in user.
-    const res = await (
-      await createApp()
-    ).request("http://localhost/upload/audio", {
-      method: "POST",
-      headers: {
-        ...(await authedHeaders("user_01")),
-        Origin: "https://evil.example",
-      },
-      body: audioUploadBody(100, { source: "audio", fileName: "clip.mp3" }),
+  it("returns 413 when the stored object is over the cap", async () => {
+    mockTakeUploadedAudio.mockResolvedValue({
+      ok: false,
+      reason: "too-large",
+      contentType: "audio/webm",
     });
-    expect(res.status).toBe(403);
-    expect(mockUploadAudioToBucket).not.toHaveBeenCalled();
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      message: "Audio file is too large",
+      maxBytes: MAX_AUDIO_BYTES,
+    });
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("records the stored size and type, then queues transcription", async () => {
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      message: "File uploaded",
+      audioUploadId: UPLOAD_ID,
+      fileName: "talk.webm",
+      size: 2048,
+      mimeType: "audio/webm",
+      source: "video",
+    });
+    expect(mockTakeUploadedAudio).toHaveBeenCalledWith("user_01", UPLOAD_ID);
+    // The attachment row, then the job row.
+    expect(mockValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentId: UPLOAD_ID,
+        kind: "audio",
+        userId: "user_01",
+        fileName: "talk.webm",
+        mimeType: "audio/webm",
+        sizeBytes: 2048,
+      }),
+    );
+    expect(mockValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audioUploadId: UPLOAD_ID,
+        captionUploadId: null,
+        source: "video",
+      }),
+    );
+    expect(mockSendEvent).toHaveBeenCalledWith("transcribe", {
+      audioUploadId: UPLOAD_ID,
+    });
+  });
+
+  it("defaults the source to audio", async () => {
+    const res = await postJson(
+      "/upload/audio/confirm",
+      confirmBody({ audioSource: undefined }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ source: "audio" });
+  });
+
+  // A double-click, or a retried confirm whose response was lost. drizzle
+  // wraps the driver error, so the code sits on the cause.
+  it("returns 409 on a repeat confirm and queues nothing", async () => {
+    mockValues.mockRejectedValueOnce(
+      new Error("Failed query", {
+        cause: Object.assign(new Error("duplicate key value"), {
+          code: "23505",
+        }),
+      }),
+    );
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      message: "This upload was already confirmed",
+    });
+    expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  it("still fails loudly on any other database error", async () => {
+    mockValues.mockRejectedValueOnce(new Error("connection reset"));
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(500);
+    expect(mockSendEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -264,7 +417,8 @@ describe("POST /upload/youtube", () => {
     expect(body.source).toBe("youtube");
     expect(body.url).toBe(YT_URL);
     expect(typeof body.audioUploadId).toBe("string");
-    expect(mockInsert).toHaveBeenCalledTimes(1);
+    // The attachment row, then the job row.
+    expect(mockInsert).toHaveBeenCalledTimes(2);
     // The row persists the origin URL (for history + future transcript caching).
     expect(mockValues).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -301,7 +455,9 @@ describe("POST /upload/youtube", () => {
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { audioUploadId: string };
-    const insertedJob = mockValues.mock.calls[0]?.[0] as {
+    const insertedJob = mockValues.mock.calls
+      .map(([values]) => values as { captionUploadId?: string })
+      .find((values) => "captionUploadId" in values) as {
       captionUploadId: string;
     };
     expect(insertedJob.captionUploadId).toEqual(expect.any(String));

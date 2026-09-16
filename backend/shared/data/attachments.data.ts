@@ -139,6 +139,21 @@ export async function releaseAttachmentReservations(
     .where(eq(AttachmentTurnReservations.claimToken, claimToken));
 }
 
+/** Postgres' unique-violation code. */
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * Whether an insert failed because the key is already taken. drizzle wraps
+ * the driver's error in a DrizzleQueryError, so the code is looked for along
+ * the cause chain rather than only on the error itself.
+ */
+export function isDuplicateKey(error: unknown): boolean {
+  for (let current = error; current; current = (current as Error).cause) {
+    if ((current as { code?: unknown }).code === UNIQUE_VIOLATION) return true;
+  }
+  return false;
+}
+
 export async function createAttachment(
   values: AttachmentValues,
   executor: Executor = db,

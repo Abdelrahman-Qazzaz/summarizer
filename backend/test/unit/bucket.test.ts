@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const storage = vi.hoisted(() => ({
+  createSignedUploadUrl: vi.fn(),
+  info: vi.fn(),
   remove: vi.fn(),
   download: vi.fn(),
   createSignedUrl: vi.fn(),
@@ -12,6 +14,8 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 import {
+  MAX_AUDIO_BYTES,
+  createAudioUploadUrl,
   createSignedAudioUrl,
   createSignedImageUrl,
   createSignedImageUrls,
@@ -19,6 +23,7 @@ import {
   deleteCaptionFromBucket,
   deleteImagesFromBucket,
   getCaptionText,
+  takeUploadedAudio,
 } from "../../shared/bucket";
 
 const USER = "user_01";
@@ -129,6 +134,114 @@ describe("bucket key layout", () => {
         ["i1", "https://one"],
         ["i2", "https://two"],
       ]),
+    );
+  });
+});
+
+describe("audio uploads", () => {
+  const PATH = `user_01/audios/${AUDIO_ID}`;
+  const stored = (size: number, contentType: string) =>
+    storage.info.mockResolvedValue({
+      data: { size, contentType },
+      error: null,
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storage.remove.mockResolvedValue({ data: [], error: null });
+  });
+
+  it("mints an upload URL bound to the audio key", async () => {
+    storage.createSignedUploadUrl.mockResolvedValue({
+      data: { signedUrl: "https://upload" },
+      error: null,
+    });
+
+    expect(await createAudioUploadUrl(USER, AUDIO_ID)).toBe("https://upload");
+    expect(storage.createSignedUploadUrl).toHaveBeenCalledWith(PATH);
+  });
+
+  it("reports what storage holds and keeps it", async () => {
+    stored(2048, "audio/webm");
+
+    expect(await takeUploadedAudio(USER, AUDIO_ID)).toEqual({
+      ok: true,
+      sizeBytes: 2048,
+      contentType: "audio/webm",
+    });
+    expect(storage.info).toHaveBeenCalledWith(PATH);
+    expect(storage.remove).not.toHaveBeenCalled();
+  });
+
+  // What storage actually returned for a missing key when checked live.
+  it("reports a missing object, with nothing to delete", async () => {
+    storage.info.mockResolvedValue({
+      data: null,
+      error: Object.assign(new Error("Object not found"), {
+        status: 400,
+        statusCode: "404",
+      }),
+    });
+
+    expect(await takeUploadedAudio(USER, AUDIO_ID)).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    expect(storage.remove).not.toHaveBeenCalled();
+  });
+
+  it("throws any other storage error", async () => {
+    storage.info.mockResolvedValue({
+      data: null,
+      error: Object.assign(new Error("unauthorized"), {
+        status: 400,
+        statusCode: "403",
+      }),
+    });
+
+    await expect(takeUploadedAudio(USER, AUDIO_ID)).rejects.toThrow(
+      "unauthorized",
+    );
+  });
+
+  it("deletes an object that is not audio", async () => {
+    stored(64, "application/zip");
+
+    expect(await takeUploadedAudio(USER, AUDIO_ID)).toEqual({
+      ok: false,
+      reason: "wrong-type",
+      contentType: "application/zip",
+    });
+    expect(storage.remove).toHaveBeenCalledWith([PATH]);
+  });
+
+  it("deletes an object over the cap", async () => {
+    stored(MAX_AUDIO_BYTES + 1, "audio/webm");
+
+    expect(await takeUploadedAudio(USER, AUDIO_ID)).toMatchObject({
+      ok: false,
+      reason: "too-large",
+    });
+    expect(storage.remove).toHaveBeenCalledWith([PATH]);
+  });
+
+  it("keeps an object exactly at the cap", async () => {
+    stored(MAX_AUDIO_BYTES, "audio/webm");
+
+    expect(await takeUploadedAudio(USER, AUDIO_ID)).toMatchObject({ ok: true });
+    expect(storage.remove).not.toHaveBeenCalled();
+  });
+
+  // A rejection that can't clean up must not look like a handled one.
+  it("throws when deleting a rejected object fails", async () => {
+    stored(64, "application/zip");
+    storage.remove.mockResolvedValue({
+      data: null,
+      error: new Error("remove failed"),
+    });
+
+    await expect(takeUploadedAudio(USER, AUDIO_ID)).rejects.toThrow(
+      "remove failed",
     );
   });
 });

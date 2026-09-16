@@ -40,6 +40,7 @@ import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
   deleteOwnedUnlinkedUnreservedAttachments,
+  isDuplicateKey,
 } from "../../shared/data/attachments.data";
 import { Attachments, ChatMessageAttachmentLinks } from "../../shared/db";
 
@@ -163,5 +164,31 @@ describe("attachments", () => {
     expect(transactionFrom).toHaveBeenCalledWith(ChatMessageAttachmentLinks);
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("isDuplicateKey", () => {
+  const uniqueViolation = () =>
+    Object.assign(new Error("duplicate key value"), { code: "23505" });
+
+  it("recognizes the driver's unique violation", () => {
+    expect(isDuplicateKey(uniqueViolation())).toBe(true);
+  });
+
+  // drizzle rethrows driver errors as a DrizzleQueryError carrying the
+  // original as its cause.
+  it("finds it when wrapped", async () => {
+    const { DrizzleQueryError } = await import("drizzle-orm/errors");
+    const wrapped = new DrizzleQueryError("insert ...", [], uniqueViolation());
+
+    expect(isDuplicateKey(wrapped)).toBe(true);
+  });
+
+  it("ignores other database errors", () => {
+    expect(
+      isDuplicateKey(Object.assign(new Error("fk"), { code: "23503" })),
+    ).toBe(false);
+    expect(isDuplicateKey(new Error("connection reset"))).toBe(false);
+    expect(isDuplicateKey(null)).toBe(false);
   });
 });

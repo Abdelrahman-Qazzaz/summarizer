@@ -1,7 +1,7 @@
 import { createMiddleware } from "hono/factory";
 import type { Context } from "hono";
 import type { ZodError, ZodSchema, ZodType, ZodTypeDef } from "zod";
-import { MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from "../../../shared/bucket";
+import { MAX_IMAGE_BYTES } from "../../../shared/bucket";
 const MAX_TEXT_BYTES = 15 * 1024 * 1024;
 
 export function validateReqParams<T extends Record<string, unknown>>(
@@ -67,9 +67,6 @@ export function validateMultipart<T extends Record<string, unknown>>(
     const msg = issue?.message ?? "Invalid request body";
     if (msg === "Text file is too large") {
       return c.json({ message: msg, maxBytes: MAX_TEXT_BYTES }, 413);
-    }
-    if (msg === "Audio file is too large") {
-      return c.json({ message: msg, maxBytes: MAX_AUDIO_BYTES }, 413);
     }
     if (msg === "Image is too large") {
       return c.json({ message: msg, maxBytes: MAX_IMAGE_BYTES }, 413);

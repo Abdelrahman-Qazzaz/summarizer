@@ -104,8 +104,20 @@ export const imageReadRateLimiter = createLimiter(
   getUserId,
 );
 
+/** Minting an upload URL is what stands for an upload, so it spends this. */
 export const uploadRateLimiter = createLimiter(
   30,
   "rate-limit:upload:",
+  getUserId,
+);
+
+/**
+ * Confirming moves no bytes and needs an object a mint already paid for, so it
+ * gets its own budget rather than halving how many files a user can send.
+ * Twice the upload budget leaves room for a retried confirm on every upload.
+ */
+export const uploadConfirmRateLimiter = createLimiter(
+  60,
+  "rate-limit:upload-confirm:",
   getUserId,
 );

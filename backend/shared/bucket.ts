@@ -53,7 +53,8 @@ type ObjectKind = "images" | "audios" | "captions";
  * Storage key `<userId>/<kind>/<storageObjectId>`. Both parts are structural:
  * every operation names the owner and the kind, so a wrong user or a wrong
  * kind yields a path that doesn't exist. The owner is what makes the
- * id-keyed functions below safe to call with untrusted ids. (The
+ * id-keyed functions below safe to call with untrusted ids; the kind is what
+ * stops an upload minted as one kind from being confirmed as another. (The
  * youtube-fetcher builds the same key; keep them in sync.)
  */
 function objectPath(
@@ -62,6 +63,96 @@ function objectPath(
   storageObjectId: UploadId,
 ) {
   return `${userId}/${kind}/${storageObjectId}`;
+}
+
+/**
+ * A one-shot URL the browser can PUT a file to, so the bytes go straight from
+ * the device to storage instead of through this process. The token is bound
+ * to this exact key, so the client can neither choose its own path nor reuse
+ * the URL for a second object; Supabase fixes its lifetime at two hours.
+ *
+ * Nothing here limits what actually lands: size and content type are the
+ * client's to set until the object exists. takeUploadedObject settles both.
+ */
+async function createSignedUploadUrl(
+  userId: string,
+  kind: ObjectKind,
+  storageObjectId: UploadId,
+) {
+  const { data, error } = await bucket().createSignedUploadUrl(
+    objectPath(userId, kind, storageObjectId),
+  );
+
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function createAudioUploadUrl(
+  userId: string,
+  audioUploadId: UploadId,
+) {
+  return createSignedUploadUrl(userId, "audios", audioUploadId);
+}
+
+/** Storage reports a missing object as a 400 whose body carries "404". */
+function isMissingObject(error: unknown) {
+  const { status, statusCode } = error as {
+    status?: number;
+    statusCode?: string;
+  };
+  return status === 404 || statusCode === "404";
+}
+
+/**
+ * The confirm half of a direct upload: what storage says landed, checked
+ * against what the kind accepts. Neither size nor content type passed through
+ * this process, so both are read back rather than taken from the client.
+ *
+ * A rejected object is deleted here. Its row is written only once this
+ * accepts it, so a rejected object is referenced by nothing and would
+ * otherwise sit in the bucket for good.
+ */
+async function takeUploadedObject(
+  userId: string,
+  kind: ObjectKind,
+  storageObjectId: UploadId,
+  accepts: { contentTypePrefix: string; maxBytes: number },
+) {
+  const path = objectPath(userId, kind, storageObjectId);
+  const { data, error } = await bucket().info(path);
+
+  if (error) {
+    if (isMissingObject(error))
+      return { ok: false, reason: "missing" } as const;
+    throw error;
+  }
+
+  const sizeBytes = data.size ?? 0;
+  const contentType = data.contentType ?? "";
+
+  const reason = !contentType.startsWith(accepts.contentTypePrefix)
+    ? "wrong-type"
+    : sizeBytes > accepts.maxBytes
+      ? "too-large"
+      : null;
+
+  if (reason) {
+    const { error: removeError } = await bucket().remove([path]);
+    if (removeError) throw removeError;
+    return { ok: false, reason, contentType } as const;
+  }
+
+  return { ok: true, sizeBytes, contentType } as const;
+}
+
+export async function takeUploadedAudio(
+  userId: string,
+  audioUploadId: UploadId,
+) {
+  return takeUploadedObject(userId, "audios", audioUploadId, {
+    contentTypePrefix: "audio/",
+    maxBytes: MAX_AUDIO_BYTES,
+  });
 }
 
 /**
@@ -83,19 +174,6 @@ async function uploadObject(
 
   if (error) throw error;
   return data.path;
-}
-
-/** Upload speech audio. Rejects anything not declaring an `audio/*` type. */
-export async function uploadAudioToBucket(
-  userId: string,
-  audioUploadId: UploadId,
-  file: File,
-) {
-  if (!file.type.startsWith("audio/")) {
-    throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
-  }
-
-  return uploadObject(userId, "audios", audioUploadId, file);
 }
 
 /** Upload an image. Rejects anything not declaring an `image/*` type. */

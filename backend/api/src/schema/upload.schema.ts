@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../shared/keys";
-import { MAX_AUDIO_BYTES } from "../../../shared/bucket";
 import {
   DEFAULT_TRANSCRIBE_MODEL,
   isValidTranscribeModel,
@@ -52,9 +51,19 @@ async function refineTranscriptionModel(modelId: string, ctx: z.RefinementCtx) {
   });
 }
 
-export const audioUploadSchema = z
+/** The id a mint handed out and the name of the file the client uploaded to it. */
+const uploadIdField = z.string().uuid({ message: "Invalid upload id" });
+const fileNameField = z.string().trim().min(1).max(255);
+
+/**
+ * POST /upload/audio/confirm — the audio is in the bucket; record the job and
+ * transcribe it. Size and type are not in the body: the controller reads both
+ * back from storage, since the client no longer sends the bytes through here.
+ */
+export const audioConfirmSchema = z
   .object({
-    [FORM_KEYS.uploadFile]: fileField,
+    [FORM_KEYS.uploadId]: uploadIdField,
+    [FORM_KEYS.fileName]: fileNameField,
     [FORM_KEYS.audioSource]: z.preprocess(
       blankToUndefined,
       z
@@ -69,26 +78,19 @@ export const audioUploadSchema = z
     [FORM_KEYS.transcriptModelId]: transcriptionModelField,
   })
   .superRefine(async (data, ctx) => {
-    if (data[FORM_KEYS.uploadFile].size > MAX_AUDIO_BYTES) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Audio file is too large",
-        path: [FORM_KEYS.uploadFile],
-      });
-    }
     await refineTranscriptionModel(data[FORM_KEYS.transcriptModelId], ctx);
   })
   .transform((data) => ({
-    [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
+    [CTX_KEYS.audioUploadId]: data[FORM_KEYS.uploadId],
+    [CTX_KEYS.fileName]: data[FORM_KEYS.fileName],
     [CTX_KEYS.transcriptModelId]: data[FORM_KEYS.transcriptModelId],
     [CTX_KEYS.audioSource]: data[FORM_KEYS.audioSource],
   }));
 
 /**
- * POST /upload/youtube — a YouTube URL. Unlike audio this is a JSON body (no
- * file); the youtube-fetcher service downloads the audio out of band, so the
- * job is created with placeholder file metadata (real title/size are unknown
- * until the fetch completes).
+ * POST /upload/youtube — a YouTube URL. The youtube-fetcher service downloads
+ * the audio out of band, so the job is created with placeholder file metadata
+ * (real title/size are unknown until the fetch completes).
  */
 export const youtubeUploadSchema = z
   .object({

@@ -17,6 +17,7 @@ import type { UploadId } from "../types";
 import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
+  isDuplicateKey,
 } from "./attachments.data";
 
 /**
@@ -154,6 +155,10 @@ export async function findUserJobsPage(
 
 /* --------------------------------------------------------------- API writes */
 
+/**
+ * Returns false when `audioUploadId` is already recorded — a confirm repeated
+ * by a double-click or a retry — so the caller can answer with a conflict.
+ */
 export async function createAudioJob(job: {
   audioUploadId: UploadId;
   captionUploadId: UploadId | null;
@@ -177,28 +182,35 @@ export async function createAudioJob(job: {
     youtubeSourceUrl,
   } = job;
 
-  await db.transaction(async (tx) => {
-    await createAttachment(
-      {
-        attachmentId: audioUploadId,
-        kind: "audio",
-        userId,
-        fileName,
-        mimeType,
-        sizeBytes,
-      },
-      tx,
-    );
-    await tx.insert(AudioTranscriptionJobs).values({
-      audioUploadId,
-      captionUploadId,
-      source,
-      transcriptModelId,
-      ...(youtubeSourceUrl !== undefined
-        ? { YT_sourceUrl: youtubeSourceUrl }
-        : {}),
+  try {
+    await db.transaction(async (tx) => {
+      await createAttachment(
+        {
+          attachmentId: audioUploadId,
+          kind: "audio",
+          userId,
+          fileName,
+          mimeType,
+          sizeBytes,
+        },
+        tx,
+      );
+      await tx.insert(AudioTranscriptionJobs).values({
+        audioUploadId,
+        captionUploadId,
+        source,
+        transcriptModelId,
+        ...(youtubeSourceUrl !== undefined
+          ? { YT_sourceUrl: youtubeSourceUrl }
+          : {}),
+      });
     });
-  });
+  } catch (error) {
+    if (isDuplicateKey(error)) return false;
+    throw error;
+  }
+
+  return true;
 }
 
 export async function deleteAudioJob(userId: string, audioUploadId: string) {
