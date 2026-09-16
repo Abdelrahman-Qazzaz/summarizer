@@ -9,7 +9,7 @@ const {
   mockWhere,
   mockSet,
   mockUpdate,
-  mockCreateSignedAudioUrl,
+  mockCreateSignedUrl,
   mockCleanupTerminalCaptionUpload,
   mockGetTextFromBucket,
   mockTranscribeUrl,
@@ -21,7 +21,7 @@ const {
   mockWhere: vi.fn(),
   mockSet: vi.fn(),
   mockUpdate: vi.fn(),
-  mockCreateSignedAudioUrl: vi.fn(),
+  mockCreateSignedUrl: vi.fn(),
   mockCleanupTerminalCaptionUpload: vi.fn(),
   mockGetTextFromBucket: vi.fn(),
   mockTranscribeUrl: vi.fn(),
@@ -37,7 +37,7 @@ function deepgramResponse(transcript: string) {
 }
 
 vi.mock("../../shared/bucket", () => ({
-  createSignedAudioUrl: mockCreateSignedAudioUrl,
+  createSignedUrl: mockCreateSignedUrl,
   getTextFromBucket: mockGetTextFromBucket,
 }));
 
@@ -110,7 +110,7 @@ const audioInput = {
 describe("handleTranscribeJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCreateSignedAudioUrl.mockResolvedValue("https://signed.example/audio");
+    mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
     mockCleanupTerminalCaptionUpload.mockResolvedValue(false);
     mockGetTextFromBucket.mockResolvedValue("caption transcript");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
@@ -123,10 +123,10 @@ describe("handleTranscribeJob", () => {
   it("transcribes audio, stores the transcript, and announces completion", async () => {
     await handleTranscribeJob(audioInput);
 
-    expect(mockCreateSignedAudioUrl).toHaveBeenCalledWith(
-      "user_01",
-      audioUploadId,
-    );
+    expect(mockCreateSignedUrl).toHaveBeenCalledWith("user_01", {
+      kind: "audio",
+      uploadId: audioUploadId,
+    });
     expect(mockTranscribeUrl).toHaveBeenCalled();
     // Transcript store + job-completion happen together (one transaction),
     // keyed by the job's own audioUploadId.
@@ -155,7 +155,7 @@ describe("handleTranscribeJob", () => {
       "user_01",
       captionUploadId,
     );
-    expect(mockCreateSignedAudioUrl).not.toHaveBeenCalled();
+    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
@@ -188,7 +188,7 @@ describe("handleTranscribeJob", () => {
   it("no-ops when no queued job is claimed", async () => {
     setupUpdateChain([]);
     await handleTranscribeJob(audioInput);
-    expect(mockCreateSignedAudioUrl).not.toHaveBeenCalled();
+    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });

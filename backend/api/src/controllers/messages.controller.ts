@@ -41,7 +41,7 @@ import {
   resolveMessageImages,
   type ResolvedImage,
 } from "../../../shared/data/images.data";
-import { deleteImagesFromBucket } from "../../../shared/bucket";
+import { deleteFromBucket } from "../../../shared/bucket";
 import {
   findMessageTranscriptAttachments,
   findTranscripts,
@@ -724,7 +724,13 @@ export async function handlePatchMessage(c: Context) {
       return c.json({ message: "Only user messages can be edited" }, 400);
     }
 
-    await deleteImagesFromBucket(request.userId, patchResult.imageUploadIds);
+    await deleteFromBucket(
+      request.userId,
+      patchResult.imageUploadIds.map((uploadId) => ({
+        kind: "image",
+        uploadId,
+      })),
+    );
   } catch (error) {
     await releaseClaim();
     throw error;
@@ -776,6 +782,9 @@ export async function handleDeleteMessage(c: Context) {
   if (result.status === "active")
     return c.json({ message: "A response is already in progress" }, 409);
 
-  await deleteImagesFromBucket(userId, result.imageUploadIds);
+  await deleteFromBucket(
+    userId,
+    result.imageUploadIds.map((uploadId) => ({ kind: "image", uploadId })),
+  );
   return c.json({ message: "Message deleted" }, 200);
 }

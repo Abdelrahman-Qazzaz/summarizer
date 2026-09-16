@@ -2,7 +2,7 @@ import {
   DEFAULT_TRANSCRIBE_MODEL,
   transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
-import { createSignedAudioUrl, getTextFromBucket } from "../shared/bucket";
+import { createSignedUrl, getTextFromBucket } from "../shared/bucket";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { claimAudioJob, failAudioJob } from "../shared/data/jobs.data";
 import { saveCompletedTranscript } from "../shared/data/transcripts.data";
@@ -80,7 +80,10 @@ export async function handleTranscribeJob(
         return getTextFromBucket(job.userId, job.captionUploadId);
       }
 
-      const audioUrl = await createSignedAudioUrl(job.userId, audioUploadId);
+      const audioUrl = await createSignedUrl(job.userId, {
+        kind: "audio",
+        uploadId: audioUploadId,
+      });
       const model = job.transcriptModelId ?? DEFAULT_TRANSCRIBE_MODEL;
       return transcribeAI(model, audioUrl);
     });

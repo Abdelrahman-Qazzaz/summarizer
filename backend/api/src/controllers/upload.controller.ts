@@ -2,11 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { createAudioJob } from "../../../shared/data/jobs.data";
 import { queueAudioTranscription } from "../../../shared/audioTranscription";
-import {
-  MAX_AUDIO_BYTES,
-  createAudioUploadUrl,
-  takeUploadedAudio,
-} from "../../../shared/bucket";
+import { createUploadUrl, takeUploadedObject } from "../../../shared/bucket";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { CTX_KEYS } from "../../../shared/keys";
 import type { UploadId } from "../../../shared/types";
@@ -23,7 +19,10 @@ export async function handleAudioUploadUrl(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
 
   const audioUploadId: UploadId = randomUUID();
-  const signedUploadUrl = await createAudioUploadUrl(userId, audioUploadId);
+  const signedUploadUrl = await createUploadUrl(userId, {
+    kind: "audio",
+    uploadId: audioUploadId,
+  });
 
   return c.json({ uploadId: audioUploadId, signedUploadUrl });
 }
@@ -41,7 +40,10 @@ export async function handleAudioConfirm(c: Context) {
   const source = c.get(CTX_KEYS.audioSource);
   const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
 
-  const upload = await takeUploadedAudio(userId, audioUploadId);
+  const upload = await takeUploadedObject(userId, {
+    kind: "audio",
+    uploadId: audioUploadId,
+  });
   if (!upload.ok) {
     switch (upload.reason) {
       case "missing":
@@ -55,7 +57,7 @@ export async function handleAudioConfirm(c: Context) {
         );
       case "too-large":
         return c.json(
-          { message: "Audio file is too large", maxBytes: MAX_AUDIO_BYTES },
+          { message: "Audio file is too large", maxBytes: upload.maxBytes },
           413,
         );
     }

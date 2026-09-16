@@ -5,14 +5,14 @@ const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const {
   mockInsert,
   mockSendEvent,
-  mockCreateAudioUploadUrl,
-  mockTakeUploadedAudio,
+  mockCreateUploadUrl,
+  mockTakeUploadedObject,
   mockIsValidTranscribeModel,
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockSendEvent: vi.fn(),
-  mockCreateAudioUploadUrl: vi.fn(),
-  mockTakeUploadedAudio: vi.fn(),
+  mockCreateUploadUrl: vi.fn(),
+  mockTakeUploadedObject: vi.fn(),
   mockIsValidTranscribeModel: vi.fn(),
 }));
 
@@ -49,15 +49,14 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  createAudioUploadUrl: mockCreateAudioUploadUrl,
-  takeUploadedAudio: mockTakeUploadedAudio,
-  createSignedImageUrl: vi.fn(),
-  createSignedImageUrls: vi.fn(),
+  createUploadUrl: mockCreateUploadUrl,
+  takeUploadedObject: mockTakeUploadedObject,
+  createSignedUrl: vi.fn(),
+  createSignedUrls: vi.fn(),
   // Literals (not the top-level consts): vi.mock factories can run during
   // import evaluation, before this module's own bindings initialize.
   BUCKET: "Audio & Text files",
   MAX_AUDIO_BYTES: 100 * 1024 * 1024,
-  MAX_IMAGE_BYTES: 10 * 1024 * 1024,
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
@@ -101,7 +100,7 @@ describe("POST /upload/text", () => {
 describe("POST /upload/audio", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCreateAudioUploadUrl.mockResolvedValue("https://storage.test/upload");
+    mockCreateUploadUrl.mockResolvedValue("https://storage.test/upload");
   });
 
   it("returns 401 without a session cookie", async () => {
@@ -114,7 +113,7 @@ describe("POST /upload/audio", () => {
     });
 
     expect(res.status).toBe(401);
-    expect(mockCreateAudioUploadUrl).not.toHaveBeenCalled();
+    expect(mockCreateUploadUrl).not.toHaveBeenCalled();
   });
 
   it("mints a fresh id and a URL bound to it", async () => {
@@ -127,10 +126,10 @@ describe("POST /upload/audio", () => {
     };
     expect(body.uploadId).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.signedUploadUrl).toBe("https://storage.test/upload");
-    expect(mockCreateAudioUploadUrl).toHaveBeenCalledWith(
-      "user_01",
-      body.uploadId,
-    );
+    expect(mockCreateUploadUrl).toHaveBeenCalledWith("user_01", {
+      kind: "audio",
+      uploadId: body.uploadId,
+    });
   });
 
   // Minting writes nothing: an upload that never lands leaves no job behind.
@@ -161,7 +160,7 @@ describe("POST /upload/audio/confirm", () => {
     mockInsert.mockReturnValue({ values: mockValues });
     mockSendEvent.mockResolvedValue(undefined);
     mockIsValidTranscribeModel.mockResolvedValue(true);
-    mockTakeUploadedAudio.mockResolvedValue({
+    mockTakeUploadedObject.mockResolvedValue({
       ok: true,
       sizeBytes: 2048,
       contentType: "audio/webm",
@@ -178,7 +177,7 @@ describe("POST /upload/audio/confirm", () => {
     });
 
     expect(res.status).toBe(401);
-    expect(mockTakeUploadedAudio).not.toHaveBeenCalled();
+    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an id that is not a uuid", async () => {
@@ -189,7 +188,7 @@ describe("POST /upload/audio/confirm", () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ message: "Invalid upload id" });
-    expect(mockTakeUploadedAudio).not.toHaveBeenCalled();
+    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
   });
 
   it("returns 400 without a file name", async () => {
@@ -199,7 +198,7 @@ describe("POST /upload/audio/confirm", () => {
     );
 
     expect(res.status).toBe(400);
-    expect(mockTakeUploadedAudio).not.toHaveBeenCalled();
+    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an invalid source", async () => {
@@ -216,7 +215,7 @@ describe("POST /upload/audio/confirm", () => {
 
   // Also what an id minted for an image gets: its object is under images/.
   it("returns 404 when no audio was uploaded under the id", async () => {
-    mockTakeUploadedAudio.mockResolvedValue({ ok: false, reason: "missing" });
+    mockTakeUploadedObject.mockResolvedValue({ ok: false, reason: "missing" });
 
     const res = await postJson("/upload/audio/confirm", confirmBody());
 
@@ -229,7 +228,7 @@ describe("POST /upload/audio/confirm", () => {
   });
 
   it("returns 400 when storage holds something other than audio", async () => {
-    mockTakeUploadedAudio.mockResolvedValue({
+    mockTakeUploadedObject.mockResolvedValue({
       ok: false,
       reason: "wrong-type",
       contentType: "application/zip",
@@ -246,7 +245,7 @@ describe("POST /upload/audio/confirm", () => {
   });
 
   it("names the type as unknown when storage recorded none", async () => {
-    mockTakeUploadedAudio.mockResolvedValue({
+    mockTakeUploadedObject.mockResolvedValue({
       ok: false,
       reason: "wrong-type",
       contentType: "",
@@ -260,10 +259,11 @@ describe("POST /upload/audio/confirm", () => {
   });
 
   it("returns 413 when the stored object is over the cap", async () => {
-    mockTakeUploadedAudio.mockResolvedValue({
+    mockTakeUploadedObject.mockResolvedValue({
       ok: false,
       reason: "too-large",
       contentType: "audio/webm",
+      maxBytes: MAX_AUDIO_BYTES,
     });
 
     const res = await postJson("/upload/audio/confirm", confirmBody());
@@ -288,7 +288,10 @@ describe("POST /upload/audio/confirm", () => {
       mimeType: "audio/webm",
       source: "video",
     });
-    expect(mockTakeUploadedAudio).toHaveBeenCalledWith("user_01", UPLOAD_ID);
+    expect(mockTakeUploadedObject).toHaveBeenCalledWith("user_01", {
+      kind: "audio",
+      uploadId: UPLOAD_ID,
+    });
     // The attachment row, then the job row.
     expect(mockValues).toHaveBeenCalledWith(
       expect.objectContaining({

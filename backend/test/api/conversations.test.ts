@@ -15,7 +15,7 @@ const {
   mockDelete,
   mockDeleteWhere,
   mockDeleteReturning,
-  mockDeleteImagesFromBucket,
+  mockDeleteFromBucket,
   mockImageWhere,
   mockImageRows,
 } = vi.hoisted(() => ({
@@ -34,7 +34,7 @@ const {
   mockDelete: vi.fn(),
   mockDeleteWhere: vi.fn(),
   mockDeleteReturning: vi.fn(),
-  mockDeleteImagesFromBucket: vi.fn(),
+  mockDeleteFromBucket: vi.fn(),
   mockImageWhere: vi.fn(),
   mockImageRows: vi.fn(),
 }));
@@ -50,8 +50,8 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  deleteImagesFromBucket: mockDeleteImagesFromBucket,
-  createSignedImageUrls: vi.fn(),
+  deleteFromBucket: mockDeleteFromBucket,
+  createSignedUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
@@ -83,7 +83,7 @@ beforeEach(() => {
   }));
   mockImageWhere.mockImplementation(async () => mockImageRows());
   mockImageRows.mockReturnValue([]);
-  mockDeleteImagesFromBucket.mockResolvedValue([]);
+  mockDeleteFromBucket.mockResolvedValue([]);
   mockInsert.mockImplementation(() => ({ values: mockValues }));
   mockValues.mockImplementation(() => ({ returning: mockInsertReturning }));
   mockUpdate.mockImplementation(() => ({ set: mockSet }));
@@ -292,6 +292,6 @@ describe("DELETE /conversations/:conversationId", () => {
     expect(await res.json()).toEqual({
       message: "A response is already in progress",
     });
-    expect(mockDeleteImagesFromBucket).not.toHaveBeenCalled();
+    expect(mockDeleteFromBucket).not.toHaveBeenCalled();
   });
 });

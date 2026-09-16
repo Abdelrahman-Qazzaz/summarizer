@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import {
-  MAX_IMAGE_BYTES,
-  createImageUploadUrl,
-  createSignedImageUrl,
-  takeUploadedImage,
+  createSignedUrl,
+  createUploadUrl,
+  takeUploadedObject,
 } from "../../../shared/bucket";
 import {
   createImageAttachment,
@@ -26,7 +25,10 @@ export async function handleImageUploadUrl(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
 
   const imageUploadId: UploadId = randomUUID();
-  const signedUploadUrl = await createImageUploadUrl(userId, imageUploadId);
+  const signedUploadUrl = await createUploadUrl(userId, {
+    kind: "image",
+    uploadId: imageUploadId,
+  });
 
   return c.json({ uploadId: imageUploadId, signedUploadUrl });
 }
@@ -44,7 +46,8 @@ export async function handleImageConfirm(c: Context) {
   const imageUploadId: UploadId = c.get(CTX_KEYS.imageUploadId);
   const fileName = c.get(CTX_KEYS.fileName);
 
-  const upload = await takeUploadedImage(userId, imageUploadId);
+  const image = { kind: "image", uploadId: imageUploadId } as const;
+  const upload = await takeUploadedObject(userId, image);
   if (!upload.ok) {
     switch (upload.reason) {
       case "missing":
@@ -53,13 +56,13 @@ export async function handleImageConfirm(c: Context) {
         return c.json({ message: "File must be an image" }, 400);
       case "too-large":
         return c.json(
-          { message: "Image is too large", maxBytes: MAX_IMAGE_BYTES },
+          { message: "Image is too large", maxBytes: upload.maxBytes },
           413,
         );
     }
   }
 
-  const signedUrl = await createSignedImageUrl(userId, imageUploadId);
+  const signedUrl = await createSignedUrl(userId, image);
   const created = await createImageAttachment({
     userId,
     imageUploadId,

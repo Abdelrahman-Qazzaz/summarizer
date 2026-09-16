@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 import { getBaseEnv } from "./env";
-import type { UploadId } from "./types";
 
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = getBaseEnv();
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -15,7 +14,7 @@ export const BUCKET = "Audio & Text files";
 export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 
 // Cap on images entering the bucket (chat attachments / standalone uploads).
-export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 
 /**
  * How long an image URL is signed for. Long-lived because it's minted once at
@@ -46,23 +45,53 @@ export async function pingBucket(): Promise<void> {
   if (error) throw error;
 }
 
-/** The folder each kind of object lives in, under its owner. */
-type ObjectKind = "images" | "audios" | "texts";
+/**
+ * Everything that differs between kinds of stored object. Only images and
+ * audio are uploaded by clients and signed for reading, so only they carry the
+ * rules for that; text is written by the youtube-fetcher and only read back.
+ */
+const KINDS = {
+  image: {
+    folder: "images",
+    upload: {
+      contentTypePrefix: "image/",
+      maxBytes: MAX_IMAGE_BYTES,
+      readUrlTtlSeconds: IMAGE_URL_TTL_SECONDS,
+    },
+  },
+  audio: {
+    folder: "audios",
+    upload: {
+      contentTypePrefix: "audio/",
+      maxBytes: MAX_AUDIO_BYTES,
+      readUrlTtlSeconds: AUDIO_URL_TTL_SECONDS,
+    },
+  },
+  text: { folder: "texts" },
+} as const;
+
+type StoredObjectKind = keyof typeof KINDS;
+
+/** The kinds a client uploads directly and that can be signed for reading. */
+type UploadableKind = {
+  [K in StoredObjectKind]: (typeof KINDS)[K] extends { upload: object }
+    ? K
+    : never;
+}[StoredObjectKind];
+
+export type StoredObject = { kind: StoredObjectKind; uploadId: string };
+type UploadableObject = { kind: UploadableKind; uploadId: string };
 
 /**
- * Storage key `<userId>/<kind>/<storageObjectId>`. Both parts are structural:
- * every operation names the owner and the kind, so a wrong user or a wrong
- * kind yields a path that doesn't exist. The owner is what makes the
- * id-keyed functions below safe to call with untrusted ids; the kind is what
- * stops an upload minted as one kind from being confirmed as another. (The
+ * Storage key `<userId>/<folder>/<uploadId>`. Both parts are structural: every
+ * operation names the owner and the kind, so a wrong user or a wrong kind
+ * yields a path that doesn't exist. The owner is what makes the id-keyed
+ * functions below safe to call with untrusted ids; the kind is what stops an
+ * upload minted as one kind from being confirmed as another. (The
  * youtube-fetcher builds the same key; keep them in sync.)
  */
-function objectPath(
-  userId: string,
-  kind: ObjectKind,
-  storageObjectId: UploadId,
-) {
-  return `${userId}/${kind}/${storageObjectId}`;
+function objectPath(userId: string, { kind, uploadId }: StoredObject) {
+  return `${userId}/${KINDS[kind].folder}/${uploadId}`;
 }
 
 /**
@@ -74,31 +103,16 @@ function objectPath(
  * Nothing here limits what actually lands: size and content type are the
  * client's to set until the object exists. takeUploadedObject settles both.
  */
-async function createSignedUploadUrl(
+export async function createUploadUrl(
   userId: string,
-  kind: ObjectKind,
-  storageObjectId: UploadId,
+  object: UploadableObject,
 ) {
   const { data, error } = await bucket().createSignedUploadUrl(
-    objectPath(userId, kind, storageObjectId),
+    objectPath(userId, object),
   );
 
   if (error) throw error;
   return data.signedUrl;
-}
-
-export async function createImageUploadUrl(
-  userId: string,
-  imageUploadId: UploadId,
-) {
-  return createSignedUploadUrl(userId, "images", imageUploadId);
-}
-
-export async function createAudioUploadUrl(
-  userId: string,
-  audioUploadId: UploadId,
-) {
-  return createSignedUploadUrl(userId, "audios", audioUploadId);
 }
 
 /** Storage reports a missing object as a 400 whose body carries "404". */
@@ -119,13 +133,12 @@ function isMissingObject(error: unknown) {
  * accepts it, so a rejected object is referenced by nothing and would
  * otherwise sit in the bucket for good.
  */
-async function takeUploadedObject(
+export async function takeUploadedObject(
   userId: string,
-  kind: ObjectKind,
-  storageObjectId: UploadId,
-  accepts: { contentTypePrefix: string; maxBytes: number },
+  object: UploadableObject,
 ) {
-  const path = objectPath(userId, kind, storageObjectId);
+  const { contentTypePrefix, maxBytes } = KINDS[object.kind].upload;
+  const path = objectPath(userId, object);
   const { data, error } = await bucket().info(path);
 
   if (error) {
@@ -137,132 +150,61 @@ async function takeUploadedObject(
   const sizeBytes = data.size ?? 0;
   const contentType = data.contentType ?? "";
 
-  const reason = !contentType.startsWith(accepts.contentTypePrefix)
+  const reason = !contentType.startsWith(contentTypePrefix)
     ? "wrong-type"
-    : sizeBytes > accepts.maxBytes
+    : sizeBytes > maxBytes
       ? "too-large"
       : null;
 
   if (reason) {
     const { error: removeError } = await bucket().remove([path]);
     if (removeError) throw removeError;
-    return { ok: false, reason, contentType } as const;
+    return { ok: false, reason, contentType, maxBytes } as const;
   }
 
   return { ok: true, sizeBytes, contentType } as const;
 }
 
-export async function takeUploadedImage(
-  userId: string,
-  imageUploadId: UploadId,
-) {
-  return takeUploadedObject(userId, "images", imageUploadId, {
-    contentTypePrefix: "image/",
-    maxBytes: MAX_IMAGE_BYTES,
-  });
-}
-
-export async function takeUploadedAudio(
-  userId: string,
-  audioUploadId: UploadId,
-) {
-  return takeUploadedObject(userId, "audios", audioUploadId, {
-    contentTypePrefix: "audio/",
-    maxBytes: MAX_AUDIO_BYTES,
-  });
-}
-
 /** Stored text, such as the caption track the youtube-fetcher saves in place of audio. */
-export async function getTextFromBucket(
-  userId: string,
-  textUploadId: UploadId,
-) {
+export async function getTextFromBucket(userId: string, uploadId: string) {
   const { data, error } = await bucket().download(
-    objectPath(userId, "texts", textUploadId),
+    objectPath(userId, { kind: "text", uploadId }),
   );
 
   if (error) throw error;
   return data.text();
 }
 
-/** One remove call for any mix of one owner's objects. No-ops on an empty list. */
-async function removeObjects(
+/**
+ * Removes one owner's objects, of any mix of kinds, in a single request.
+ * No-ops on an empty list.
+ */
+export async function deleteFromBucket(
   userId: string,
-  objects: readonly { kind: ObjectKind; storageObjectId: string }[],
+  objects: readonly StoredObject[],
 ) {
   if (objects.length === 0) return [];
 
   const { data, error } = await bucket().remove(
-    objects.map(({ kind, storageObjectId }) =>
-      objectPath(userId, kind, storageObjectId as UploadId),
-    ),
+    objects.map((object) => objectPath(userId, object)),
   );
 
   if (error) throw error;
   return data;
 }
 
-export async function deleteImagesFromBucket(
-  userId: string,
-  imageUploadIds: readonly string[],
-) {
-  return removeObjects(
-    userId,
-    imageUploadIds.map((storageObjectId) => ({
-      kind: "images",
-      storageObjectId,
-    })),
-  );
-}
-
-export async function deleteTextFromBucket(
-  userId: string,
-  textUploadId: string,
-) {
-  return removeObjects(userId, [
-    { kind: "texts", storageObjectId: textUploadId },
-  ]);
-}
-
-/** A transcription job's audio and, when it has one, its caption text. */
-export async function deleteAudioJobFilesFromBucket(
-  userId: string,
-  audioUploadId: string,
-  captionUploadId: string | null,
-) {
-  return removeObjects(userId, [
-    { kind: "audios", storageObjectId: audioUploadId },
-    ...(captionUploadId
-      ? [{ kind: "texts" as const, storageObjectId: captionUploadId }]
-      : []),
-  ]);
-}
-
 /**
- * Image read URL: client thumbnails, and the fetchable URL the chat model is
- * given for vision input.
+ * A read URL for one object, valid for its kind's TTL: a week for images
+ * (client thumbnails and the chat model's vision input), an hour for audio
+ * (which the transcription provider fetches for itself).
  */
-export async function createSignedImageUrl(
+export async function createSignedUrl(
   userId: string,
-  imageUploadId: UploadId,
+  object: UploadableObject,
 ) {
   const { data, error } = await bucket().createSignedUrl(
-    objectPath(userId, "images", imageUploadId),
-    IMAGE_URL_TTL_SECONDS,
-  );
-
-  if (error) throw error;
-  return data.signedUrl;
-}
-
-/** Audio read URL, which the transcription provider fetches for itself. */
-export async function createSignedAudioUrl(
-  userId: string,
-  audioUploadId: UploadId,
-) {
-  const { data, error } = await bucket().createSignedUrl(
-    objectPath(userId, "audios", audioUploadId),
-    AUDIO_URL_TTL_SECONDS,
+    objectPath(userId, object),
+    KINDS[object.kind].upload.readUrlTtlSeconds,
   );
 
   if (error) throw error;
@@ -270,31 +212,36 @@ export async function createSignedAudioUrl(
 }
 
 /**
- * Signs many images in one request. Returns imageUploadId → url, omitting any
- * the storage API couldn't sign. Callers may span owners; the path carries the
- * owner, so no grouping is needed.
+ * Signs many objects: one request per kind, since a request carries a single
+ * TTL, all in parallel. Returns uploadId → url, omitting any the storage API
+ * couldn't sign. Entries may span owners; the path carries the owner.
  */
-export async function createSignedImageUrls(
-  entries: readonly { userId: string; storageObjectId: string }[],
+export async function createSignedUrls(
+  entries: readonly (UploadableObject & { userId: string })[],
 ): Promise<Map<string, string>> {
-  const urls = new Map<string, string>();
-  if (entries.length === 0) return urls;
-
-  const paths = entries.map((e) =>
-    objectPath(e.userId, "images", e.storageObjectId as UploadId),
+  const byKind = Map.groupBy(entries, (entry) => entry.kind);
+  const signed = await Promise.all(
+    [...byKind].map(([kind, group]) => signGroup(kind, group)),
   );
+  return new Map(signed.flatMap((urls) => [...urls]));
+}
+
+async function signGroup(
+  kind: UploadableKind,
+  entries: readonly (UploadableObject & { userId: string })[],
+) {
+  const paths = entries.map((entry) => objectPath(entry.userId, entry));
   const { data, error } = await bucket().createSignedUrls(
     paths,
-    IMAGE_URL_TTL_SECONDS,
+    KINDS[kind].upload.readUrlTtlSeconds,
   );
   if (error) throw error;
 
   const byPath = new Map(
     data.filter((d) => d.path && d.signedUrl).map((d) => [d.path, d.signedUrl]),
   );
-  entries.forEach((entry, i) => {
+  return entries.flatMap((entry, i) => {
     const url = byPath.get(paths[i]);
-    if (url) urls.set(entry.storageObjectId, url);
+    return url ? [[entry.uploadId, url] as const] : [];
   });
-  return urls;
 }

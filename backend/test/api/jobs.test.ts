@@ -5,13 +5,13 @@ const {
   mockFindUserJobsPage,
   mockDeleteAudioJob,
   mockFindTranscripts,
-  mockDeleteAudioJobFilesFromBucket,
+  mockDeleteFromBucket,
 } = vi.hoisted(() => ({
   mockFindAudioJob: vi.fn(),
   mockFindUserJobsPage: vi.fn(),
   mockDeleteAudioJob: vi.fn(),
   mockFindTranscripts: vi.fn(),
-  mockDeleteAudioJobFilesFromBucket: vi.fn(),
+  mockDeleteFromBucket: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -54,8 +54,8 @@ vi.mock("../../shared/message-queue/messageQueue", () => {
 });
 
 vi.mock("../../shared/bucket", () => ({
-  deleteAudioJobFilesFromBucket: mockDeleteAudioJobFilesFromBucket,
-  createSignedImageUrls: vi.fn(),
+  deleteFromBucket: mockDeleteFromBucket,
+  createSignedUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
@@ -83,7 +83,7 @@ beforeEach(() => {
   mockFindAudioJob.mockResolvedValue(audioJob);
   mockFindTranscripts.mockResolvedValue(new Map());
   mockDeleteAudioJob.mockResolvedValue(true);
-  mockDeleteAudioJobFilesFromBucket.mockResolvedValue(undefined);
+  mockDeleteFromBucket.mockResolvedValue(undefined);
 });
 
 describe("GET /jobs/summarize/:audioUploadId", () => {
@@ -246,11 +246,10 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
       "user_01OWNER",
       audioUploadId,
     );
-    expect(mockDeleteAudioJobFilesFromBucket).toHaveBeenCalledWith(
-      "user_01OWNER",
-      audioUploadId,
-      captionUploadId,
-    );
+    expect(mockDeleteFromBucket).toHaveBeenCalledWith("user_01OWNER", [
+      { kind: "audio", uploadId: audioUploadId },
+      { kind: "text", uploadId: captionUploadId },
+    ]);
   });
 
   it("preserves a source that is linked to a message", async () => {
@@ -267,7 +266,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
     expect(await response.json()).toEqual({
       message: "Source is linked to a message or reserved for a response",
     });
-    expect(mockDeleteAudioJobFilesFromBucket).not.toHaveBeenCalled();
+    expect(mockDeleteFromBucket).not.toHaveBeenCalled();
   });
 
   it("scopes the delete to the requesting user", async () => {
@@ -280,7 +279,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
       headers: await authedHeaders("user_01INTRUDER"),
     });
     expect(res.status).toBe(200);
-    expect(mockDeleteAudioJobFilesFromBucket).not.toHaveBeenCalled();
+    expect(mockDeleteFromBucket).not.toHaveBeenCalled();
     expect(mockDeleteAudioJob).not.toHaveBeenCalled();
   });
 });

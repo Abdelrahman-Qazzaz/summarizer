@@ -10,8 +10,8 @@ import {
 } from "../db";
 import {
   IMAGE_URL_TTL_SECONDS,
-  createSignedImageUrls,
-  deleteImagesFromBucket,
+  createSignedUrls,
+  deleteFromBucket,
 } from "../bucket";
 import type { UploadId } from "../types";
 import {
@@ -165,10 +165,11 @@ export async function resolveImageAttachmentUrls(
         "bucket.createSignedUrls",
         undefined,
         () =>
-          createSignedImageUrls(
+          createSignedUrls(
             needsSigning.map((row) => ({
               userId,
-              storageObjectId: row.imageUploadId,
+              kind: "image",
+              uploadId: row.imageUploadId,
             })),
           ),
         { imageCount: needsSigning.length },
@@ -350,7 +351,9 @@ export async function deleteOwnedUnlinkedUnreservedImageAttachment(
     if (!deletedAttachmentId) return;
 
     // Hold the deletion lock through storage cleanup; rollback keeps failed deletes retryable.
-    await deleteImagesFromBucket(userId, [deletedAttachmentId]);
+    await deleteFromBucket(userId, [
+      { kind: "image", uploadId: deletedAttachmentId },
+    ]);
   });
 }
 
