@@ -50,8 +50,16 @@ export function uploadImageEndpoint(): string {
   return `${apiBase}/upload/image`;
 }
 
+export function uploadImageConfirmEndpoint(): string {
+  return `${apiBase}/upload/image/confirm`;
+}
+
 export function uploadAudioEndpoint(): string {
   return `${apiBase}/upload/audio`;
+}
+
+export function uploadAudioConfirmEndpoint(): string {
+  return `${apiBase}/upload/audio/confirm`;
 }
 
 export function uploadYoutubeEndpoint(): string {
