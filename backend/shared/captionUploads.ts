@@ -1,4 +1,4 @@
-import { deleteCaptionFromBucket } from "./bucket";
+import { deleteTextFromBucket } from "./bucket";
 import {
   clearCaptionUploadId,
   findTerminalCaptionUpload,
@@ -11,7 +11,7 @@ export async function cleanupTerminalCaptionUpload(
   const upload = await findTerminalCaptionUpload(audioUploadId, userId);
   if (!upload?.captionUploadId) return false;
 
-  await deleteCaptionFromBucket(upload.userId, upload.captionUploadId);
+  await deleteTextFromBucket(upload.userId, upload.captionUploadId);
   await clearCaptionUploadId(audioUploadId, upload.captionUploadId);
   return true;
 }

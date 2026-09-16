@@ -47,7 +47,7 @@ export async function pingBucket(): Promise<void> {
 }
 
 /** The folder each kind of object lives in, under its owner. */
-type ObjectKind = "images" | "audios" | "captions";
+type ObjectKind = "images" | "audios" | "texts";
 
 /**
  * Storage key `<userId>/<kind>/<storageObjectId>`. Both parts are structural:
@@ -172,13 +172,13 @@ export async function takeUploadedAudio(
   });
 }
 
-/** A caption track the youtube-fetcher stored in place of audio. */
-export async function getCaptionText(
+/** Stored text, such as the caption track the youtube-fetcher saves in place of audio. */
+export async function getTextFromBucket(
   userId: string,
-  captionUploadId: UploadId,
+  textUploadId: UploadId,
 ) {
   const { data, error } = await bucket().download(
-    objectPath(userId, "captions", captionUploadId),
+    objectPath(userId, "texts", textUploadId),
   );
 
   if (error) throw error;
@@ -215,16 +215,16 @@ export async function deleteImagesFromBucket(
   );
 }
 
-export async function deleteCaptionFromBucket(
+export async function deleteTextFromBucket(
   userId: string,
-  captionUploadId: string,
+  textUploadId: string,
 ) {
   return removeObjects(userId, [
-    { kind: "captions", storageObjectId: captionUploadId },
+    { kind: "texts", storageObjectId: textUploadId },
   ]);
 }
 
-/** A transcription job's audio and, when it has one, its caption track. */
+/** A transcription job's audio and, when it has one, its caption text. */
 export async function deleteAudioJobFilesFromBucket(
   userId: string,
   audioUploadId: string,
@@ -233,7 +233,7 @@ export async function deleteAudioJobFilesFromBucket(
   return removeObjects(userId, [
     { kind: "audios", storageObjectId: audioUploadId },
     ...(captionUploadId
-      ? [{ kind: "captions" as const, storageObjectId: captionUploadId }]
+      ? [{ kind: "texts" as const, storageObjectId: captionUploadId }]
       : []),
   ]);
 }

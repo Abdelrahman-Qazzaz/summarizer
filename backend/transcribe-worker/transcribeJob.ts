@@ -2,7 +2,7 @@ import {
   DEFAULT_TRANSCRIBE_MODEL,
   transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
-import { createSignedAudioUrl, getCaptionText } from "../shared/bucket";
+import { createSignedAudioUrl, getTextFromBucket } from "../shared/bucket";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { claimAudioJob, failAudioJob } from "../shared/data/jobs.data";
 import { saveCompletedTranscript } from "../shared/data/transcripts.data";
@@ -77,7 +77,7 @@ export async function handleTranscribeJob(
             "Caption upload is missing from the transcription job",
           );
         }
-        return getCaptionText(job.userId, job.captionUploadId);
+        return getTextFromBucket(job.userId, job.captionUploadId);
       }
 
       const audioUrl = await createSignedAudioUrl(job.userId, audioUploadId);

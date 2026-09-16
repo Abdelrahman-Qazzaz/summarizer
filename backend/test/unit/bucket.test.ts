@@ -22,9 +22,9 @@ import {
   createSignedImageUrl,
   createSignedImageUrls,
   deleteAudioJobFilesFromBucket,
-  deleteCaptionFromBucket,
+  deleteTextFromBucket,
   deleteImagesFromBucket,
-  getCaptionText,
+  getTextFromBucket,
   takeUploadedAudio,
   takeUploadedImage,
 } from "../../shared/bucket";
@@ -32,11 +32,11 @@ import {
 const USER = "user_01";
 // The single-object functions take a typed UploadId, which is uuid-shaped.
 const AUDIO_ID = "11111111-1111-4111-8111-111111111111";
-const CAPTION_ID = "22222222-2222-4222-8222-222222222222";
+const TEXT_ID = "22222222-2222-4222-8222-222222222222";
 const IMAGE_ID = "33333333-3333-4333-8333-333333333333";
 
 // Every key is <userId>/<kind>/<id>. youtube-fetcher/app/bucket.py builds the
-// same keys for audio and captions, and the worker reads them back from here.
+// same keys for audio and text, and the worker reads them back from here.
 describe("bucket key layout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,13 +62,13 @@ describe("bucket key layout", () => {
     expect(storage.remove).not.toHaveBeenCalled();
   });
 
-  it("deletes a job's audio and caption in one call", async () => {
+  it("deletes a job's audio and caption text in one call", async () => {
     await deleteAudioJobFilesFromBucket(USER, "a1", "c1");
 
     expect(storage.remove).toHaveBeenCalledTimes(1);
     expect(storage.remove).toHaveBeenCalledWith([
       "user_01/audios/a1",
-      "user_01/captions/c1",
+      "user_01/texts/c1",
     ]);
   });
 
@@ -78,22 +78,20 @@ describe("bucket key layout", () => {
     expect(storage.remove).toHaveBeenCalledWith(["user_01/audios/a1"]);
   });
 
-  it("deletes a caption under captions/", async () => {
-    await deleteCaptionFromBucket(USER, "c1");
+  it("deletes text under texts/", async () => {
+    await deleteTextFromBucket(USER, "c1");
 
-    expect(storage.remove).toHaveBeenCalledWith(["user_01/captions/c1"]);
+    expect(storage.remove).toHaveBeenCalledWith(["user_01/texts/c1"]);
   });
 
-  it("reads a caption from captions/", async () => {
+  it("reads text from texts/", async () => {
     storage.download.mockResolvedValue({
       data: new Blob(["caption text"]),
       error: null,
     });
 
-    expect(await getCaptionText(USER, CAPTION_ID)).toBe("caption text");
-    expect(storage.download).toHaveBeenCalledWith(
-      `user_01/captions/${CAPTION_ID}`,
-    );
+    expect(await getTextFromBucket(USER, TEXT_ID)).toBe("caption text");
+    expect(storage.download).toHaveBeenCalledWith(`user_01/texts/${TEXT_ID}`);
   });
 
   it("signs audio under audios/ for an hour", async () => {

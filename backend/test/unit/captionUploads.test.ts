@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockFindTerminalCaptionUpload,
   mockClearCaptionUploadId,
-  mockDeleteCaptionFromBucket,
+  mockDeleteTextFromBucket,
 } = vi.hoisted(() => ({
   mockFindTerminalCaptionUpload: vi.fn(),
   mockClearCaptionUploadId: vi.fn(),
-  mockDeleteCaptionFromBucket: vi.fn(),
+  mockDeleteTextFromBucket: vi.fn(),
 }));
 
 vi.mock("../../shared/data/jobs.data", () => ({
@@ -16,7 +16,7 @@ vi.mock("../../shared/data/jobs.data", () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  deleteCaptionFromBucket: mockDeleteCaptionFromBucket,
+  deleteTextFromBucket: mockDeleteTextFromBucket,
 }));
 
 import { cleanupTerminalCaptionUpload } from "../../shared/captionUploads";
@@ -27,7 +27,7 @@ const captionUploadId = "650e8400-e29b-41d4-a716-446655440111";
 describe("cleanupTerminalCaptionUpload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDeleteCaptionFromBucket.mockResolvedValue(undefined);
+    mockDeleteTextFromBucket.mockResolvedValue(undefined);
     mockClearCaptionUploadId.mockResolvedValue(undefined);
   });
 
@@ -42,7 +42,7 @@ describe("cleanupTerminalCaptionUpload", () => {
       audioUploadId,
       "user_01",
     );
-    expect(mockDeleteCaptionFromBucket).not.toHaveBeenCalled();
+    expect(mockDeleteTextFromBucket).not.toHaveBeenCalled();
     expect(mockClearCaptionUploadId).not.toHaveBeenCalled();
   });
 
@@ -57,7 +57,7 @@ describe("cleanupTerminalCaptionUpload", () => {
       true,
     );
 
-    expect(mockDeleteCaptionFromBucket).toHaveBeenCalledWith(
+    expect(mockDeleteTextFromBucket).toHaveBeenCalledWith(
       "user_01",
       captionUploadId,
     );
@@ -65,9 +65,9 @@ describe("cleanupTerminalCaptionUpload", () => {
       audioUploadId,
       captionUploadId,
     );
-    expect(
-      mockDeleteCaptionFromBucket.mock.invocationCallOrder[0],
-    ).toBeLessThan(mockClearCaptionUploadId.mock.invocationCallOrder[0]);
+    expect(mockDeleteTextFromBucket.mock.invocationCallOrder[0]).toBeLessThan(
+      mockClearCaptionUploadId.mock.invocationCallOrder[0],
+    );
   });
 
   it("keeps the persisted id when storage deletion fails", async () => {
@@ -76,7 +76,7 @@ describe("cleanupTerminalCaptionUpload", () => {
       captionUploadId,
       userId: "user_01",
     });
-    mockDeleteCaptionFromBucket.mockRejectedValue(new Error("storage failed"));
+    mockDeleteTextFromBucket.mockRejectedValue(new Error("storage failed"));
 
     await expect(cleanupTerminalCaptionUpload(audioUploadId)).rejects.toThrow(
       "storage failed",

@@ -11,7 +11,7 @@ const {
   mockUpdate,
   mockCreateSignedAudioUrl,
   mockCleanupTerminalCaptionUpload,
-  mockGetCaptionText,
+  mockGetTextFromBucket,
   mockTranscribeUrl,
   mockGenerateTitle,
   mockSaveCompletedTranscript,
@@ -23,7 +23,7 @@ const {
   mockUpdate: vi.fn(),
   mockCreateSignedAudioUrl: vi.fn(),
   mockCleanupTerminalCaptionUpload: vi.fn(),
-  mockGetCaptionText: vi.fn(),
+  mockGetTextFromBucket: vi.fn(),
   mockTranscribeUrl: vi.fn(),
   mockGenerateTitle: vi.fn(),
   mockSaveCompletedTranscript: vi.fn(),
@@ -38,7 +38,7 @@ function deepgramResponse(transcript: string) {
 
 vi.mock("../../shared/bucket", () => ({
   createSignedAudioUrl: mockCreateSignedAudioUrl,
-  getCaptionText: mockGetCaptionText,
+  getTextFromBucket: mockGetTextFromBucket,
 }));
 
 vi.mock("../../shared/captionUploads", () => ({
@@ -112,7 +112,7 @@ describe("handleTranscribeJob", () => {
     vi.clearAllMocks();
     mockCreateSignedAudioUrl.mockResolvedValue("https://signed.example/audio");
     mockCleanupTerminalCaptionUpload.mockResolvedValue(false);
-    mockGetCaptionText.mockResolvedValue("caption transcript");
+    mockGetTextFromBucket.mockResolvedValue("caption transcript");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
     mockGenerateTitle.mockResolvedValue("Sample recording");
     mockSaveCompletedTranscript.mockResolvedValue(true);
@@ -151,7 +151,10 @@ describe("handleTranscribeJob", () => {
       useCaptionUpload: true,
     });
 
-    expect(mockGetCaptionText).toHaveBeenCalledWith("user_01", captionUploadId);
+    expect(mockGetTextFromBucket).toHaveBeenCalledWith(
+      "user_01",
+      captionUploadId,
+    );
     expect(mockCreateSignedAudioUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
@@ -175,7 +178,7 @@ describe("handleTranscribeJob", () => {
       handleTranscribeJob({ audioUploadId, useCaptionUpload: true }),
     ).rejects.toThrow("Caption upload is missing");
 
-    expect(mockGetCaptionText).not.toHaveBeenCalled();
+    expect(mockGetTextFromBucket).not.toHaveBeenCalled();
     expect(mockSaveCompletedTranscript).not.toHaveBeenCalled();
     expect(mockCleanupTerminalCaptionUpload).toHaveBeenCalledWith(
       audioUploadId,

@@ -102,7 +102,7 @@ def _create_caption_upload(caption_upload_id: str, url: str, user_id: str) -> bo
     with tempfile.TemporaryDirectory() as tmp:
         transcript_path = Path(tmp) / "captions.txt"
         transcript_path.write_text(transcript_text, encoding="utf-8")
-        bucket.upload_caption(
+        bucket.upload_text(
             user_id,
             caption_upload_id,
             str(transcript_path),
