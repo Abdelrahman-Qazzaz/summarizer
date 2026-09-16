@@ -1,39 +1,20 @@
 import { z } from "zod";
 import { CTX_KEYS, FORM_KEYS } from "../../../shared/keys";
-import { MAX_IMAGE_BYTES } from "../../../shared/bucket";
-// Shared with the job uploads so the "missing file field" message stays one
-// string; nothing else here is common with them.
-import { fileField } from "./upload.schema";
+// Shared with the audio confirm, so both reject a bad id or name alike.
+import { fileNameField, uploadIdField } from "./upload.schema";
 
 /**
- * POST /upload/image — a standalone image (dropped into the chat, or uploaded
- * from the navbar mode). No model/job involved: it's stored for later
- * reference and handed to the chat model as vision input once linked to a
- * sent message.
+ * POST /upload/image/confirm — the image is in the bucket; record it. Size and
+ * type are not in the body: the controller reads both back from storage.
  */
-export const imageUploadSchema = z
+export const imageConfirmSchema = z
   .object({
-    [FORM_KEYS.uploadFile]: fileField,
-  })
-  .superRefine((data, ctx) => {
-    const file = data[FORM_KEYS.uploadFile];
-    if (!file.type.startsWith("image/")) {
-      ctx.addIssue({
-        code: "custom",
-        message: "File must be an image",
-        path: [FORM_KEYS.uploadFile],
-      });
-    }
-    if (file.size > MAX_IMAGE_BYTES) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Image is too large",
-        path: [FORM_KEYS.uploadFile],
-      });
-    }
+    [FORM_KEYS.uploadId]: uploadIdField,
+    [FORM_KEYS.fileName]: fileNameField,
   })
   .transform((data) => ({
-    [CTX_KEYS.uploadFile]: data[FORM_KEYS.uploadFile],
+    [CTX_KEYS.imageUploadId]: data[FORM_KEYS.uploadId],
+    [CTX_KEYS.fileName]: data[FORM_KEYS.fileName],
   }));
 
 /** Identifies an uploaded image for read or deletion. */

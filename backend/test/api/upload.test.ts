@@ -51,7 +51,6 @@ vi.mock("../../shared/db", async () => ({
 vi.mock("../../shared/bucket", () => ({
   createAudioUploadUrl: mockCreateAudioUploadUrl,
   takeUploadedAudio: mockTakeUploadedAudio,
-  uploadImageToBucket: vi.fn(),
   createSignedImageUrl: vi.fn(),
   createSignedImageUrls: vi.fn(),
   // Literals (not the top-level consts): vi.mock factories can run during

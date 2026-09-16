@@ -18,6 +18,7 @@ import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
   deleteOwnedUnlinkedUnreservedAttachments,
+  isDuplicateKey,
   userOwnsAttachments,
 } from "./attachments.data";
 
@@ -62,26 +63,38 @@ function getSignedUrlExpiryDate() {
 }
 
 /**
- * The row for an image already written to the bucket. Takes the signature
- * rather than making it, so the caller can hand the same URL straight back to
- * the client instead of reading it out again.
+ * The row for an image already in the bucket. Takes the signature rather than
+ * making it, so the caller can hand the same URL straight back to the client
+ * instead of reading it out again.
+ *
+ * Returns false when the image is already recorded — a confirm repeated by a
+ * double-click or a retry — so the caller can answer with a conflict.
  */
 export async function createImageAttachment(input: {
   userId: string;
   imageUploadId: UploadId;
-  file: File;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
   signedUrl: string;
 }) {
-  await createAttachment({
-    attachmentId: input.imageUploadId,
-    kind: "image",
-    userId: input.userId,
-    fileName: input.file.name,
-    mimeType: input.file.type,
-    sizeBytes: input.file.size,
-    signedUrl: input.signedUrl,
-    signedUrlExpiresAt: getSignedUrlExpiryDate(),
-  });
+  try {
+    await createAttachment({
+      attachmentId: input.imageUploadId,
+      kind: "image",
+      userId: input.userId,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      signedUrl: input.signedUrl,
+      signedUrlExpiresAt: getSignedUrlExpiryDate(),
+    });
+  } catch (error) {
+    if (isDuplicateKey(error)) return false;
+    throw error;
+  }
+
+  return true;
 }
 
 /** The subset of an image row needed to decide whether its url must be re-signed. */

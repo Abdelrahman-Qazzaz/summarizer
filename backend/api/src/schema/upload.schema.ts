@@ -21,11 +21,7 @@ function isYoutubeUrl(raw: string): boolean {
   }
 }
 
-export const fileField = z.instanceof(File, {
-  message: 'Expected a file field named "file"',
-});
-
-/** Multipart sends absent optional fields as "" (or null); treat both as unset. */
+/** Treat a blank ("" or null) optional field as unset. */
 const blankToUndefined = (v: unknown) =>
   v === "" || v === null ? undefined : v;
 
@@ -52,8 +48,10 @@ async function refineTranscriptionModel(modelId: string, ctx: z.RefinementCtx) {
 }
 
 /** The id a mint handed out and the name of the file the client uploaded to it. */
-const uploadIdField = z.string().uuid({ message: "Invalid upload id" });
-const fileNameField = z.string().trim().min(1).max(255);
+export const uploadIdField = z.string().uuid({
+  message: "Invalid upload id",
+});
+export const fileNameField = z.string().trim().min(1).max(255);
 
 /**
  * POST /upload/audio/confirm — the audio is in the bucket; record the job and

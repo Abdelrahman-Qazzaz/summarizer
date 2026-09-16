@@ -87,6 +87,13 @@ async function createSignedUploadUrl(
   return data.signedUrl;
 }
 
+export async function createImageUploadUrl(
+  userId: string,
+  imageUploadId: UploadId,
+) {
+  return createSignedUploadUrl(userId, "images", imageUploadId);
+}
+
 export async function createAudioUploadUrl(
   userId: string,
   audioUploadId: UploadId,
@@ -145,6 +152,16 @@ async function takeUploadedObject(
   return { ok: true, sizeBytes, contentType } as const;
 }
 
+export async function takeUploadedImage(
+  userId: string,
+  imageUploadId: UploadId,
+) {
+  return takeUploadedObject(userId, "images", imageUploadId, {
+    contentTypePrefix: "image/",
+    maxBytes: MAX_IMAGE_BYTES,
+  });
+}
+
 export async function takeUploadedAudio(
   userId: string,
   audioUploadId: UploadId,
@@ -153,40 +170,6 @@ export async function takeUploadedAudio(
     contentTypePrefix: "audio/",
     maxBytes: MAX_AUDIO_BYTES,
   });
-}
-
-/**
- * Every upload lands here (no local write): one place that builds the key and
- * turns a storage error into a throw. The exported wrappers below add the
- * per-kind type guard and nothing else. Returns the storage path.
- */
-async function uploadObject(
-  userId: string,
-  kind: ObjectKind,
-  storageObjectId: UploadId,
-  file: File,
-) {
-  const { data, error } = await bucket().upload(
-    objectPath(userId, kind, storageObjectId),
-    file,
-    { contentType: file.type, upsert: false },
-  );
-
-  if (error) throw error;
-  return data.path;
-}
-
-/** Upload an image. Rejects anything not declaring an `image/*` type. */
-export async function uploadImageToBucket(
-  userId: string,
-  imageUploadId: UploadId,
-  file: File,
-) {
-  if (!file.type.startsWith("image/")) {
-    throw new Error(`Expected an image file, got: ${file.type || "unknown"}`);
-  }
-
-  return uploadObject(userId, "images", imageUploadId, file);
 }
 
 /** A caption track the youtube-fetcher stored in place of audio. */

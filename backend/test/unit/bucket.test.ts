@@ -15,7 +15,9 @@ vi.mock("@supabase/supabase-js", () => ({
 
 import {
   MAX_AUDIO_BYTES,
+  MAX_IMAGE_BYTES,
   createAudioUploadUrl,
+  createImageUploadUrl,
   createSignedAudioUrl,
   createSignedImageUrl,
   createSignedImageUrls,
@@ -24,6 +26,7 @@ import {
   deleteImagesFromBucket,
   getCaptionText,
   takeUploadedAudio,
+  takeUploadedImage,
 } from "../../shared/bucket";
 
 const USER = "user_01";
@@ -243,5 +246,62 @@ describe("audio uploads", () => {
     await expect(takeUploadedAudio(USER, AUDIO_ID)).rejects.toThrow(
       "remove failed",
     );
+  });
+});
+
+describe("image uploads", () => {
+  const PATH = `user_01/images/${IMAGE_ID}`;
+  const stored = (size: number, contentType: string) =>
+    storage.info.mockResolvedValue({
+      data: { size, contentType },
+      error: null,
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storage.remove.mockResolvedValue({ data: [], error: null });
+  });
+
+  it("mints an upload URL bound to the image key", async () => {
+    storage.createSignedUploadUrl.mockResolvedValue({
+      data: { signedUrl: "https://upload" },
+      error: null,
+    });
+
+    expect(await createImageUploadUrl(USER, IMAGE_ID)).toBe("https://upload");
+    expect(storage.createSignedUploadUrl).toHaveBeenCalledWith(PATH);
+  });
+
+  it("reads the image back from images/ and keeps it", async () => {
+    stored(4096, "image/png");
+
+    expect(await takeUploadedImage(USER, IMAGE_ID)).toEqual({
+      ok: true,
+      sizeBytes: 4096,
+      contentType: "image/png",
+    });
+    expect(storage.info).toHaveBeenCalledWith(PATH);
+    expect(storage.remove).not.toHaveBeenCalled();
+  });
+
+  it("deletes audio uploaded to an image URL", async () => {
+    stored(4096, "audio/webm");
+
+    expect(await takeUploadedImage(USER, IMAGE_ID)).toMatchObject({
+      ok: false,
+      reason: "wrong-type",
+    });
+    expect(storage.remove).toHaveBeenCalledWith([PATH]);
+  });
+
+  // The image cap, not the audio one, which is ten times larger.
+  it("deletes an image over the image cap", async () => {
+    stored(MAX_IMAGE_BYTES + 1, "image/png");
+
+    expect(await takeUploadedImage(USER, IMAGE_ID)).toMatchObject({
+      ok: false,
+      reason: "too-large",
+    });
+    expect(storage.remove).toHaveBeenCalledWith([PATH]);
   });
 });
