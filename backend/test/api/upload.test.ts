@@ -46,11 +46,10 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  uploadTextToBucket: vi.fn(),
   uploadAudioToBucket: mockUploadAudioToBucket,
   uploadImageToBucket: mockUploadImageToBucket,
-  createSignedUrl: mockCreateSignedUrl,
-  createSignedUrls: vi.fn(),
+  createSignedImageUrl: mockCreateSignedUrl,
+  createSignedImageUrls: vi.fn(),
   // Literals (not the top-level consts): vi.mock factories can run during
   // import evaluation, before this module's own bindings initialize.
   BUCKET: "Audio & Text files",

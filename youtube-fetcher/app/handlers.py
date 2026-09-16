@@ -102,7 +102,7 @@ def _create_caption_upload(caption_upload_id: str, url: str, user_id: str) -> bo
     with tempfile.TemporaryDirectory() as tmp:
         transcript_path = Path(tmp) / "captions.txt"
         transcript_path.write_text(transcript_text, encoding="utf-8")
-        bucket.upload_file(
+        bucket.upload_caption(
             user_id,
             caption_upload_id,
             str(transcript_path),
@@ -239,7 +239,7 @@ def _fetch_and_upload(audio_upload_id: str, url: str, user_id: str) -> None:
             audio.suffix.removeprefix(".").lower(), "audio/mpeg"
         )
         log.info("Downloaded %s: %d bytes, %s", audio_upload_id, size, content_type)
-        # upload_file builds the user-scoped "<userId>/<storageObjectId>" key (same
+        # upload_audio builds the "<userId>/audios/<storageObjectId>" key (same
         # convention as direct uploads, backend/shared/bucket.ts objectPath),
         # so the transcribe worker finds it and ownership stays structural.
-        bucket.upload_file(user_id, audio_upload_id, str(audio), content_type)
+        bucket.upload_audio(user_id, audio_upload_id, str(audio), content_type)

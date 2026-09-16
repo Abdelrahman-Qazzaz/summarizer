@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
-import { deleteFilesFromBucket } from "../../../shared/bucket";
+import { deleteImagesFromBucket } from "../../../shared/bucket";
 import {
   deleteOwnedUnlinkedUnreservedImageAttachments,
   findConversationImageAttachmentIds,
@@ -91,6 +91,6 @@ export async function handleDeleteConversation(c: Context) {
 
   const deletedImageAttachmentIds =
     await deleteOwnedUnlinkedUnreservedImageAttachments(userId, imageUploadIds);
-  await deleteFilesFromBucket(userId, deletedImageAttachmentIds);
+  await deleteImagesFromBucket(userId, deletedImageAttachmentIds);
   return c.json({ message: "Conversation deleted" }, 200);
 }

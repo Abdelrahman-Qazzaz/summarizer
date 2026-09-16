@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import {
-  createSignedUrl,
-  IMAGE_URL_TTL_SECONDS,
+  createSignedImageUrl,
   uploadImageToBucket,
 } from "../../../shared/bucket";
 import {
@@ -28,11 +27,7 @@ export async function handleImageUpload(c: Context) {
   const imageUploadId: UploadId = randomUUID();
 
   await uploadImageToBucket(userId, imageUploadId, file);
-  const signedUrl = await createSignedUrl(
-    userId,
-    imageUploadId,
-    IMAGE_URL_TTL_SECONDS,
-  );
+  const signedUrl = await createSignedImageUrl(userId, imageUploadId);
 
   await createImageAttachment({ userId, imageUploadId, file, signedUrl });
 

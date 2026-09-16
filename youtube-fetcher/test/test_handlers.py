@@ -33,7 +33,14 @@ def publish(monkeypatch):
 @pytest.fixture
 def upload(monkeypatch):
     mock = MagicMock()
-    monkeypatch.setattr(handlers.bucket, "upload_file", mock)
+    monkeypatch.setattr(handlers.bucket, "upload_audio", mock)
+    return mock
+
+
+@pytest.fixture
+def upload_caption(monkeypatch):
+    mock = MagicMock()
+    monkeypatch.setattr(handlers.bucket, "upload_caption", mock)
     return mock
 
 
@@ -293,7 +300,7 @@ class TestHandleYtFetch:
 
 
 class TestCreateCaptionUpload:
-    def test_uploads_first_available_caption_track(self, upload, monkeypatch):
+    def test_uploads_first_available_caption_track(self, upload_caption, monkeypatch):
         fetched_transcript = [
             SimpleNamespace(text="First caption"),
             SimpleNamespace(text="  Second caption  "),
@@ -313,7 +320,7 @@ class TestCreateCaptionUpload:
             nonlocal uploaded_text
             uploaded_text = Path(local_path).read_text(encoding="utf-8")
 
-        upload.side_effect = capture_upload
+        upload_caption.side_effect = capture_upload
 
         uploaded = handlers._create_caption_upload(
             "c1", "https://youtu.be/dQw4w9WgXcQ", "usr"
@@ -322,7 +329,9 @@ class TestCreateCaptionUpload:
         assert uploaded is True
         transcript_api.list.assert_called_once_with("dQw4w9WgXcQ")
         assert uploaded_text == "First caption Second caption"
-        (user_id, storage_object_id, local_path, content_type), _ = upload.call_args
+        (user_id, storage_object_id, local_path, content_type), _ = (
+            upload_caption.call_args
+        )
         assert user_id == "usr"
         assert storage_object_id == "c1"
         assert local_path.endswith("captions.txt")

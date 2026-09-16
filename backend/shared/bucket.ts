@@ -17,6 +17,11 @@ export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
 // Cap on images entering the bucket (chat attachments / standalone uploads).
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 
+/**
+ * How long an image URL is signed for. Long-lived because it's minted once at
+ * upload and cached on the row — the model provider only needs seconds, but a
+ * conversation reopened next week should not have to re-sign to render.
+ */
 export const IMAGE_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 /**
@@ -24,7 +29,7 @@ export const IMAGE_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
  * enough to outlive a multi-hour file's transcription job and short enough that
  * the link is useless by the time the job row is history.
  */
-export const AUDIO_URL_TTL_SECONDS = 60 * 60;
+const AUDIO_URL_TTL_SECONDS = 60 * 60;
 
 /**
  * The single handle every object operation (upload/download/remove/sign) goes
@@ -41,15 +46,22 @@ export async function pingBucket(): Promise<void> {
   if (error) throw error;
 }
 
+/** The folder each kind of object lives in, under its owner. */
+type ObjectKind = "images" | "audios" | "captions";
+
 /**
- * Storage key scoped under the owning user: `<userId>/<storageObjectId>`. Ownership
- * is enforced structurally — every bucket operation needs the caller to name
- * the owner, and a wrong user yields a path that doesn't exist. This is what
- * makes the storageObjectId-keyed delete/read functions safe to call with untrusted
- * ids. (The youtube-fetcher builds the same key; keep them in sync.)
+ * Storage key `<userId>/<kind>/<storageObjectId>`. Both parts are structural:
+ * every operation names the owner and the kind, so a wrong user or a wrong
+ * kind yields a path that doesn't exist. The owner is what makes the
+ * id-keyed functions below safe to call with untrusted ids. (The
+ * youtube-fetcher builds the same key; keep them in sync.)
  */
-function objectPath(userId: string, storageObjectId: UploadId) {
-  return `${userId}/${storageObjectId}`;
+function objectPath(
+  userId: string,
+  kind: ObjectKind,
+  storageObjectId: UploadId,
+) {
+  return `${userId}/${kind}/${storageObjectId}`;
 }
 
 /**
@@ -59,15 +71,14 @@ function objectPath(userId: string, storageObjectId: UploadId) {
  */
 async function uploadObject(
   userId: string,
+  kind: ObjectKind,
   storageObjectId: UploadId,
-  body: Blob,
-  contentType: string,
-  upsert = false,
+  file: File,
 ) {
   const { data, error } = await bucket().upload(
-    objectPath(userId, storageObjectId),
-    body, // File is a Blob, so callers can pass one directly
-    { contentType, upsert },
+    objectPath(userId, kind, storageObjectId),
+    file,
+    { contentType: file.type, upsert: false },
   );
 
   if (error) throw error;
@@ -77,83 +88,120 @@ async function uploadObject(
 /** Upload speech audio. Rejects anything not declaring an `audio/*` type. */
 export async function uploadAudioToBucket(
   userId: string,
-  storageObjectId: UploadId,
+  audioUploadId: UploadId,
   file: File,
 ) {
   if (!file.type.startsWith("audio/")) {
     throw new Error(`Expected an audio file, got: ${file.type || "unknown"}`);
   }
 
-  return uploadObject(userId, storageObjectId, file, file.type);
+  return uploadObject(userId, "audios", audioUploadId, file);
 }
 
 /** Upload an image. Rejects anything not declaring an `image/*` type. */
 export async function uploadImageToBucket(
   userId: string,
-  storageObjectId: UploadId,
+  imageUploadId: UploadId,
   file: File,
 ) {
   if (!file.type.startsWith("image/")) {
     throw new Error(`Expected an image file, got: ${file.type || "unknown"}`);
   }
 
-  return uploadObject(userId, storageObjectId, file, file.type);
+  return uploadObject(userId, "images", imageUploadId, file);
 }
 
-/** Counterpart to uploadObject: fetch the object bytes or throw. */
-async function downloadObject(userId: string, storageObjectId: UploadId) {
+/** A caption track the youtube-fetcher stored in place of audio. */
+export async function getCaptionText(
+  userId: string,
+  captionUploadId: UploadId,
+) {
   const { data, error } = await bucket().download(
-    objectPath(userId, storageObjectId),
+    objectPath(userId, "captions", captionUploadId),
   );
 
   if (error) throw error;
-  return data; // Blob
+  return data.text();
 }
 
-export async function getAudioFile(userId: string, storageObjectId: UploadId) {
-  return downloadObject(userId, storageObjectId);
-}
-
-export async function getTextFromBucket(
+/** One remove call for any mix of one owner's objects. No-ops on an empty list. */
+async function removeObjects(
   userId: string,
-  storageObjectId: UploadId,
+  objects: readonly { kind: ObjectKind; storageObjectId: string }[],
 ) {
-  return (await downloadObject(userId, storageObjectId)).text();
-}
-/** One owner's objects in a single remove call. No-ops on an empty list. */
-export async function deleteFilesFromBucket(
-  userId: string,
-  storageObjectIds: readonly string[],
-) {
-  if (storageObjectIds.length === 0) return [];
+  if (objects.length === 0) return [];
 
   const { data, error } = await bucket().remove(
-    storageObjectIds.map((storageObjectId) =>
-      objectPath(userId, storageObjectId as UploadId),
+    objects.map(({ kind, storageObjectId }) =>
+      objectPath(userId, kind, storageObjectId as UploadId),
     ),
   );
 
   if (error) throw error;
   return data;
 }
-/**
- * How long an image URL is signed for. Long-lived because it's minted once at
- * upload and cached on the row — the model provider only needs seconds, but a
- * conversation reopened next week should not have to re-sign to render.
- */
 
-/*
-Images (client thumbnails + handing the model a fetchable URL for vision input)
-and audio, which the transcription provider fetches for itself.
-*/
-export async function createSignedUrl(
+export async function deleteImagesFromBucket(
   userId: string,
-  storageObjectId: UploadId,
-  ttlSeconds: number,
+  imageUploadIds: readonly string[],
+) {
+  return removeObjects(
+    userId,
+    imageUploadIds.map((storageObjectId) => ({
+      kind: "images",
+      storageObjectId,
+    })),
+  );
+}
+
+export async function deleteCaptionFromBucket(
+  userId: string,
+  captionUploadId: string,
+) {
+  return removeObjects(userId, [
+    { kind: "captions", storageObjectId: captionUploadId },
+  ]);
+}
+
+/** A transcription job's audio and, when it has one, its caption track. */
+export async function deleteAudioJobFilesFromBucket(
+  userId: string,
+  audioUploadId: string,
+  captionUploadId: string | null,
+) {
+  return removeObjects(userId, [
+    { kind: "audios", storageObjectId: audioUploadId },
+    ...(captionUploadId
+      ? [{ kind: "captions" as const, storageObjectId: captionUploadId }]
+      : []),
+  ]);
+}
+
+/**
+ * Image read URL: client thumbnails, and the fetchable URL the chat model is
+ * given for vision input.
+ */
+export async function createSignedImageUrl(
+  userId: string,
+  imageUploadId: UploadId,
 ) {
   const { data, error } = await bucket().createSignedUrl(
-    objectPath(userId, storageObjectId),
-    ttlSeconds,
+    objectPath(userId, "images", imageUploadId),
+    IMAGE_URL_TTL_SECONDS,
+  );
+
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+/** Audio read URL, which the transcription provider fetches for itself. */
+export async function createSignedAudioUrl(
+  userId: string,
+  audioUploadId: UploadId,
+) {
+  const { data, error } = await bucket().createSignedUrl(
+    objectPath(userId, "audios", audioUploadId),
+    AUDIO_URL_TTL_SECONDS,
   );
 
   if (error) throw error;
@@ -161,18 +209,18 @@ export async function createSignedUrl(
 }
 
 /**
- * Signs many objects in one request. Returns storageObjectId → url, omitting any the
- * storage API couldn't sign. Callers may span owners; the path carries the
+ * Signs many images in one request. Returns imageUploadId → url, omitting any
+ * the storage API couldn't sign. Callers may span owners; the path carries the
  * owner, so no grouping is needed.
  */
-export async function createSignedUrls(
+export async function createSignedImageUrls(
   entries: readonly { userId: string; storageObjectId: string }[],
 ): Promise<Map<string, string>> {
   const urls = new Map<string, string>();
   if (entries.length === 0) return urls;
 
   const paths = entries.map((e) =>
-    objectPath(e.userId, e.storageObjectId as UploadId),
+    objectPath(e.userId, "images", e.storageObjectId as UploadId),
   );
   const { data, error } = await bucket().createSignedUrls(
     paths,

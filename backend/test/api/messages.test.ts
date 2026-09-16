@@ -16,7 +16,7 @@ const {
   mockResolveImageAttachmentUrls,
   mockFindMessageTranscriptAttachments,
   mockFindTranscripts,
-  mockDeleteFilesFromBucket,
+  mockDeleteImagesFromBucket,
   mockValidateModel,
   mockValidateModelInput,
   mockChatAI,
@@ -39,7 +39,7 @@ const {
   mockResolveImageAttachmentUrls: vi.fn(),
   mockFindMessageTranscriptAttachments: vi.fn(),
   mockFindTranscripts: vi.fn(),
-  mockDeleteFilesFromBucket: vi.fn(),
+  mockDeleteImagesFromBucket: vi.fn(),
   mockValidateModel: vi.fn(),
   mockValidateModelInput: vi.fn(),
   mockChatAI: vi.fn(),
@@ -103,8 +103,8 @@ vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  deleteFilesFromBucket: mockDeleteFilesFromBucket,
-  createSignedUrls: vi.fn(),
+  deleteImagesFromBucket: mockDeleteImagesFromBucket,
+  createSignedImageUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
@@ -268,7 +268,7 @@ beforeEach(() => {
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
   mockGenerateTitle.mockResolvedValue("Friendly greeting");
-  mockDeleteFilesFromBucket.mockResolvedValue([]);
+  mockDeleteImagesFromBucket.mockResolvedValue([]);
 });
 
 describe("GET /conversations/:conversationId/messages", () => {
@@ -1480,7 +1480,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       attachmentIds: [imageUploadId, audioUploadId],
       claimToken: "claim-token",
     });
-    expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith(userId, [
+    expect(mockDeleteImagesFromBucket).toHaveBeenCalledWith(userId, [
       "old-image",
     ]);
     expect(mockChatAI).toHaveBeenCalledWith(
@@ -1714,7 +1714,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockDeleteFilesFromBucket).toHaveBeenCalledWith(userId, [
+    expect(mockDeleteImagesFromBucket).toHaveBeenCalledWith(userId, [
       imageUploadId,
       "another-upload",
     ]);
@@ -1751,7 +1751,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
     expect(await res.json()).toEqual({
       message: "A response is already in progress",
     });
-    expect(mockDeleteFilesFromBucket).not.toHaveBeenCalled();
+    expect(mockDeleteImagesFromBucket).not.toHaveBeenCalled();
   });
 
   it("rejects a non-uuid message id with 400", async () => {

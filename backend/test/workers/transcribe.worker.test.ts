@@ -9,9 +9,9 @@ const {
   mockWhere,
   mockSet,
   mockUpdate,
-  mockCreateSignedUrl,
+  mockCreateSignedAudioUrl,
   mockCleanupTerminalCaptionUpload,
-  mockGetTextFromBucket,
+  mockGetCaptionText,
   mockTranscribeUrl,
   mockGenerateTitle,
   mockSaveCompletedTranscript,
@@ -21,9 +21,9 @@ const {
   mockWhere: vi.fn(),
   mockSet: vi.fn(),
   mockUpdate: vi.fn(),
-  mockCreateSignedUrl: vi.fn(),
+  mockCreateSignedAudioUrl: vi.fn(),
   mockCleanupTerminalCaptionUpload: vi.fn(),
-  mockGetTextFromBucket: vi.fn(),
+  mockGetCaptionText: vi.fn(),
   mockTranscribeUrl: vi.fn(),
   mockGenerateTitle: vi.fn(),
   mockSaveCompletedTranscript: vi.fn(),
@@ -37,9 +37,8 @@ function deepgramResponse(transcript: string) {
 }
 
 vi.mock("../../shared/bucket", () => ({
-  createSignedUrl: mockCreateSignedUrl,
-  getTextFromBucket: mockGetTextFromBucket,
-  AUDIO_URL_TTL_SECONDS: 3600,
+  createSignedAudioUrl: mockCreateSignedAudioUrl,
+  getCaptionText: mockGetCaptionText,
 }));
 
 vi.mock("../../shared/captionUploads", () => ({
@@ -111,9 +110,9 @@ const audioInput = {
 describe("handleTranscribeJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCreateSignedUrl.mockResolvedValue("https://signed.example/audio");
+    mockCreateSignedAudioUrl.mockResolvedValue("https://signed.example/audio");
     mockCleanupTerminalCaptionUpload.mockResolvedValue(false);
-    mockGetTextFromBucket.mockResolvedValue("caption transcript");
+    mockGetCaptionText.mockResolvedValue("caption transcript");
     mockTranscribeUrl.mockResolvedValue(deepgramResponse("sample transcript"));
     mockGenerateTitle.mockResolvedValue("Sample recording");
     mockSaveCompletedTranscript.mockResolvedValue(true);
@@ -124,10 +123,9 @@ describe("handleTranscribeJob", () => {
   it("transcribes audio, stores the transcript, and announces completion", async () => {
     await handleTranscribeJob(audioInput);
 
-    expect(mockCreateSignedUrl).toHaveBeenCalledWith(
+    expect(mockCreateSignedAudioUrl).toHaveBeenCalledWith(
       "user_01",
       audioUploadId,
-      expect.any(Number),
     );
     expect(mockTranscribeUrl).toHaveBeenCalled();
     // Transcript store + job-completion happen together (one transaction),
@@ -153,11 +151,8 @@ describe("handleTranscribeJob", () => {
       useCaptionUpload: true,
     });
 
-    expect(mockGetTextFromBucket).toHaveBeenCalledWith(
-      "user_01",
-      captionUploadId,
-    );
-    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
+    expect(mockGetCaptionText).toHaveBeenCalledWith("user_01", captionUploadId);
+    expect(mockCreateSignedAudioUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
@@ -180,7 +175,7 @@ describe("handleTranscribeJob", () => {
       handleTranscribeJob({ audioUploadId, useCaptionUpload: true }),
     ).rejects.toThrow("Caption upload is missing");
 
-    expect(mockGetTextFromBucket).not.toHaveBeenCalled();
+    expect(mockGetCaptionText).not.toHaveBeenCalled();
     expect(mockSaveCompletedTranscript).not.toHaveBeenCalled();
     expect(mockCleanupTerminalCaptionUpload).toHaveBeenCalledWith(
       audioUploadId,
@@ -190,7 +185,7 @@ describe("handleTranscribeJob", () => {
   it("no-ops when no queued job is claimed", async () => {
     setupUpdateChain([]);
     await handleTranscribeJob(audioInput);
-    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
+    expect(mockCreateSignedAudioUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });

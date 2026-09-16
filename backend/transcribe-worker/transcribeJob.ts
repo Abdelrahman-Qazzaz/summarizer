@@ -2,11 +2,7 @@ import {
   DEFAULT_TRANSCRIBE_MODEL,
   transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
-import {
-  AUDIO_URL_TTL_SECONDS,
-  createSignedUrl,
-  getTextFromBucket,
-} from "../shared/bucket";
+import { createSignedAudioUrl, getCaptionText } from "../shared/bucket";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { claimAudioJob, failAudioJob } from "../shared/data/jobs.data";
 import { saveCompletedTranscript } from "../shared/data/transcripts.data";
@@ -81,14 +77,10 @@ export async function handleTranscribeJob(
             "Caption upload is missing from the transcription job",
           );
         }
-        return getTextFromBucket(job.userId, job.captionUploadId);
+        return getCaptionText(job.userId, job.captionUploadId);
       }
 
-      const audioUrl = await createSignedUrl(
-        job.userId,
-        audioUploadId,
-        AUDIO_URL_TTL_SECONDS,
-      );
+      const audioUrl = await createSignedAudioUrl(job.userId, audioUploadId);
       const model = job.transcriptModelId ?? DEFAULT_TRANSCRIBE_MODEL;
       return transcribeAI(model, audioUrl);
     });
