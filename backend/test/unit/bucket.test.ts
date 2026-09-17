@@ -18,9 +18,10 @@ import {
   createSignedUrl,
   createSignedUrls,
   createUploadUrl,
+  verifyUploadUrlLifetime,
   deleteFromBucket,
   getTextFromBucket,
-  takeUploadedObject,
+  inspectUploadedObject,
 } from "../../shared/bucket";
 
 const USER = "user_01";
@@ -169,13 +170,20 @@ describe("createSignedUrls", () => {
   });
 });
 
+/** A token shaped like the one Supabase puts in an upload URL. */
+function uploadToken(claims: object) {
+  const part = (value: object) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${part({ alg: "HS256" })}.${part(claims)}.signature`;
+}
+
 describe("createUploadUrl", () => {
   it.each([
     [audio, "user_01/audios/a1"],
     [image, "user_01/images/i1"],
   ])("binds the URL to the %o key", async (object, path) => {
     storage.createSignedUploadUrl.mockResolvedValue({
-      data: { signedUrl: "https://upload" },
+      data: { signedUrl: "https://upload", token: uploadToken({}) },
       error: null,
     });
 
@@ -184,27 +192,81 @@ describe("createUploadUrl", () => {
   });
 });
 
-describe("takeUploadedObject", () => {
+describe("verifyUploadUrlLifetime", () => {
+  const mintedFor = (seconds: number) =>
+    storage.createSignedUploadUrl.mockResolvedValue({
+      data: {
+        signedUrl: "https://upload",
+        token: uploadToken({ iat: 1_000, exp: 1_000 + seconds }),
+      },
+      error: null,
+    });
+
+  it("passes when the URL doesn't outlive the window", async () => {
+    mintedFor(2 * HOUR);
+
+    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).resolves.toBe(
+      undefined,
+    );
+    // Probes a key of its own, and creates no object.
+    expect(storage.createSignedUploadUrl).toHaveBeenCalledWith(
+      expect.stringMatching(/^preflight\/images\/[0-9a-f-]{36}$/),
+    );
+  });
+
+  it("fails when the URL outlives the window", async () => {
+    mintedFor(4 * HOUR);
+
+    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).rejects.toThrow(
+      "Upload URLs are valid for 14400000 ms",
+    );
+  });
+
+  // Without it, nothing could tell whether the window still covers the URL,
+  // so this refuses rather than guessing.
+  it("fails when the token carries no lifetime", async () => {
+    storage.createSignedUploadUrl.mockResolvedValue({
+      data: { signedUrl: "https://upload", token: uploadToken({ sub: "x" }) },
+      error: null,
+    });
+
+    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).rejects.toThrow(
+      "Upload token carries no lifetime",
+    );
+  });
+
+  it("fails when storage won't mint one", async () => {
+    storage.createSignedUploadUrl.mockResolvedValue({
+      data: null,
+      error: new Error("storage down"),
+    });
+
+    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).rejects.toThrow(
+      "storage down",
+    );
+  });
+});
+
+describe("inspectUploadedObject", () => {
   const stored = (size: number, contentType: string) =>
     storage.info.mockResolvedValue({
       data: { size, contentType },
       error: null,
     });
 
-  it("reports what storage holds and keeps it", async () => {
+  it("reports what storage holds", async () => {
     stored(2048, "audio/webm");
 
-    expect(await takeUploadedObject(USER, audio)).toEqual({
+    expect(await inspectUploadedObject(USER, audio)).toEqual({
       ok: true,
       sizeBytes: 2048,
       contentType: "audio/webm",
     });
     expect(storage.info).toHaveBeenCalledWith("user_01/audios/a1");
-    expect(storage.remove).not.toHaveBeenCalled();
   });
 
   // What storage actually returned for a missing key when checked live.
-  it("reports a missing object, with nothing to delete", async () => {
+  it("reports a missing object", async () => {
     storage.info.mockResolvedValue({
       data: null,
       error: Object.assign(new Error("Object not found"), {
@@ -213,11 +275,10 @@ describe("takeUploadedObject", () => {
       }),
     });
 
-    expect(await takeUploadedObject(USER, audio)).toEqual({
+    expect(await inspectUploadedObject(USER, audio)).toEqual({
       ok: false,
       reason: "missing",
     });
-    expect(storage.remove).not.toHaveBeenCalled();
   });
 
   it("throws any other storage error", async () => {
@@ -229,61 +290,49 @@ describe("takeUploadedObject", () => {
       }),
     });
 
-    await expect(takeUploadedObject(USER, audio)).rejects.toThrow(
+    await expect(inspectUploadedObject(USER, audio)).rejects.toThrow(
       "unauthorized",
     );
   });
 
-  it("deletes audio uploaded to an image URL", async () => {
+  it("rejects audio in an image upload, without deleting it", async () => {
     stored(2048, "audio/webm");
 
-    expect(await takeUploadedObject(USER, image)).toEqual({
+    expect(await inspectUploadedObject(USER, image)).toEqual({
       ok: false,
       reason: "wrong-type",
       contentType: "audio/webm",
       maxBytes: IMAGE_CAP,
     });
-    expect(storage.remove).toHaveBeenCalledWith(["user_01/images/i1"]);
+    expect(storage.remove).not.toHaveBeenCalled();
   });
 
   it.each([
-    [audio, "audio/webm", MAX_AUDIO_BYTES, "user_01/audios/a1"],
-    [image, "image/png", IMAGE_CAP, "user_01/images/i1"],
+    [audio, "audio/webm", MAX_AUDIO_BYTES],
+    [image, "image/png", IMAGE_CAP],
   ])(
-    "deletes %o over its own cap and reports the cap",
-    async (object, contentType, cap, path) => {
+    "rejects %o over its own cap and reports the cap",
+    async (object, contentType, cap) => {
       stored(cap + 1, contentType);
 
-      expect(await takeUploadedObject(USER, object)).toEqual({
+      expect(await inspectUploadedObject(USER, object)).toEqual({
         ok: false,
         reason: "too-large",
         contentType,
         maxBytes: cap,
       });
-      expect(storage.remove).toHaveBeenCalledWith([path]);
+      expect(storage.remove).not.toHaveBeenCalled();
     },
   );
 
   it.each([
     [audio, "audio/webm", MAX_AUDIO_BYTES],
     [image, "image/png", IMAGE_CAP],
-  ])("keeps %o exactly at its cap", async (object, contentType, cap) => {
+  ])("accepts %o exactly at its cap", async (object, contentType, cap) => {
     stored(cap, contentType);
 
-    expect(await takeUploadedObject(USER, object)).toMatchObject({ ok: true });
-    expect(storage.remove).not.toHaveBeenCalled();
-  });
-
-  // A rejection that can't clean up must not look like a handled one.
-  it("throws when deleting a rejected object fails", async () => {
-    stored(64, "application/zip");
-    storage.remove.mockResolvedValue({
-      data: null,
-      error: new Error("remove failed"),
+    expect(await inspectUploadedObject(USER, object)).toMatchObject({
+      ok: true,
     });
-
-    await expect(takeUploadedObject(USER, audio)).rejects.toThrow(
-      "remove failed",
-    );
   });
 });

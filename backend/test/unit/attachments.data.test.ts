@@ -36,11 +36,19 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
+const { mockMarkDeleted } = vi.hoisted(() => ({
+  mockMarkDeleted: vi.fn(),
+}));
+
+// The ledger update itself is covered by the storage ledger integration tests.
+vi.mock("../../shared/data/storageLedger.data", () => ({
+  markDeleted: mockMarkDeleted,
+}));
+
 import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
   deleteOwnedUnlinkedUnreservedAttachments,
-  isDuplicateKey,
 } from "../../shared/data/attachments.data";
 import { Attachments, ChatMessageAttachmentLinks } from "../../shared/db";
 
@@ -123,6 +131,11 @@ describe("attachments", () => {
         kind: "image",
       }),
     ).resolves.toBe("image-attachment-1");
+    expect(mockMarkDeleted).toHaveBeenCalledWith(
+      "user-1",
+      [{ kind: "image", uploadId: "image-attachment-1" }],
+      expect.anything(),
+    );
   });
 
   it("uses the supplied executor for the delete and its attachment check", async () => {
@@ -162,33 +175,13 @@ describe("attachments", () => {
 
     expect(transactionDelete).toHaveBeenCalledWith(Attachments);
     expect(transactionFrom).toHaveBeenCalledWith(ChatMessageAttachmentLinks);
+    // Marked in the caller's transaction, not on the pool.
+    expect(mockMarkDeleted).toHaveBeenCalledWith(
+      "user-1",
+      [{ kind: "image", uploadId: "image-attachment-1" }],
+      transactionExecutor,
+    );
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockSelect).not.toHaveBeenCalled();
-  });
-});
-
-describe("isDuplicateKey", () => {
-  const uniqueViolation = () =>
-    Object.assign(new Error("duplicate key value"), { code: "23505" });
-
-  it("recognizes the driver's unique violation", () => {
-    expect(isDuplicateKey(uniqueViolation())).toBe(true);
-  });
-
-  // drizzle rethrows driver errors as a DrizzleQueryError carrying the
-  // original as its cause.
-  it("finds it when wrapped", async () => {
-    const { DrizzleQueryError } = await import("drizzle-orm/errors");
-    const wrapped = new DrizzleQueryError("insert ...", [], uniqueViolation());
-
-    expect(isDuplicateKey(wrapped)).toBe(true);
-  });
-
-  it("ignores other database errors", () => {
-    expect(
-      isDuplicateKey(Object.assign(new Error("fk"), { code: "23503" })),
-    ).toBe(false);
-    expect(isDuplicateKey(new Error("connection reset"))).toBe(false);
-    expect(isDuplicateKey(null)).toBe(false);
   });
 });

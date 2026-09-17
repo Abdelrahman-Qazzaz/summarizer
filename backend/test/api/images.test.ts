@@ -5,15 +5,22 @@ const {
   mockInsert,
   mockValues,
   mockCreateUploadUrl,
-  mockTakeUploadedObject,
+  mockInspectUploadedObject,
   mockCreateSignedUrl,
+  ledger,
 } = vi.hoisted(() => ({
   mockDeleteOwnedUnlinkedUnreservedImageAttachment: vi.fn(),
   mockInsert: vi.fn(),
   mockValues: vi.fn(),
   mockCreateUploadUrl: vi.fn(),
-  mockTakeUploadedObject: vi.fn(),
+  mockInspectUploadedObject: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
+  ledger: {
+    recordPendingUpload: vi.fn(),
+    findLedgerEntry: vi.fn(),
+    claim: vi.fn(),
+    forgetObjects: vi.fn(),
+  },
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -21,9 +28,26 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
+// The ledger's SQL is covered by the integration tests. A confirm that goes
+// through runs its write against the insert mock.
+vi.mock("../../shared/data/storageLedger.data", () => ({
+  recordPendingUpload: ledger.recordPendingUpload,
+  findLedgerEntry: ledger.findLedgerEntry,
+  forgetObjects: ledger.forgetObjects,
+  confirmUpload: async (
+    entry: unknown,
+    withinMs: number,
+    write: (executor: unknown) => Promise<unknown>,
+  ) => {
+    if (!(await ledger.claim(entry, withinMs))) return false;
+    await write({ insert: mockInsert });
+    return true;
+  },
+}));
+
 vi.mock("../../shared/bucket", () => ({
   createUploadUrl: mockCreateUploadUrl,
-  takeUploadedObject: mockTakeUploadedObject,
+  inspectUploadedObject: mockInspectUploadedObject,
   createSignedUrl: mockCreateSignedUrl,
   createSignedUrls: vi.fn(),
   deleteFromBucket: vi.fn(),
@@ -125,6 +149,7 @@ async function postJson(path: string, body: unknown) {
 describe("POST /upload/image", () => {
   beforeEach(() => {
     mockCreateUploadUrl.mockResolvedValue("https://storage.test/upload");
+    ledger.recordPendingUpload.mockResolvedValue(undefined);
   });
 
   it("returns 401 without a session cookie", async () => {
@@ -140,7 +165,7 @@ describe("POST /upload/image", () => {
     expect(mockCreateUploadUrl).not.toHaveBeenCalled();
   });
 
-  it("mints a fresh id and a URL bound to it, writing no row", async () => {
+  it("records a pending upload and returns a URL bound to a fresh id", async () => {
     const res = await postJson("/upload/image", {});
 
     expect(res.status).toBe(200);
@@ -154,6 +179,11 @@ describe("POST /upload/image", () => {
       kind: "image",
       uploadId: body.uploadId,
     });
+    expect(ledger.recordPendingUpload).toHaveBeenCalledWith({
+      userId: "user_01",
+      kind: "image",
+      uploadId: body.uploadId,
+    });
     expect(mockInsert).not.toHaveBeenCalled();
   });
 });
@@ -162,10 +192,15 @@ describe("POST /upload/image/confirm", () => {
   const confirmBody = { uploadId: imageUploadId, fileName: "shot.png" };
 
   beforeEach(() => {
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "pending",
+      createdAt: new Date(),
+    });
+    ledger.claim.mockResolvedValue(true);
     mockValues.mockResolvedValue(undefined);
     mockInsert.mockReturnValue({ values: mockValues });
     mockCreateSignedUrl.mockResolvedValue("https://storage.test/read");
-    mockTakeUploadedObject.mockResolvedValue({
+    mockInspectUploadedObject.mockResolvedValue({
       ok: true,
       sizeBytes: 4096,
       contentType: "image/png",
@@ -182,7 +217,7 @@ describe("POST /upload/image/confirm", () => {
     });
 
     expect(res.status).toBe(401);
-    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
+    expect(mockInspectUploadedObject).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an id that is not a uuid", async () => {
@@ -193,12 +228,12 @@ describe("POST /upload/image/confirm", () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ message: "Invalid upload id" });
-    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
+    expect(mockInspectUploadedObject).not.toHaveBeenCalled();
   });
 
-  // Also what an id minted for audio gets: its object is under audios/.
-  it("returns 404 when no image was uploaded under the id", async () => {
-    mockTakeUploadedObject.mockResolvedValue({ ok: false, reason: "missing" });
+  // Includes an id minted for audio: its record has the other kind.
+  it("returns 404 for an id with no image upload recorded", async () => {
+    ledger.findLedgerEntry.mockResolvedValue(undefined);
 
     const res = await postJson("/upload/image/confirm", confirmBody);
 
@@ -206,11 +241,44 @@ describe("POST /upload/image/confirm", () => {
     expect(await res.json()).toEqual({
       message: "No uploaded image to confirm",
     });
+    expect(ledger.findLedgerEntry).toHaveBeenCalledWith({
+      userId: "user_01",
+      kind: "image",
+      uploadId: imageUploadId,
+    });
+    expect(mockInspectUploadedObject).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 for an image already confirmed", async () => {
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "confirmed",
+      createdAt: new Date(),
+    });
+
+    const res = await postJson("/upload/image/confirm", confirmBody);
+
+    expect(res.status).toBe(409);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("returns 410 for an upload handed out longer ago than the window", async () => {
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "pending",
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000 - 1000),
+    });
+
+    const res = await postJson("/upload/image/confirm", confirmBody);
+
+    expect(res.status).toBe(410);
+    expect(await res.json()).toEqual({
+      message: "This upload has expired; upload the file again",
+    });
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it("returns 400 when storage holds something other than an image", async () => {
-    mockTakeUploadedObject.mockResolvedValue({
+    mockInspectUploadedObject.mockResolvedValue({
       ok: false,
       reason: "wrong-type",
       contentType: "audio/webm",
@@ -224,7 +292,7 @@ describe("POST /upload/image/confirm", () => {
   });
 
   it("returns 413 when the stored image is over the cap", async () => {
-    mockTakeUploadedObject.mockResolvedValue({
+    mockInspectUploadedObject.mockResolvedValue({
       ok: false,
       reason: "too-large",
       contentType: "image/png",
@@ -241,7 +309,7 @@ describe("POST /upload/image/confirm", () => {
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it("records the stored size and type with the signed URL it returns", async () => {
+  it("confirms the upload with its row, recording the stored size and type and the signed URL it returns", async () => {
     const res = await postJson("/upload/image/confirm", confirmBody);
 
     expect(res.status).toBe(200);
@@ -254,10 +322,14 @@ describe("POST /upload/image/confirm", () => {
       mode: "image",
       signedUrl: "https://storage.test/read",
     });
-    expect(mockTakeUploadedObject).toHaveBeenCalledWith("user_01", {
+    expect(mockInspectUploadedObject).toHaveBeenCalledWith("user_01", {
       kind: "image",
       uploadId: imageUploadId,
     });
+    expect(ledger.claim).toHaveBeenCalledWith(
+      { userId: "user_01", kind: "image", uploadId: imageUploadId },
+      2 * 60 * 60 * 1000,
+    );
     expect(mockCreateSignedUrl).toHaveBeenCalledWith("user_01", {
       kind: "image",
       uploadId: imageUploadId,
@@ -276,14 +348,8 @@ describe("POST /upload/image/confirm", () => {
     );
   });
 
-  it("returns 409 on a repeat confirm", async () => {
-    mockValues.mockRejectedValueOnce(
-      new Error("Failed query", {
-        cause: Object.assign(new Error("duplicate key value"), {
-          code: "23505",
-        }),
-      }),
-    );
+  it("returns 409 when another confirm got there first", async () => {
+    ledger.claim.mockResolvedValue(false);
 
     const res = await postJson("/upload/image/confirm", confirmBody);
 
@@ -291,9 +357,10 @@ describe("POST /upload/image/confirm", () => {
     expect(await res.json()).toEqual({
       message: "This upload was already confirmed",
     });
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it("still fails loudly on any other database error", async () => {
+  it("fails loudly when the row can't be written", async () => {
     mockValues.mockRejectedValueOnce(new Error("connection reset"));
 
     const res = await postJson("/upload/image/confirm", confirmBody);

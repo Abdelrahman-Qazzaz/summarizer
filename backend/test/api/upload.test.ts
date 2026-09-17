@@ -6,14 +6,22 @@ const {
   mockInsert,
   mockSendEvent,
   mockCreateUploadUrl,
-  mockTakeUploadedObject,
+  mockInspectUploadedObject,
   mockIsValidTranscribeModel,
+  ledger,
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockSendEvent: vi.fn(),
   mockCreateUploadUrl: vi.fn(),
-  mockTakeUploadedObject: vi.fn(),
+  mockInspectUploadedObject: vi.fn(),
   mockIsValidTranscribeModel: vi.fn(),
+  ledger: {
+    recordPendingUpload: vi.fn(),
+    recordConfirmedObjects: vi.fn(),
+    findLedgerEntry: vi.fn(),
+    claim: vi.fn(),
+    forgetObjects: vi.fn(),
+  },
 }));
 
 const { mockgetChatModelData } = vi.hoisted(() => ({
@@ -41,16 +49,44 @@ vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
 vi.mock("../../shared/db", async () => ({
   db: {
     insert: mockInsert,
-    // createAudioJob writes both rows in one transaction; run it against the
-    // same insert mock so those writes are recorded like plain ones.
-    transaction: (run: (tx: unknown) => unknown) => run({ insert: mockInsert }),
+    // Job writes run in (nested) transactions; run them against the same
+    // insert mock so those writes are recorded like plain ones.
+    transaction: (run: (tx: unknown) => unknown) =>
+      run({
+        insert: mockInsert,
+        transaction: (inner: (tx: unknown) => unknown) =>
+          inner({ insert: mockInsert }),
+      }),
   },
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
+// The ledger's SQL is covered by the integration tests; here it's the
+// decisions made around it. A confirm that goes through runs its writes
+// against the same insert mock as everything else.
+vi.mock("../../shared/data/storageLedger.data", () => ({
+  recordPendingUpload: ledger.recordPendingUpload,
+  recordConfirmedObjects: ledger.recordConfirmedObjects,
+  findLedgerEntry: ledger.findLedgerEntry,
+  forgetObjects: ledger.forgetObjects,
+  confirmUpload: async (
+    entry: unknown,
+    withinMs: number,
+    write: (executor: unknown) => Promise<unknown>,
+  ) => {
+    if (!(await ledger.claim(entry, withinMs))) return false;
+    await write({
+      insert: mockInsert,
+      transaction: (run: (tx: unknown) => unknown) =>
+        run({ insert: mockInsert }),
+    });
+    return true;
+  },
+}));
+
 vi.mock("../../shared/bucket", () => ({
   createUploadUrl: mockCreateUploadUrl,
-  takeUploadedObject: mockTakeUploadedObject,
+  inspectUploadedObject: mockInspectUploadedObject,
   createSignedUrl: vi.fn(),
   createSignedUrls: vi.fn(),
   // Literals (not the top-level consts): vi.mock factories can run during
@@ -97,10 +133,14 @@ describe("POST /upload/text", () => {
   });
 });
 
+const HOUR_MS = 60 * 60 * 1000;
+const URL_LIFETIME_MS = 2 * HOUR_MS;
+
 describe("POST /upload/audio", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreateUploadUrl.mockResolvedValue("https://storage.test/upload");
+    ledger.recordPendingUpload.mockResolvedValue(undefined);
   });
 
   it("returns 401 without a session cookie", async () => {
@@ -114,9 +154,10 @@ describe("POST /upload/audio", () => {
 
     expect(res.status).toBe(401);
     expect(mockCreateUploadUrl).not.toHaveBeenCalled();
+    expect(ledger.recordPendingUpload).not.toHaveBeenCalled();
   });
 
-  it("mints a fresh id and a URL bound to it", async () => {
+  it("records a pending upload and returns a URL bound to a fresh id", async () => {
     const res = await postJson("/upload/audio", {});
 
     expect(res.status).toBe(200);
@@ -126,23 +167,31 @@ describe("POST /upload/audio", () => {
     };
     expect(body.uploadId).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.signedUploadUrl).toBe("https://storage.test/upload");
-    expect(mockCreateUploadUrl).toHaveBeenCalledWith("user_01", {
-      kind: "audio",
-      uploadId: body.uploadId,
+    const object = { kind: "audio", uploadId: body.uploadId };
+    expect(mockCreateUploadUrl).toHaveBeenCalledWith("user_01", object);
+    expect(ledger.recordPendingUpload).toHaveBeenCalledWith({
+      userId: "user_01",
+      ...object,
     });
-  });
-
-  // Minting writes nothing: an upload that never lands leaves no job behind.
-  it("writes no row and queues nothing", async () => {
-    await postJson("/upload/audio", {});
-
+    // No job yet: an upload that never lands leaves nothing in the sources.
     expect(mockInsert).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
+  });
+
+  // Otherwise an upload could land with nothing recording it.
+  it("hands out no URL when the record can't be written", async () => {
+    ledger.recordPendingUpload.mockRejectedValue(new Error("db down"));
+
+    const res = await postJson("/upload/audio", {});
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).not.toContain("storage.test");
   });
 });
 
 describe("POST /upload/audio/confirm", () => {
   const UPLOAD_ID = "11111111-1111-4111-8111-111111111111";
+  const entry = { userId: "user_01", kind: "audio", uploadId: UPLOAD_ID };
   let mockValues: ReturnType<typeof vi.fn>;
 
   function confirmBody(overrides: Record<string, unknown> = {}) {
@@ -160,7 +209,12 @@ describe("POST /upload/audio/confirm", () => {
     mockInsert.mockReturnValue({ values: mockValues });
     mockSendEvent.mockResolvedValue(undefined);
     mockIsValidTranscribeModel.mockResolvedValue(true);
-    mockTakeUploadedObject.mockResolvedValue({
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "pending",
+      createdAt: new Date(),
+    });
+    ledger.claim.mockResolvedValue(true);
+    mockInspectUploadedObject.mockResolvedValue({
       ok: true,
       sizeBytes: 2048,
       contentType: "audio/webm",
@@ -177,7 +231,7 @@ describe("POST /upload/audio/confirm", () => {
     });
 
     expect(res.status).toBe(401);
-    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
+    expect(ledger.findLedgerEntry).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an id that is not a uuid", async () => {
@@ -188,7 +242,7 @@ describe("POST /upload/audio/confirm", () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ message: "Invalid upload id" });
-    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
+    expect(ledger.findLedgerEntry).not.toHaveBeenCalled();
   });
 
   it("returns 400 without a file name", async () => {
@@ -198,7 +252,7 @@ describe("POST /upload/audio/confirm", () => {
     );
 
     expect(res.status).toBe(400);
-    expect(mockTakeUploadedObject).not.toHaveBeenCalled();
+    expect(ledger.findLedgerEntry).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an invalid source", async () => {
@@ -213,9 +267,9 @@ describe("POST /upload/audio/confirm", () => {
     });
   });
 
-  // Also what an id minted for an image gets: its object is under images/.
-  it("returns 404 when no audio was uploaded under the id", async () => {
-    mockTakeUploadedObject.mockResolvedValue({ ok: false, reason: "missing" });
+  // Includes an id minted for an image: its record has the other kind.
+  it("returns 404 for an id with no audio upload recorded", async () => {
+    ledger.findLedgerEntry.mockResolvedValue(undefined);
 
     const res = await postJson("/upload/audio/confirm", confirmBody());
 
@@ -223,15 +277,83 @@ describe("POST /upload/audio/confirm", () => {
     expect(await res.json()).toEqual({
       message: "No uploaded audio to confirm",
     });
-    expect(mockInsert).not.toHaveBeenCalled();
+    expect(ledger.findLedgerEntry).toHaveBeenCalledWith(entry);
+    expect(mockInspectUploadedObject).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for an upload whose object was deleted", async () => {
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "deleted",
+      createdAt: new Date(),
+    });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(404);
+    expect(ledger.claim).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 for an upload already confirmed", async () => {
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "confirmed",
+      createdAt: new Date(),
+    });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      message: "This upload was already confirmed",
+    });
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when storage holds something other than audio", async () => {
-    mockTakeUploadedObject.mockResolvedValue({
+  it("returns 404 when nothing has landed yet", async () => {
+    mockInspectUploadedObject.mockResolvedValue({
+      ok: false,
+      reason: "missing",
+    });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(404);
+    expect(ledger.claim).not.toHaveBeenCalled();
+  });
+
+  it("returns 410 for an upload handed out longer ago than the window", async () => {
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "pending",
+      createdAt: new Date(Date.now() - URL_LIFETIME_MS - 1000),
+    });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(410);
+    expect(await res.json()).toEqual({
+      message: "This upload has expired; upload the file again",
+    });
+    expect(mockInspectUploadedObject).not.toHaveBeenCalled();
+    expect(ledger.claim).not.toHaveBeenCalled();
+  });
+
+  it("still confirms an upload just inside the window", async () => {
+    ledger.findLedgerEntry.mockResolvedValue({
+      status: "pending",
+      createdAt: new Date(Date.now() - URL_LIFETIME_MS + 60_000),
+    });
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(200);
+  });
+
+  // A rejected upload writes nothing; the sweep removes it later.
+  it("returns 400 for an object that is not audio, touching nothing", async () => {
+    mockInspectUploadedObject.mockResolvedValue({
       ok: false,
       reason: "wrong-type",
       contentType: "application/zip",
+      maxBytes: MAX_AUDIO_BYTES,
     });
 
     const res = await postJson("/upload/audio/confirm", confirmBody());
@@ -240,15 +362,18 @@ describe("POST /upload/audio/confirm", () => {
     expect(await res.json()).toEqual({
       message: "Expected an audio file, got: application/zip",
     });
+    expect(ledger.claim).not.toHaveBeenCalled();
+    expect(ledger.forgetObjects).not.toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
   it("names the type as unknown when storage recorded none", async () => {
-    mockTakeUploadedObject.mockResolvedValue({
+    mockInspectUploadedObject.mockResolvedValue({
       ok: false,
       reason: "wrong-type",
       contentType: "",
+      maxBytes: MAX_AUDIO_BYTES,
     });
 
     const res = await postJson("/upload/audio/confirm", confirmBody());
@@ -258,8 +383,8 @@ describe("POST /upload/audio/confirm", () => {
     });
   });
 
-  it("returns 413 when the stored object is over the cap", async () => {
-    mockTakeUploadedObject.mockResolvedValue({
+  it("returns 413 for an object over the cap, touching nothing", async () => {
+    mockInspectUploadedObject.mockResolvedValue({
       ok: false,
       reason: "too-large",
       contentType: "audio/webm",
@@ -273,10 +398,11 @@ describe("POST /upload/audio/confirm", () => {
       message: "Audio file is too large",
       maxBytes: MAX_AUDIO_BYTES,
     });
+    expect(ledger.claim).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
-  it("records the stored size and type, then queues transcription", async () => {
+  it("confirms the upload with the job's rows, then queues transcription", async () => {
     const res = await postJson("/upload/audio/confirm", confirmBody());
 
     expect(res.status).toBe(200);
@@ -288,11 +414,12 @@ describe("POST /upload/audio/confirm", () => {
       mimeType: "audio/webm",
       source: "video",
     });
-    expect(mockTakeUploadedObject).toHaveBeenCalledWith("user_01", {
+    expect(mockInspectUploadedObject).toHaveBeenCalledWith("user_01", {
       kind: "audio",
       uploadId: UPLOAD_ID,
     });
-    // The attachment row, then the job row.
+    expect(ledger.claim).toHaveBeenCalledWith(entry, URL_LIFETIME_MS);
+    // The attachment row, then the job row, inside the confirm.
     expect(mockValues).toHaveBeenCalledWith(
       expect.objectContaining({
         attachmentId: UPLOAD_ID,
@@ -325,16 +452,9 @@ describe("POST /upload/audio/confirm", () => {
     expect(await res.json()).toMatchObject({ source: "audio" });
   });
 
-  // A double-click, or a retried confirm whose response was lost. drizzle
-  // wraps the driver error, so the code sits on the cause.
-  it("returns 409 on a repeat confirm and queues nothing", async () => {
-    mockValues.mockRejectedValueOnce(
-      new Error("Failed query", {
-        cause: Object.assign(new Error("duplicate key value"), {
-          code: "23505",
-        }),
-      }),
-    );
+  // Two confirms at once: both find it pending, only one confirms it.
+  it("returns 409 and queues nothing when another confirm got there first", async () => {
+    ledger.claim.mockResolvedValue(false);
 
     const res = await postJson("/upload/audio/confirm", confirmBody());
 
@@ -342,10 +462,11 @@ describe("POST /upload/audio/confirm", () => {
     expect(await res.json()).toEqual({
       message: "This upload was already confirmed",
     });
+    expect(mockInsert).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
-  it("still fails loudly on any other database error", async () => {
+  it("fails loudly and queues nothing when the job can't be written", async () => {
     mockValues.mockRejectedValueOnce(new Error("connection reset"));
 
     const res = await postJson("/upload/audio/confirm", confirmBody());
@@ -378,6 +499,7 @@ describe("POST /upload/youtube", () => {
     });
     expect(res.status).toBe(401);
     expect(mockInsert).not.toHaveBeenCalled();
+    expect(ledger.recordConfirmedObjects).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
@@ -431,6 +553,12 @@ describe("POST /upload/youtube", () => {
     );
     // The fetch event carries the url + userId the fetcher needs (bucket write
     // happens in Python; the API only enqueues).
+    // What the fetcher will write is on record before it's asked to.
+    expect(ledger.recordConfirmedObjects).toHaveBeenCalledWith(
+      "user_01",
+      [{ kind: "audio", uploadId: body.audioUploadId }],
+      expect.anything(),
+    );
     expect(mockSendEvent).toHaveBeenCalledWith("yt_fetch", {
       audioUploadId: body.audioUploadId,
       captionUploadId: null,
@@ -463,6 +591,14 @@ describe("POST /upload/youtube", () => {
       captionUploadId: string;
     };
     expect(insertedJob.captionUploadId).toEqual(expect.any(String));
+    expect(ledger.recordConfirmedObjects).toHaveBeenCalledWith(
+      "user_01",
+      [
+        { kind: "audio", uploadId: body.audioUploadId },
+        { kind: "text", uploadId: insertedJob.captionUploadId },
+      ],
+      expect.anything(),
+    );
     expect(mockSendEvent).toHaveBeenCalledWith("yt_fetch", {
       audioUploadId: body.audioUploadId,
       captionUploadId: insertedJob.captionUploadId,

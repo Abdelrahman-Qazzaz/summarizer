@@ -32,6 +32,14 @@ export const tableStubs = {
     userId: "user_id",
   },
 
+  StorageLedger: {
+    uploadId: "upload_id",
+    userId: "user_id",
+    kind: "kind",
+    status: "status",
+    createdAt: "created_at",
+  },
+
   Conversations: {
     id: "id",
     title: "title",

@@ -35,10 +35,7 @@ const pending = (msAgo = 0) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  bucket.createUploadUrl.mockResolvedValue({
-    signedUrl: "https://upload",
-    lifetimeMs: WINDOW_MS,
-  });
+  bucket.createUploadUrl.mockResolvedValue("https://upload");
   bucket.deleteFromBucket.mockResolvedValue([]);
   ledger.recordPendingUpload.mockResolvedValue(undefined);
   ledger.findLedgerEntry.mockResolvedValue(pending());
@@ -58,21 +55,6 @@ describe("startUpload", () => {
     ledger.recordPendingUpload.mockRejectedValue(new Error("db down"));
 
     await expect(startUpload(USER, image)).rejects.toThrow("db down");
-  });
-
-  it("accepts a URL that lives exactly as long as the window", async () => {
-    await expect(startUpload(USER, image)).resolves.toBe("https://upload");
-  });
-
-  it("refuses a URL that outlives the window", async () => {
-    bucket.createUploadUrl.mockResolvedValue({
-      signedUrl: "https://upload",
-      lifetimeMs: WINDOW_MS + 1,
-    });
-
-    await expect(startUpload(USER, image)).rejects.toThrow(
-      "longer than the 7200000 ms confirm window",
-    );
   });
 });
 
