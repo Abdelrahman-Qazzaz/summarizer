@@ -8,6 +8,7 @@ import {
 } from "../db";
 import { CLAIM_LEASE_MS } from "./conversations.data";
 import { attachmentIsUnlinked } from "./messageAttachmentLinks.data";
+import { markDeleted } from "./storageLedger.data";
 
 type AttachmentValues = Pick<
   typeof Attachments.$inferInsert,
@@ -139,21 +140,6 @@ export async function releaseAttachmentReservations(
     .where(eq(AttachmentTurnReservations.claimToken, claimToken));
 }
 
-/** Postgres' unique-violation code. */
-const UNIQUE_VIOLATION = "23505";
-
-/**
- * Whether an insert failed because the key is already taken. drizzle wraps
- * the driver's error in a DrizzleQueryError, so the code is looked for along
- * the cause chain rather than only on the error itself.
- */
-export function isDuplicateKey(error: unknown): boolean {
-  for (let current = error; current; current = (current as Error).cause) {
-    if ((current as { code?: unknown }).code === UNIQUE_VIOLATION) return true;
-  }
-  return false;
-}
-
 export async function createAttachment(
   values: AttachmentValues,
   executor: Executor = db,
@@ -201,6 +187,17 @@ export async function deleteOwnedUnlinkedUnreservedAttachments(
     .returning({
       attachmentId: Attachments.attachmentId,
     });
+  const deletedIds = deletedAttachments.map(
+    (attachment) => attachment.attachmentId,
+  );
 
-  return deletedAttachments.map((attachment) => attachment.attachmentId);
+  // Same transaction: once the rows are gone, the objects are due for
+  // removal on record, whatever happens to the caller's storage delete.
+  await markDeleted(
+    input.userId,
+    deletedIds.map((uploadId) => ({ kind: input.kind, uploadId })),
+    executor,
+  );
+
+  return deletedIds;
 }

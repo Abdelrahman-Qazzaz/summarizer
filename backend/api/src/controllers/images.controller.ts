@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
+import { createSignedUrl } from "../../../shared/bucket";
 import {
-  createSignedUrl,
-  createUploadUrl,
-  takeUploadedObject,
-} from "../../../shared/bucket";
+  checkUpload,
+  confirmCheckedUpload,
+  startUpload,
+} from "../../../shared/uploads";
 import {
   createImageAttachment,
   deleteOwnedUnlinkedUnreservedImageAttachment,
@@ -18,14 +19,15 @@ import type { UploadId } from "../../../shared/types";
  * chat, or uploaded from the navbar), straight into storage. The id is minted
  * here rather than chosen by the client.
  *
- * No row is written yet, so an upload that never completes leaves nothing for
- * the rest of the code to trip over.
+ * Only the upload's ledger record is written, so an upload that never
+ * completes leaves nothing for the rest of the code to trip over; the sweep
+ * removes it.
  */
 export async function handleImageUploadUrl(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
 
   const imageUploadId: UploadId = randomUUID();
-  const signedUploadUrl = await createUploadUrl(userId, {
+  const signedUploadUrl = await startUpload(userId, {
     kind: "image",
     uploadId: imageUploadId,
   });
@@ -39,7 +41,8 @@ export async function handleImageUploadUrl(c: Context) {
  *
  * The URL is persisted, not just returned: this runs while the user is still
  * typing, so caching it here is what keeps signing off the send path entirely.
- * The key carries the kind, so an id minted for audio finds nothing here.
+ * The upload must be pending in the ledger for this user as an image, so an
+ * id minted for audio is a 404. A rejected upload is left for the sweep.
  */
 export async function handleImageConfirm(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -47,11 +50,18 @@ export async function handleImageConfirm(c: Context) {
   const fileName = c.get(CTX_KEYS.fileName);
 
   const image = { kind: "image", uploadId: imageUploadId } as const;
-  const upload = await takeUploadedObject(userId, image);
+  const upload = await checkUpload(userId, image);
   if (!upload.ok) {
     switch (upload.reason) {
       case "missing":
         return c.json({ message: "No uploaded image to confirm" }, 404);
+      case "already-confirmed":
+        return c.json({ message: "This upload was already confirmed" }, 409);
+      case "expired":
+        return c.json(
+          { message: "This upload has expired; upload the file again" },
+          410,
+        );
       case "wrong-type":
         return c.json({ message: "File must be an image" }, 400);
       case "too-large":
@@ -63,15 +73,20 @@ export async function handleImageConfirm(c: Context) {
   }
 
   const signedUrl = await createSignedUrl(userId, image);
-  const created = await createImageAttachment({
-    userId,
-    imageUploadId,
-    fileName,
-    mimeType: upload.contentType,
-    sizeBytes: upload.sizeBytes,
-    signedUrl,
-  });
-  if (!created) {
+  const confirmed = await confirmCheckedUpload(userId, image, (executor) =>
+    createImageAttachment(
+      {
+        userId,
+        imageUploadId,
+        fileName,
+        mimeType: upload.contentType,
+        sizeBytes: upload.sizeBytes,
+        signedUrl,
+      },
+      executor,
+    ),
+  );
+  if (!confirmed) {
     return c.json({ message: "This upload was already confirmed" }, 409);
   }
 

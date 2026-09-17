@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import { createAudioJob } from "../../../shared/data/jobs.data";
+import { createYoutubeAudioJob } from "../../../shared/data/jobs.data";
 import { queueAudioTranscription } from "../../../shared/audioTranscription";
-import { createUploadUrl, takeUploadedObject } from "../../../shared/bucket";
+import { checkUpload, startUpload } from "../../../shared/uploads";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { CTX_KEYS } from "../../../shared/keys";
 import type { UploadId } from "../../../shared/types";
@@ -12,14 +12,15 @@ import type { UploadId } from "../../../shared/types";
  * storage. The id is minted here rather than chosen by the client, so the key
  * the URL is bound to is one nothing else is using.
  *
- * No row is written yet. An upload that never completes leaves at worst an
- * unreferenced object, rather than a job stuck queued in the user's sources.
+ * Only the upload's ledger record is written, not a job: an upload that never
+ * completes is the sweep's to remove, rather than a job stuck queued in the
+ * user's sources.
  */
 export async function handleAudioUploadUrl(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
 
   const audioUploadId: UploadId = randomUUID();
-  const signedUploadUrl = await createUploadUrl(userId, {
+  const signedUploadUrl = await startUpload(userId, {
     kind: "audio",
     uploadId: audioUploadId,
   });
@@ -31,7 +32,9 @@ export async function handleAudioUploadUrl(c: Context) {
  * POST /upload/audio/confirm — the audio is in the bucket: check it, then
  * start its transcription.
  *
- * The key carries the kind, so an id minted for an image finds nothing here.
+ * The upload must be pending in the ledger for this user as audio, so an id
+ * minted for an image — or someone else's — is a 404. A rejected upload is
+ * answered and left as it is; the sweep removes it.
  */
 export async function handleAudioConfirm(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
@@ -40,7 +43,7 @@ export async function handleAudioConfirm(c: Context) {
   const source = c.get(CTX_KEYS.audioSource);
   const transcriptModelId = c.get(CTX_KEYS.transcriptModelId);
 
-  const upload = await takeUploadedObject(userId, {
+  const upload = await checkUpload(userId, {
     kind: "audio",
     uploadId: audioUploadId,
   });
@@ -48,6 +51,13 @@ export async function handleAudioConfirm(c: Context) {
     switch (upload.reason) {
       case "missing":
         return c.json({ message: "No uploaded audio to confirm" }, 404);
+      case "already-confirmed":
+        return c.json({ message: "This upload was already confirmed" }, 409);
+      case "expired":
+        return c.json(
+          { message: "This upload has expired; upload the file again" },
+          410,
+        );
       case "wrong-type":
         return c.json(
           {
@@ -101,7 +111,7 @@ export async function handleYoutubeUpload(c: Context) {
   // Created queued with placeholder metadata. The fetcher tries a reserved
   // caption object first when requested, otherwise it writes audio under
   // `audioUploadId` and sends the appropriate worker delivery.
-  await createAudioJob({
+  await createYoutubeAudioJob({
     audioUploadId,
     captionUploadId,
     userId,

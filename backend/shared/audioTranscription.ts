@@ -1,14 +1,16 @@
 import { createAudioJob } from "./data/jobs.data";
 import { mq } from "./message-queue/messageQueue";
 import type { UploadId } from "./types";
+import { confirmCheckedUpload } from "./uploads";
 
 /**
- * Records an uploaded audio file as a transcription job and hands it to the
- * worker. Returns false, queueing nothing, when the job already exists.
+ * Confirms an uploaded audio file as a transcription job and hands it to the
+ * worker. The job's rows are written in the transaction that confirms the
+ * upload, so returns false, queueing nothing, when another confirm got there
+ * first.
  *
- * The two steps are not atomic: a publish that fails leaves a queued row that
- * nothing will pick up. Keeping them behind one call is what lets that be
- * fixed in one place rather than in every route that starts a transcription.
+ * The publish is not part of that transaction: a publish that fails leaves a
+ * queued row that nothing will pick up.
  */
 export async function queueAudioTranscription(job: {
   audioUploadId: UploadId;
@@ -19,8 +21,12 @@ export async function queueAudioTranscription(job: {
   sizeBytes: number;
   transcriptModelId: string;
 }) {
-  const created = await createAudioJob({ ...job, captionUploadId: null });
-  if (!created) return false;
+  const confirmed = await confirmCheckedUpload(
+    job.userId,
+    { kind: "audio", uploadId: job.audioUploadId },
+    (executor) => createAudioJob({ ...job, captionUploadId: null }, executor),
+  );
+  if (!confirmed) return false;
 
   await mq.publish(mq.queues.TRANSCRIBE, { audioUploadId: job.audioUploadId });
   return true;

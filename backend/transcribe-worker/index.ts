@@ -2,6 +2,7 @@ import {
   mq,
   type DeliveryMetadata,
 } from "../shared/message-queue/messageQueue";
+import { scheduleSweeper } from "../shared/sweeper";
 import { onShutdown } from "../shared/shutdown";
 import { verifyTranscribeWorkerServices } from "./startup";
 import { handleTranscribeJob } from "./transcribeJob";
@@ -33,6 +34,9 @@ const cancelConsumers = await Promise.all([
   ),
 ]);
 
+// Every worker schedules it; the sweep's own lock keeps them from overlapping.
+const stopSweeper = scheduleSweeper();
+
 /**
  * Cancel first so the broker stops delivering, then let the job in progress
  * finish rather than paying the transcription provider twice for it.
@@ -45,7 +49,7 @@ const cancelConsumers = await Promise.all([
 onShutdown(
   async () => {
     await Promise.all(cancelConsumers.map((cancel) => cancel()));
-    await Promise.all(inFlightJobs);
+    await Promise.all([...inFlightJobs, stopSweeper()]);
     await mq.close();
   },
   { graceMs: 30_000 },

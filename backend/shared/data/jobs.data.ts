@@ -17,8 +17,8 @@ import type { UploadId } from "../types";
 import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
-  isDuplicateKey,
 } from "./attachments.data";
+import { markDeleted, recordConfirmedObjects } from "./storageLedger.data";
 
 /**
  * Both process types read and write this table — the API on the request path,
@@ -156,20 +156,23 @@ export async function findUserJobsPage(
 /* --------------------------------------------------------------- API writes */
 
 /**
- * Returns false when `audioUploadId` is already recorded — a confirm repeated
- * by a double-click or a retry — so the caller can answer with a conflict.
+ * The attachment row and the job row, together. `executor` lets a direct
+ * upload's confirm write them in the transaction that confirms the upload.
  */
-export async function createAudioJob(job: {
-  audioUploadId: UploadId;
-  captionUploadId: UploadId | null;
-  userId: string;
-  source: AudioJobRow["source"];
-  fileName: string;
-  mimeType: string | null;
-  sizeBytes: number;
-  transcriptModelId: string;
-  youtubeSourceUrl?: string;
-}) {
+export async function createAudioJob(
+  job: {
+    audioUploadId: UploadId;
+    captionUploadId: UploadId | null;
+    userId: string;
+    source: AudioJobRow["source"];
+    fileName: string;
+    mimeType: string | null;
+    sizeBytes: number;
+    transcriptModelId: string;
+    youtubeSourceUrl?: string;
+  },
+  executor: Executor = db,
+) {
   const {
     audioUploadId,
     captionUploadId,
@@ -182,45 +185,84 @@ export async function createAudioJob(job: {
     youtubeSourceUrl,
   } = job;
 
-  try {
-    await db.transaction(async (tx) => {
-      await createAttachment(
-        {
-          attachmentId: audioUploadId,
-          kind: "audio",
-          userId,
-          fileName,
-          mimeType,
-          sizeBytes,
-        },
-        tx,
-      );
-      await tx.insert(AudioTranscriptionJobs).values({
-        audioUploadId,
-        captionUploadId,
-        source,
-        transcriptModelId,
-        ...(youtubeSourceUrl !== undefined
-          ? { YT_sourceUrl: youtubeSourceUrl }
-          : {}),
-      });
+  await executor.transaction(async (tx) => {
+    await createAttachment(
+      {
+        attachmentId: audioUploadId,
+        kind: "audio",
+        userId,
+        fileName,
+        mimeType,
+        sizeBytes,
+      },
+      tx,
+    );
+    await tx.insert(AudioTranscriptionJobs).values({
+      audioUploadId,
+      captionUploadId,
+      source,
+      transcriptModelId,
+      ...(youtubeSourceUrl !== undefined
+        ? { YT_sourceUrl: youtubeSourceUrl }
+        : {}),
     });
-  } catch (error) {
-    if (isDuplicateKey(error)) return false;
-    throw error;
-  }
-
-  return true;
+  });
 }
 
-export async function deleteAudioJob(userId: string, audioUploadId: string) {
-  const deletedAudioUploadId = await deleteOwnedUnlinkedUnreservedAttachment({
-    userId,
-    attachmentId: audioUploadId,
-    kind: "audio",
+/**
+ * A YouTube job, and the objects the fetcher will write for it recorded as
+ * referenced — audio, and the caption text when one is reserved — in the
+ * same transaction. They're recorded now rather than when they land, so an
+ * object the fetcher writes is never unrecorded; recording one that never
+ * arrives costs nothing, since deleting a missing object is a no-op.
+ */
+export async function createYoutubeAudioJob(
+  job: Parameters<typeof createAudioJob>[0],
+) {
+  await db.transaction(async (tx) => {
+    await createAudioJob(job, tx);
+    await recordConfirmedObjects(
+      job.userId,
+      [
+        { kind: "audio", uploadId: job.audioUploadId },
+        ...(job.captionUploadId
+          ? [{ kind: "text" as const, uploadId: job.captionUploadId }]
+          : []),
+      ],
+      tx,
+    );
   });
+}
 
-  return Boolean(deletedAudioUploadId);
+/**
+ * Deletes a job's audio attachment, and with it the job, unless it's linked to
+ * a message or reserved for a response. Marks the audio, and the job's
+ * caption text if it still has one, as deleted in the same transaction.
+ * Returns null when nothing was deleted.
+ */
+export async function deleteAudioJob(userId: string, audioUploadId: string) {
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .select({ captionUploadId: AudioTranscriptionJobs.captionUploadId })
+      .from(AudioTranscriptionJobs)
+      .where(eq(AudioTranscriptionJobs.audioUploadId, audioUploadId));
+
+    const deletedAudioUploadId = await deleteOwnedUnlinkedUnreservedAttachment(
+      { userId, attachmentId: audioUploadId, kind: "audio" },
+      tx,
+    );
+    if (!deletedAudioUploadId) return null;
+
+    const captionUploadId = job?.captionUploadId ?? null;
+    if (captionUploadId) {
+      await markDeleted(
+        userId,
+        [{ kind: "text", uploadId: captionUploadId }],
+        tx,
+      );
+    }
+    return { captionUploadId };
+  });
 }
 
 /**
@@ -262,19 +304,35 @@ export async function findTerminalCaptionUpload(
   return row ?? null;
 }
 
+/**
+ * Clears a job's caption id and marks its text deleted, in one transaction.
+ * False when the job no longer points at that caption.
+ */
 export async function clearCaptionUploadId(
   audioUploadId: string,
   captionUploadId: UploadId,
+  userId: string,
 ) {
-  await db
-    .update(AudioTranscriptionJobs)
-    .set({ captionUploadId: null })
-    .where(
-      and(
-        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
-        eq(AudioTranscriptionJobs.captionUploadId, captionUploadId),
-      ),
+  return db.transaction(async (tx) => {
+    const [cleared] = await tx
+      .update(AudioTranscriptionJobs)
+      .set({ captionUploadId: null })
+      .where(
+        and(
+          eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
+          eq(AudioTranscriptionJobs.captionUploadId, captionUploadId),
+        ),
+      )
+      .returning({ audioUploadId: AudioTranscriptionJobs.audioUploadId });
+    if (!cleared) return false;
+
+    await markDeleted(
+      userId,
+      [{ kind: "text", uploadId: captionUploadId }],
+      tx,
     );
+    return true;
+  });
 }
 
 /* ------------------------------------------------------------ worker writes */
