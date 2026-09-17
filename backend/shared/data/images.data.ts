@@ -14,11 +14,11 @@ import {
   deleteFromBucket,
 } from "../bucket";
 import type { UploadId } from "../types";
+import { forgetObjects } from "./storageLedger.data";
 import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
   deleteOwnedUnlinkedUnreservedAttachments,
-  isDuplicateKey,
   userOwnsAttachments,
 } from "./attachments.data";
 
@@ -65,21 +65,22 @@ function getSignedUrlExpiryDate() {
 /**
  * The row for an image already in the bucket. Takes the signature rather than
  * making it, so the caller can hand the same URL straight back to the client
- * instead of reading it out again.
- *
- * Returns false when the image is already recorded — a confirm repeated by a
- * double-click or a retry — so the caller can answer with a conflict.
+ * instead of reading it out again. `executor` lets a direct upload's confirm
+ * write it in the transaction that confirms the upload.
  */
-export async function createImageAttachment(input: {
-  userId: string;
-  imageUploadId: UploadId;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  signedUrl: string;
-}) {
-  try {
-    await createAttachment({
+export async function createImageAttachment(
+  input: {
+    userId: string;
+    imageUploadId: UploadId;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    signedUrl: string;
+  },
+  executor: Executor = db,
+) {
+  await createAttachment(
+    {
       attachmentId: input.imageUploadId,
       kind: "image",
       userId: input.userId,
@@ -88,13 +89,9 @@ export async function createImageAttachment(input: {
       sizeBytes: input.sizeBytes,
       signedUrl: input.signedUrl,
       signedUrlExpiresAt: getSignedUrlExpiryDate(),
-    });
-  } catch (error) {
-    if (isDuplicateKey(error)) return false;
-    throw error;
-  }
-
-  return true;
+    },
+    executor,
+  );
 }
 
 /** The subset of an image row needed to decide whether its url must be re-signed. */
@@ -350,10 +347,12 @@ export async function deleteOwnedUnlinkedUnreservedImageAttachment(
     );
     if (!deletedAttachmentId) return;
 
-    // Hold the deletion lock through storage cleanup; rollback keeps failed deletes retryable.
-    await deleteFromBucket(userId, [
-      { kind: "image", uploadId: deletedAttachmentId },
-    ]);
+    // Hold the deletion lock through storage cleanup; rollback keeps failed
+    // deletes retryable, and takes the ledger's mark with it.
+    const image = [{ kind: "image", uploadId: deletedAttachmentId }] as const;
+    // TODO: replace these 2 calls with releaseObjects()?
+    await deleteFromBucket(userId, image);
+    await forgetObjects(userId, image, transaction);
   });
 }
 

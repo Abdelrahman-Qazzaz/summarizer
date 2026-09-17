@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
 import { jobCursorSchema, type JobStatus } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
-import { deleteFromBucket } from "../../../shared/bucket";
+import { releaseObjects } from "../../../shared/uploads";
 import {
   deleteAudioJob,
   findAudioJob,
@@ -97,10 +97,10 @@ export async function handleDeleteTranscribeJob(c: Context) {
     );
   }
 
-  await deleteFromBucket(userId, [
+  await releaseObjects(userId, [
     { kind: "audio", uploadId: audioUploadId },
-    ...(job.captionUploadId
-      ? [{ kind: "text" as const, uploadId: job.captionUploadId }]
+    ...(deleted.captionUploadId
+      ? [{ kind: "text" as const, uploadId: deleted.captionUploadId }]
       : []),
   ]);
   return c.json({ message: "Job Deleted" }, 200);
