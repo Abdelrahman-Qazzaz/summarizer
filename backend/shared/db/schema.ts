@@ -22,6 +22,17 @@ export const attachmentKindEnum = pgEnum("attachment_kind", [
   "image",
   "audio",
 ] as const);
+/** Everything the bucket stores, which is more than attachments: text too. */
+export const storedObjectKindEnum = pgEnum("stored_object_kind", [
+  "image",
+  "audio",
+  "text",
+] as const);
+export const storageLedgerStatusEnum = pgEnum("storage_ledger_status", [
+  "pending",
+  "confirmed",
+  "deleted",
+] as const);
 export const DEFAULT_CONVERSATION_TITLE = "New conversation";
 export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant"] as const);
 
@@ -243,3 +254,36 @@ export const TranscriptContents = pgTable("transcript_contents", {
   content: text("content").notNull(),
   charCount: integer("char_count").notNull(),
 });
+
+/**
+ * Every object the bucket holds or is about to hold, so what nothing uses any
+ * more can be found and removed without asking storage what it contains.
+ *
+ * - pending: an upload URL was handed out; the upload isn't confirmed.
+ * - confirmed: a row references the object.
+ * - deleted: nothing references it any more; the object is due for removal.
+ *
+ * A row is removed once its object is gone from storage. The sweep removes
+ * pending and deleted objects that outlive their grace period.
+ *
+ * user_id has no foreign key, on purpose: the storage key is built from it, so
+ * the row has to outlive the user for their objects to still be removable.
+ */
+export const StorageLedger = pgTable(
+  "storage_ledger",
+  {
+    uploadId: text("upload_id").primaryKey(),
+    userId: text("user_id").notNull(),
+    kind: storedObjectKindEnum("kind").notNull(),
+    status: storageLedgerStatusEnum("status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("storage_ledger_status_created_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+  ],
+);
