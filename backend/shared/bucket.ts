@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { getBaseEnv } from "./env";
 
@@ -80,7 +81,7 @@ type UploadableKind = {
 }[StoredObjectKind];
 
 export type StoredObject = { kind: StoredObjectKind; uploadId: string };
-type UploadableObject = { kind: UploadableKind; uploadId: string };
+export type UploadableObject = { kind: UploadableKind; uploadId: string };
 
 /**
  * Storage key `<userId>/<folder>/<uploadId>`. Both parts are structural: every
@@ -98,10 +99,10 @@ function objectPath(userId: string, { kind, uploadId }: StoredObject) {
  * A one-shot URL the browser can PUT a file to, so the bytes go straight from
  * the device to storage instead of through this process. The token is bound
  * to this exact key, so the client can neither choose its own path nor reuse
- * the URL for a second object; Supabase fixes its lifetime at two hours.
+ * the URL for a second object.
  *
  * Nothing here limits what actually lands: size and content type are the
- * client's to set until the object exists. takeUploadedObject settles both.
+ * client's to set until the object exists. inspectUploadedObject reads both.
  */
 export async function createUploadUrl(
   userId: string,
@@ -115,6 +116,48 @@ export async function createUploadUrl(
   return data.signedUrl;
 }
 
+/**
+ * Startup check: fails when Supabase hands out upload URLs that stay valid
+ * for longer than `maxLifetimeMs`.
+ *
+ * Supabase decides that lifetime (two hours today) and offers no way to set
+ * it or read it back, so the only place it exists is inside the URL's own
+ * token. If it ever outgrew the window an upload can be confirmed in, an
+ * upload could land after its record had been swept and sit in the bucket
+ * for good — so this stops a deploy rather than leaking storage quietly.
+ *
+ * Minting a URL creates no object, so the probe leaves nothing behind.
+ */
+export async function verifyUploadUrlLifetime(
+  maxLifetimeMs: number,
+): Promise<void> {
+  const { data, error } = await bucket().createSignedUploadUrl(
+    objectPath("preflight", { kind: "image", uploadId: randomUUID() }),
+  );
+  if (error) throw error;
+
+  const lifetimeMs = tokenLifetimeMs(data.token);
+  if (lifetimeMs > maxLifetimeMs) {
+    throw new Error(
+      `Upload URLs are valid for ${lifetimeMs} ms, longer than the ` +
+        `${maxLifetimeMs} ms an upload can be confirmed in: an upload could ` +
+        "land after its record has been swept",
+    );
+  }
+}
+
+/** How long a Supabase-signed token is valid for, from its own claims. */
+function tokenLifetimeMs(token: string) {
+  const [, payload] = token.split(".");
+  const { iat, exp } = JSON.parse(
+    Buffer.from(payload ?? "", "base64url").toString(),
+  ) as { iat?: unknown; exp?: unknown };
+  if (typeof iat !== "number" || typeof exp !== "number") {
+    throw new Error("Upload token carries no lifetime");
+  }
+  return (exp - iat) * 1000;
+}
+
 /** Storage reports a missing object as a 400 whose body carries "404". */
 function isMissingObject(error: unknown) {
   const { status, statusCode } = error as {
@@ -125,21 +168,17 @@ function isMissingObject(error: unknown) {
 }
 
 /**
- * The confirm half of a direct upload: what storage says landed, checked
- * against what the kind accepts. Neither size nor content type passed through
- * this process, so both are read back rather than taken from the client.
- *
- * A rejected object is deleted here. Its row is written only once this
- * accepts it, so a rejected object is referenced by nothing and would
- * otherwise sit in the bucket for good.
+ * What storage says landed under an upload, checked against what its kind
+ * accepts. Neither size nor content type passed through this process, so both
+ * are read back rather than taken from the client. Only reads: an object this
+ * rejects is left for the sweep.
  */
-export async function takeUploadedObject(
+export async function inspectUploadedObject(
   userId: string,
   object: UploadableObject,
 ) {
   const { contentTypePrefix, maxBytes } = KINDS[object.kind].upload;
-  const path = objectPath(userId, object);
-  const { data, error } = await bucket().info(path);
+  const { data, error } = await bucket().info(objectPath(userId, object));
 
   if (error) {
     if (isMissingObject(error))
@@ -156,11 +195,7 @@ export async function takeUploadedObject(
       ? "too-large"
       : null;
 
-  if (reason) {
-    const { error: removeError } = await bucket().remove([path]);
-    if (removeError) throw removeError;
-    return { ok: false, reason, contentType, maxBytes } as const;
-  }
+  if (reason) return { ok: false, reason, contentType, maxBytes } as const;
 
   return { ok: true, sizeBytes, contentType } as const;
 }

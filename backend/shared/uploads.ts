@@ -16,7 +16,7 @@ import {
 /**
  * How long after its URL is handed out an upload can still be confirmed. At
  * least as long as the URL itself is valid, so no upload can land after the
- * window has closed; startUpload enforces that against the real lifetime.
+ * window has closed — verifyUploadUrlLifetime checks that at startup.
  */
 export const UPLOAD_CONFIRM_WINDOW_MS = 2 * 60 * 60 * 1000;
 
@@ -25,18 +25,11 @@ export const UPLOAD_CONFIRM_WINDOW_MS = 2 * 60 * 60 * 1000;
  * returned unless the record exists, so no upload can land unrecorded.
  */
 export async function startUpload(userId: string, object: UploadableObject) {
-  const [, { signedUrl, lifetimeMs }] = await Promise.all([
+  const [, signedUrl] = await Promise.all([
     recordPendingUpload({ userId, ...object }),
     createUploadUrl(userId, object),
   ]);
 
-  if (lifetimeMs > UPLOAD_CONFIRM_WINDOW_MS) {
-    throw new Error(
-      `Upload URLs are valid for ${lifetimeMs} ms, longer than the ` +
-        `${UPLOAD_CONFIRM_WINDOW_MS} ms confirm window: an upload could land ` +
-        "after its record has been swept",
-    );
-  }
   return signedUrl;
 }
 
