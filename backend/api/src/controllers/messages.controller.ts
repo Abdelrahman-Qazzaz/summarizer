@@ -586,6 +586,14 @@ export async function handleCreateMessage(c: Context) {
 }
 
 /** PATCH /conversations/:conversationId/messages/:messageId */
+/** How `patchOwnedUserMessage` reports a turn it would not apply. */
+const PATCH_FAILURES = {
+  claim_lost: [409, "Conversation changed or the edit claim was lost"],
+  attachments_changed: [409, "Attachments changed during the edit"],
+  not_found: [404, "Message not found"],
+  not_user: [400, "Only user messages can be edited"],
+} as const;
+
 export async function handlePatchMessage(c: Context) {
   const request = messageRequestFrom(c);
   const messageId = c.get(CTX_KEYS.messageId);
@@ -653,41 +661,30 @@ export async function handlePatchMessage(c: Context) {
 
   let turns: ChatTurn[];
   try {
-    if (!patchContext) {
-      await releaseClaim();
-      return c.json({ message: "Message not found" }, 404);
-    }
-    if (patchContext.target.role !== "user") {
-      await releaseClaim();
-      return c.json({ message: "Only user messages can be edited" }, 400);
-    }
-    if (resolvedImages.length !== request.imageUploadIds.length) {
-      await releaseClaim();
-      return c.json({ message: "Attachment not found" }, 404);
-    }
+    if (!patchContext)
+      throw new MessageRequestError(404, { message: "Message not found" });
+    if (patchContext.target.role !== "user")
+      throw new MessageRequestError(400, {
+        message: "Only user messages can be edited",
+      });
+    if (resolvedImages.length !== request.imageUploadIds.length)
+      throw new MessageRequestError(404, { message: "Attachment not found" });
     if (
       transcriptContentsByAudioUploadId.size !== request.audioUploadIds.length
-    ) {
-      await releaseClaim();
-      return c.json({ message: "Transcript not found" }, 404);
-    }
+    )
+      throw new MessageRequestError(404, { message: "Transcript not found" });
 
     const transcripts = request.audioUploadIds.map(
       (audioUploadId) =>
         transcriptContentsByAudioUploadId.get(audioUploadId) as string,
     );
     const newTurnContent = withTranscripts(request.content, transcripts);
-    if (newTurnContent.length >= MAX_CONTEXT_CHARS) {
-      await releaseClaim();
-      return c.json(
-        {
-          message: "Transcripts are too long for one message",
-          maxChars: MAX_CONTEXT_CHARS,
-          chars: newTurnContent.length,
-        },
-        413,
-      );
-    }
+    if (newTurnContent.length >= MAX_CONTEXT_CHARS)
+      throw new MessageRequestError(413, {
+        message: "Transcripts are too long for one message",
+        maxChars: MAX_CONTEXT_CHARS,
+        chars: newTurnContent.length,
+      });
 
     turns = await assembleConversationContext(
       request.userId,
@@ -701,10 +698,10 @@ export async function handlePatchMessage(c: Context) {
     if (
       containsImageInput(turns) &&
       !(await validateChatModelInput(request.chosenModelId, "image"))
-    ) {
-      await releaseClaim();
-      return c.json({ message: "Invalid model: must accept image input" }, 400);
-    }
+    )
+      throw new MessageRequestError(400, {
+        message: "Invalid model: must accept image input",
+      });
 
     const patchResult = await patchOwnedUserMessage({
       userId: request.userId,
@@ -714,24 +711,9 @@ export async function handlePatchMessage(c: Context) {
       attachmentIds: request.attachmentIds,
       claimToken,
     });
-    if (patchResult.status === "claim_lost") {
-      await releaseClaim();
-      return c.json(
-        { message: "Conversation changed or the edit claim was lost" },
-        409,
-      );
-    }
-    if (patchResult.status === "attachments_changed") {
-      await releaseClaim();
-      return c.json({ message: "Attachments changed during the edit" }, 409);
-    }
-    if (patchResult.status === "not_found") {
-      await releaseClaim();
-      return c.json({ message: "Message not found" }, 404);
-    }
-    if (patchResult.status === "not_user") {
-      await releaseClaim();
-      return c.json({ message: "Only user messages can be edited" }, 400);
+    if (patchResult.status !== "patched") {
+      const [status, message] = PATCH_FAILURES[patchResult.status];
+      throw new MessageRequestError(status, { message });
     }
 
     await releaseObjects(
@@ -743,6 +725,8 @@ export async function handlePatchMessage(c: Context) {
     );
   } catch (error) {
     await releaseClaim();
+    if (error instanceof MessageRequestError)
+      return c.json(error.body, error.status);
     throw error;
   }
 
