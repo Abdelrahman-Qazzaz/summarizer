@@ -6,7 +6,7 @@ import { createSignedUrl, getTextFromBucket } from "../shared/bucket";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { claimAudioJob, failAudioJob } from "../shared/data/jobs.data";
 import { saveCompletedTranscript } from "../shared/data/transcripts.data";
-import { logger } from "../shared/logger";
+import { logger, messageOf } from "../shared/logger";
 import {
   mq,
   type DeliveryMetadata,
@@ -93,7 +93,7 @@ export async function handleTranscribeJob(
     } catch (error) {
       log.warn("Failed to clean up caption upload", {
         audioUploadId,
-        error: error instanceof Error ? error.message : String(error),
+        error: messageOf(error),
       });
     }
   }

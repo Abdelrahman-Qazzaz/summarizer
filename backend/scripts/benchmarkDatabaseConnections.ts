@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { getBaseEnv } from "../shared/env";
 import { msSince } from "../shared/preparationMetrics";
+import { messageOf } from "../shared/logger";
 
 type BenchmarkConfiguration = {
   fetch_types: boolean;
@@ -120,7 +121,7 @@ for (const [name, configuration] of configurations) {
     results.push({
       name,
       configuration,
-      error: error instanceof Error ? error.message : String(error),
+      error: messageOf(error),
     });
   }
 }

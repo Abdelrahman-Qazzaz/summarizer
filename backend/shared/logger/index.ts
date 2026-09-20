@@ -39,11 +39,20 @@ function resolveMinLevel(): LogLevel {
 const MIN_PRIORITY = LEVEL_PRIORITY[resolveMinLevel()];
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
+/**
+ * What a caught value says about itself. `logger.error` captures the name and
+ * stack too; this is for the places that put a caught value somewhere a string
+ * is what fits — a log field, a message assembled for the user.
+ */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function normalizeError(error: unknown): LogContext {
   if (error instanceof Error)
     return { name: error.name, message: error.message, stack: error.stack };
 
-  return { message: String(error) };
+  return { message: messageOf(error) };
 }
 
 const LEVEL_SINK: Record<LogLevel, (line: string) => void> = {

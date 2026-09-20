@@ -25,7 +25,7 @@ import {
   validateChatModelInput,
 } from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
-import { logger } from "../../../shared/logger";
+import { logger, messageOf } from "../../../shared/logger";
 import {
   measurePreparation,
   roundMs,
@@ -88,7 +88,7 @@ async function titleForFirstTurn(content: string, conversationId: string) {
   } catch (error) {
     log.warn("Conversation title generation failed", {
       conversationId,
-      error: error instanceof Error ? error.message : String(error),
+      error: messageOf(error),
     });
     return fallback;
   }

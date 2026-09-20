@@ -1,4 +1,4 @@
-import { logger } from "./logger";
+import { logger, messageOf } from "./logger";
 
 export type ServiceCheck = {
   /** Human-readable service name, shown in the startup error. */
@@ -27,9 +27,7 @@ export async function verifyServices(checks: ServiceCheck[]): Promise<void> {
 
     const detail = failures
       .map(({ name, reason }) => {
-        const message =
-          reason instanceof Error ? reason.message : String(reason);
-        return `  - ${name}: ${message}`;
+        return `  - ${name}: ${messageOf(reason)}`;
       })
       .join("\n");
     throw new Error(
