@@ -65,6 +65,8 @@ export async function getCache<T>(name: CacheKey): Promise<T | null> {
 /**
  * Writes both tiers under the entry's fixed TTLs. A Redis failure is logged, not
  * thrown: the memo still holds the fresh value for this process.
+ *
+ * Exported for the cache's own tests; callers go through getOrSetCache.
  */
 export async function setCache<T>(name: CacheKey, data: T): Promise<void> {
   const entry = CACHE_ENTRIES[name];

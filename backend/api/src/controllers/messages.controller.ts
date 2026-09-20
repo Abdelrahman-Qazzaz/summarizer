@@ -62,6 +62,7 @@ const log = logger.child({ controller: "messages" });
  */
 
 const MAX_CONTEXT_MESSAGES = 50;
+/** Exported for the tests that build oversized turns against it. */
 export const MAX_CONTEXT_CHARS = 100_000;
 export const MAX_RESPONSE_TOKENS = 4_000;
 

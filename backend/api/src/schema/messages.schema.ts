@@ -5,7 +5,7 @@ import {
   validateChatModelOutput,
 } from "../../../shared/ai/ai_chat_client";
 
-export const MAX_MESSAGE_LENGTH = 50_000;
+const MAX_MESSAGE_LENGTH = 50_000;
 
 /**
  * Images one turn may carry. Every attachment is handed to the model as vision

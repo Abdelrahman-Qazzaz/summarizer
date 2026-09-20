@@ -458,7 +458,7 @@ export async function findMessagePatchContext(
   };
 }
 
-export async function createMessage(
+async function createMessage(
   message: {
     role: "user" | "assistant";
     content: string;

@@ -23,6 +23,9 @@ const LOCK_NAME = "storage-sweep";
  *
  * Returns how many were removed, or undefined when another process holds the
  * lock. Anything beyond the batch is next run's.
+ *
+ * Exported for tests that drive one batch; production runs it via
+ * scheduleSweeper below.
  */
 export async function sweepUnusedObjects() {
   return withAdvisoryLock(LOCK_NAME, async () => {

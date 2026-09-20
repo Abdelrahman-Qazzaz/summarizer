@@ -2,6 +2,7 @@ import { WorkOS } from "@workos-inc/node";
 import { decode } from "hono/jwt";
 import { getApiEnv } from "../../../shared/env";
 
+/** Exported so the auth tests can assert the URL WorkOS is handed. */
 export const WORKOS_REDIRECT_URI = new URL(
   "/auth/callback",
   getApiEnv().API_BASE_URL,

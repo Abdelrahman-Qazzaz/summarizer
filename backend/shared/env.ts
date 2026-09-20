@@ -58,6 +58,7 @@ export const baseEnvSchema = z.object({
   NODE_ENV: nodeEnvSchema,
 });
 
+/** Exported for its own unit test; the API reads env through getApiEnv. */
 export const apiEnvSchema = baseEnvSchema.extend({
   SESSION_SECRET: z.string().min(32),
   WORKOS_API_KEY: z.string().min(1),
