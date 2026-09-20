@@ -124,6 +124,13 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /** patchSource bound to one staged source, for the length of its upload. */
+  const patcherFor = useCallback(
+    (draftKey: string, localId: string) => (fields: Partial<StagedSource>) =>
+      patchSource(draftKey, localId, fields),
+    [patchSource],
+  );
+
   useTranscriptWatcher(drafts, patchBySourceUploadId);
 
   const appendSources = useCallback(
@@ -138,8 +145,7 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
 
   const runFileUpload = useCallback(
     async (draftKey: string, localId: string, file: File, kind: FileKind) => {
-      const patch = (fields: Partial<StagedSource>) =>
-        patchSource(draftKey, localId, fields);
+      const patch = patcherFor(draftKey, localId);
 
       try {
         if (kind === "image") {
@@ -190,13 +196,12 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [patchSource],
+    [patcherFor],
   );
 
   const runYoutubeFetch = useCallback(
     async (draftKey: string, localId: string, url: string) => {
-      const patch = (fields: Partial<StagedSource>) =>
-        patchSource(draftKey, localId, fields);
+      const patch = patcherFor(draftKey, localId);
       try {
         patch({ status: "uploading" });
         const queued = await requestYoutubeTranscript(
@@ -214,7 +219,7 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [patchSource],
+    [patcherFor],
   );
 
   const addFiles = useCallback(
@@ -227,32 +232,30 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
           (source) => source.kind === "image",
         ).length;
 
+      const reject = (message: string) => {
+        toast.show({ kind: "error", message });
+        return false;
+      };
+      // Toasts what it turns away, and spends an image slot on what it keeps.
+      const accepts = (file: File, kind: FileKind | null): kind is FileKind => {
+        if (!kind)
+          return reject(`${file.name} isn't an image, audio or video file.`);
+        if (kind !== "image") return true;
+        if (imageSlots <= 0)
+          return reject(
+            `A message carries up to ${MAX_IMAGES_PER_MESSAGE} images.`,
+          );
+        if (file.size > MAX_IMAGE_BYTES)
+          return reject(
+            `${file.name} is ${formatBytes(file.size)} — images stop at ${formatBytes(MAX_IMAGE_BYTES)}.`,
+          );
+        imageSlots -= 1;
+        return true;
+      };
+
       for (const file of files) {
         const kind = classifyFile(file);
-        if (!kind) {
-          toast.show({
-            kind: "error",
-            message: `${file.name} isn't an image, audio or video file.`,
-          });
-          continue;
-        }
-        if (kind === "image") {
-          if (imageSlots <= 0) {
-            toast.show({
-              kind: "error",
-              message: `A message carries up to ${MAX_IMAGES_PER_MESSAGE} images.`,
-            });
-            continue;
-          }
-          if (file.size > MAX_IMAGE_BYTES) {
-            toast.show({
-              kind: "error",
-              message: `${file.name} is ${formatBytes(file.size)} — images stop at ${formatBytes(MAX_IMAGE_BYTES)}.`,
-            });
-            continue;
-          }
-          imageSlots -= 1;
-        }
+        if (!accepts(file, kind)) continue;
 
         accepted.push({
           source: stageSource({
