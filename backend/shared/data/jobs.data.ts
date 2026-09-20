@@ -238,12 +238,17 @@ export async function createYoutubeAudioJob(
  * Deletes a job's audio attachment, and with it the job, unless it's linked to
  * a message or reserved for a response. Marks the audio, and the job's
  * caption text if it still has one, as deleted in the same transaction.
- * Returns null when nothing was deleted.
+ * Returns null when nothing was deleted, and otherwise says whether its fetch
+ * could still write the objects the caller is about to remove.
  */
 export async function deleteAudioJob(userId: string, audioUploadId: string) {
   return db.transaction(async (tx) => {
     const [job] = await tx
-      .select({ captionUploadId: AudioTranscriptionJobs.captionUploadId })
+      .select({
+        captionUploadId: AudioTranscriptionJobs.captionUploadId,
+        source: AudioTranscriptionJobs.source,
+        status: AudioTranscriptionJobs.status,
+      })
       .from(AudioTranscriptionJobs)
       .where(eq(AudioTranscriptionJobs.audioUploadId, audioUploadId));
 
@@ -261,7 +266,14 @@ export async function deleteAudioJob(userId: string, audioUploadId: string) {
         tx,
       );
     }
-    return { captionUploadId };
+    // A youtube fetch runs in another process that nothing here can stop, so
+    // until the job reaches a terminal status its objects may still land.
+    const fetchMayStillWrite =
+      job?.source === "youtube" &&
+      job.status !== "completed" &&
+      job.status !== "failed";
+
+    return { captionUploadId, fetchMayStillWrite };
   });
 }
 

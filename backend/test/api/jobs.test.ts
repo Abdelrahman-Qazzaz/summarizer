@@ -85,7 +85,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFindAudioJob.mockResolvedValue(audioJob);
   mockFindTranscripts.mockResolvedValue(new Map());
-  mockDeleteAudioJob.mockResolvedValue({ captionUploadId: null });
+  mockDeleteAudioJob.mockResolvedValue({
+    captionUploadId: null,
+    fetchMayStillWrite: false,
+  });
   mockReleaseObjects.mockResolvedValue(undefined);
 });
 
@@ -233,7 +236,10 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
   // transaction that marked it deleted.
   it("deletes the job and releases its audio and caption objects", async () => {
     const captionUploadId = "650e8400-e29b-41d4-a716-446655440111";
-    mockDeleteAudioJob.mockResolvedValueOnce({ captionUploadId });
+    mockDeleteAudioJob.mockResolvedValueOnce({
+      captionUploadId,
+      fetchMayStillWrite: false,
+    });
 
     const res = await (
       await createApp()
@@ -266,6 +272,25 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
     expect(mockReleaseObjects).toHaveBeenCalledWith("user_01OWNER", [
       { kind: "audio", uploadId: audioUploadId },
     ]);
+  });
+
+  // The fetcher is another process; deleting the job doesn't stop it, so its
+  // objects stay on record for the sweep rather than being released now.
+  it("releases nothing while a youtube fetch could still write", async () => {
+    mockDeleteAudioJob.mockResolvedValueOnce({
+      captionUploadId: "650e8400-e29b-41d4-a716-446655440111",
+      fetchMayStillWrite: true,
+    });
+
+    const res = await (
+      await createApp()
+    ).request(`http://localhost/jobs/transcribe/${audioUploadId}`, {
+      method: "DELETE",
+      headers: await authedHeaders("user_01OWNER"),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockReleaseObjects).not.toHaveBeenCalled();
   });
 
   it("preserves a source that is linked to a message", async () => {

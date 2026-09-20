@@ -444,11 +444,55 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       expect(await statusOf(a)).toBe("confirmed");
     });
 
+    it.each([
+      ["queued", true],
+      ["processing", true],
+      ["completed", false],
+      ["failed", false],
+    ])(
+      "reports whether a %s youtube fetch could still write",
+      async (status, fetchMayStillWrite) => {
+        const audioUploadId = await addJob(randomUUID());
+        await db
+          .update(AudioTranscriptionJobs)
+          .set({ status: status as "queued" })
+          .where(
+            sql`${AudioTranscriptionJobs.audioUploadId} = ${audioUploadId}`,
+          );
+
+        expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
+          fetchMayStillWrite,
+        });
+      },
+    );
+
+    // Nothing writes a direct upload's objects after it exists.
+    it("reports that a queued direct upload's objects are settled", async () => {
+      const audioUploadId = randomUUID();
+      await createAudioJob({
+        audioUploadId: audioUploadId as never,
+        captionUploadId: null,
+        userId,
+        source: "audio",
+        fileName: "clip.webm",
+        mimeType: "audio/webm",
+        sizeBytes: 1,
+        transcriptModelId: "nova-3",
+      });
+      await recordConfirmedObjects(userId, [
+        { kind: "audio", uploadId: audioUploadId },
+      ]);
+
+      expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
+        fetchMayStillWrite: false,
+      });
+    });
+
     it("marks a deleted job's audio and caption text", async () => {
       const captionUploadId = randomUUID();
       const audioUploadId = await addJob(captionUploadId);
 
-      expect(await deleteAudioJob(userId, audioUploadId)).toEqual({
+      expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
         captionUploadId,
       });
       expect(await statusOf(audioUploadId)).toBe("deleted");
@@ -458,7 +502,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     it("marks only the audio of a job without caption text", async () => {
       const audioUploadId = await addJob(null);
 
-      expect(await deleteAudioJob(userId, audioUploadId)).toEqual({
+      expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
         captionUploadId: null,
       });
       expect(await statusOf(audioUploadId)).toBe("deleted");
