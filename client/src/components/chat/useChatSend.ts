@@ -16,6 +16,48 @@ import type { PendingTurn } from "./types";
 /** Deltas arrive faster than a long reply can be re-parsed; batch them. */
 const FLUSH_INTERVAL_MS = 80;
 
+/**
+ * Collects streamed deltas, handing the text so far to `onFlush` at most once
+ * per interval. `stop` drops a flush that is still pending, for the caller
+ * that is about to write the finished text itself.
+ */
+function createDeltaBuffer(onFlush: (text: string) => void) {
+  let text = "";
+  let timer: number | null = null;
+
+  return {
+    get text() {
+      return text;
+    },
+    push(delta: string) {
+      text += delta;
+      if (timer !== null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        onFlush(text);
+      }, FLUSH_INTERVAL_MS);
+    },
+    stop() {
+      if (timer !== null) window.clearTimeout(timer);
+    },
+  };
+}
+
+/** The record without `keys`, or the record itself when it had none of them. */
+function without<T>(
+  record: Record<string, T>,
+  ...keys: (string | null | undefined)[]
+): Record<string, T> {
+  const present = keys.filter(
+    (key): key is string => key != null && key in record,
+  );
+  if (present.length === 0) return record;
+
+  const next = { ...record };
+  for (const key of present) delete next[key];
+  return next;
+}
+
 function messageAttachmentsOf(
   sources: StagedSource[],
 ): MessageAttachmentInput[] {
@@ -135,12 +177,7 @@ export function useChatSend() {
   const [sendingKeys, setSendingKeys] = useState<Record<string, boolean>>({});
 
   const dropPending = useCallback((conversationId: string) => {
-    setPendingTurns((current) => {
-      if (!(conversationId in current)) return current;
-      const next = { ...current };
-      delete next[conversationId];
-      return next;
-    });
+    setPendingTurns((current) => without(current, conversationId));
   }, []);
 
   const send = useCallback(
@@ -173,20 +210,14 @@ export function useChatSend() {
           [target]: toPendingTurn(input.content, input.sources),
         }));
 
-        let buffered = "";
         let storedAssistantId: string | null = null;
-        let flushTimer: number | null = null;
-        const flush = () => {
-          flushTimer = null;
+        const deltas = createDeltaBuffer((assistantContent) =>
           setPendingTurns((current) => {
             const turn = current[target];
             if (!turn) return current;
-            return {
-              ...current,
-              [target]: { ...turn, assistantContent: buffered },
-            };
-          });
-        };
+            return { ...current, [target]: { ...turn, assistantContent } };
+          }),
+        );
 
         try {
           await streamMessage(
@@ -198,19 +229,14 @@ export function useChatSend() {
               lastMessageId: input.lastMessageId,
             },
             {
-              onDelta: (delta) => {
-                buffered += delta;
-                if (flushTimer === null) {
-                  flushTimer = window.setTimeout(flush, FLUSH_INTERVAL_MS);
-                }
-              },
+              onDelta: (delta) => deltas.push(delta),
               onDone: (lastMessageId) => {
                 storedAssistantId = lastMessageId;
               },
             },
           );
         } finally {
-          if (flushTimer !== null) window.clearTimeout(flushTimer);
+          deltas.stop();
         }
 
         // Write the finished turn into the cache rather than refetching the
@@ -230,7 +256,7 @@ export function useChatSend() {
                 input,
                 target,
                 storedAssistantId ?? `local:${crypto.randomUUID()}`,
-                buffered,
+                deltas.text,
               ),
             ],
           }),
@@ -263,13 +289,9 @@ export function useChatSend() {
               : errorMessage(error, "The message didn't send."),
         });
       } finally {
-        const finishedKey = conversationId;
-        setSendingKeys((current) => {
-          const next = { ...current };
-          delete next[startedKey];
-          if (finishedKey) delete next[finishedKey];
-          return next;
-        });
+        setSendingKeys((current) =>
+          without(current, startedKey, conversationId),
+        );
       }
     },
     [dropPending, queryClient, toast],
