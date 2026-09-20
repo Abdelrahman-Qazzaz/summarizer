@@ -8,6 +8,7 @@ import {
 import { checkUpload, startUpload } from "../../../shared/uploads";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { CTX_KEYS } from "../../../shared/keys";
+import { ALREADY_CONFIRMED, uploadRejection } from "../utils/uploadRejection";
 import type { UploadId } from "../../../shared/types";
 
 /**
@@ -39,6 +40,13 @@ export async function handleAudioUploadUrl(c: Context) {
  * minted for an image — or someone else's — is a 404. A rejected upload is
  * answered and left as it is; the sweep removes it.
  */
+const AUDIO_WORDING = {
+  noun: "audio",
+  wrongType: (contentType: string) =>
+    `Expected an audio file, got: ${contentType || "unknown"}`,
+  tooLarge: "Audio file is too large",
+};
+
 export async function handleAudioConfirm(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const audioUploadId: UploadId = c.get(CTX_KEYS.audioUploadId);
@@ -51,29 +59,8 @@ export async function handleAudioConfirm(c: Context) {
     uploadId: audioUploadId,
   });
   if (!upload.ok) {
-    switch (upload.reason) {
-      case "missing":
-        return c.json({ message: "No uploaded audio to confirm" }, 404);
-      case "already-confirmed":
-        return c.json({ message: "This upload was already confirmed" }, 409);
-      case "expired":
-        return c.json(
-          { message: "This upload has expired; upload the file again" },
-          410,
-        );
-      case "wrong-type":
-        return c.json(
-          {
-            message: `Expected an audio file, got: ${upload.contentType || "unknown"}`,
-          },
-          400,
-        );
-      case "too-large":
-        return c.json(
-          { message: "Audio file is too large", maxBytes: upload.maxBytes },
-          413,
-        );
-    }
+    const [body, status] = uploadRejection(upload, AUDIO_WORDING);
+    return c.json(body, status);
   }
 
   const queued = await queueAudioTranscription({
@@ -86,7 +73,7 @@ export async function handleAudioConfirm(c: Context) {
     transcriptModelId,
   });
   if (!queued) {
-    return c.json({ message: "This upload was already confirmed" }, 409);
+    return c.json({ message: ALREADY_CONFIRMED }, 409);
   }
 
   return c.json({

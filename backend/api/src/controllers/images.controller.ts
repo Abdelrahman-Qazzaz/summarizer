@@ -12,6 +12,7 @@ import {
   resolveImages,
 } from "../../../shared/data/images.data";
 import { CTX_KEYS } from "../../../shared/keys";
+import { ALREADY_CONFIRMED, uploadRejection } from "../utils/uploadRejection";
 import type { UploadId } from "../../../shared/types";
 
 /**
@@ -44,6 +45,12 @@ export async function handleImageUploadUrl(c: Context) {
  * The upload must be pending in the ledger for this user as an image, so an
  * id minted for audio is a 404. A rejected upload is left for the sweep.
  */
+const IMAGE_WORDING = {
+  noun: "image",
+  wrongType: () => "File must be an image",
+  tooLarge: "Image is too large",
+};
+
 export async function handleImageConfirm(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const imageUploadId: UploadId = c.get(CTX_KEYS.imageUploadId);
@@ -52,24 +59,8 @@ export async function handleImageConfirm(c: Context) {
   const image = { kind: "image", uploadId: imageUploadId } as const;
   const upload = await checkUpload(userId, image);
   if (!upload.ok) {
-    switch (upload.reason) {
-      case "missing":
-        return c.json({ message: "No uploaded image to confirm" }, 404);
-      case "already-confirmed":
-        return c.json({ message: "This upload was already confirmed" }, 409);
-      case "expired":
-        return c.json(
-          { message: "This upload has expired; upload the file again" },
-          410,
-        );
-      case "wrong-type":
-        return c.json({ message: "File must be an image" }, 400);
-      case "too-large":
-        return c.json(
-          { message: "Image is too large", maxBytes: upload.maxBytes },
-          413,
-        );
-    }
+    const [body, status] = uploadRejection(upload, IMAGE_WORDING);
+    return c.json(body, status);
   }
 
   const signedUrl = await createSignedUrl(userId, image);
@@ -87,7 +78,7 @@ export async function handleImageConfirm(c: Context) {
     ),
   );
   if (!confirmed) {
-    return c.json({ message: "This upload was already confirmed" }, 409);
+    return c.json({ message: ALREADY_CONFIRMED }, 409);
   }
 
   return c.json({
