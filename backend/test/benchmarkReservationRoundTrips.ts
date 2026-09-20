@@ -16,6 +16,7 @@ import {
   releaseAttachmentReservations,
 } from "../shared/data/attachments.data";
 import { CLAIM_LEASE_MS } from "../shared/data/conversations.data";
+import { msSince } from "../shared/preparationMetrics";
 
 const userId = `perf-reservation-${randomUUID()}`;
 const attachmentIds = [randomUUID(), randomUUID()];
@@ -25,7 +26,7 @@ async function measure(operation: string, run: () => Promise<unknown>) {
   await run();
   samples.push({
     operation,
-    durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    durationMs: msSince(startedAt),
   });
 }
 const client = postgres(getBaseEnv().DATABASE_URL, {

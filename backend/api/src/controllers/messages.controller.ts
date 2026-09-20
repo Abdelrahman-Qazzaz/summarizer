@@ -28,6 +28,7 @@ import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger } from "../../../shared/logger";
 import {
   measurePreparation,
+  roundMs,
   withPreparationMetrics,
 } from "../../../shared/preparationMetrics";
 import {
@@ -520,12 +521,11 @@ export async function handleCreateMessage(c: Context) {
             firstTokenRecorded = true;
             const firstTokenAt = performance.now();
             preparationLog.info("Message first token generated", {
-              modelStartedAfterMs:
-                Math.round((modelStartedAt - preparationStartedAt) * 100) / 100,
-              modelTimeToFirstTokenMs:
-                Math.round((firstTokenAt - modelStartedAt) * 100) / 100,
-              firstTokenAfterMs:
-                Math.round((firstTokenAt - preparationStartedAt) * 100) / 100,
+              modelStartedAfterMs: roundMs(
+                modelStartedAt - preparationStartedAt,
+              ),
+              modelTimeToFirstTokenMs: roundMs(firstTokenAt - modelStartedAt),
+              firstTokenAfterMs: roundMs(firstTokenAt - preparationStartedAt),
             });
           }
           events.push("delta", { delta });

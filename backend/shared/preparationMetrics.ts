@@ -10,6 +10,15 @@ type PreparationContext = {
 
 const preparationContext = new AsyncLocalStorage<PreparationContext>();
 
+/**
+ * Durations are reported to two decimals throughout: finer than that is noise
+ * from the timer itself, and coarser loses the sub-millisecond steps.
+ */
+export const roundMs = (ms: number) => Math.round(ms * 100) / 100;
+
+/** Milliseconds since a `performance.now()` mark, rounded the same way. */
+export const msSince = (mark: number) => roundMs(performance.now() - mark);
+
 export function withPreparationMetrics<T>(
   context: PreparationContext,
   run: () => T,
@@ -45,10 +54,9 @@ export async function measurePreparation<T>(
       parentOperationId: context.parentOperationId,
       promiseAllId,
       outcome,
-      durationMs: Math.round((finishedAt - startedAt) * 100) / 100,
-      startOffsetMs: Math.round((startedAt - context.startedAt) * 100) / 100,
-      completedAfterMs:
-        Math.round((finishedAt - context.startedAt) * 100) / 100,
+      durationMs: roundMs(finishedAt - startedAt),
+      startOffsetMs: roundMs(startedAt - context.startedAt),
+      completedAfterMs: roundMs(finishedAt - context.startedAt),
       ...details,
     });
   }

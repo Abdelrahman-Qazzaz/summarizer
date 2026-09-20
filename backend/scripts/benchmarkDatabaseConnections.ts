@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { getBaseEnv } from "../shared/env";
+import { msSince } from "../shared/preparationMetrics";
 
 type BenchmarkConfiguration = {
   fetch_types: boolean;
@@ -30,8 +31,7 @@ async function benchmark(name: string, configuration: BenchmarkConfiguration) {
       }
       dispatches.set(Number(match[1]), {
         connectionId,
-        dispatchedAfterMs:
-          Math.round((performance.now() - startedAt) * 100) / 100,
+        dispatchedAfterMs: msSince(startedAt),
       });
     },
   } as Parameters<typeof postgres>[1]);
@@ -42,7 +42,7 @@ async function benchmark(name: string, configuration: BenchmarkConfiguration) {
       `select ${queryId}::integer as value /* database_connection_benchmark_${queryId} */`,
     );
     assert.equal(result.value, queryId);
-    return Math.round((performance.now() - queryStartedAt) * 100) / 100;
+    return msSince(queryStartedAt);
   }
 
   try {
@@ -52,8 +52,7 @@ async function benchmark(name: string, configuration: BenchmarkConfiguration) {
         runQuery(index + 1),
       ),
     );
-    const coldBatchDurationMs =
-      Math.round((performance.now() - coldBatchStartedAt) * 100) / 100;
+    const coldBatchDurationMs = msSince(coldBatchStartedAt);
 
     const warmBatchStartedAt = performance.now();
     const warmQueryDurationsMs = await Promise.all(
@@ -61,8 +60,7 @@ async function benchmark(name: string, configuration: BenchmarkConfiguration) {
         runQuery(index + 101),
       ),
     );
-    const warmBatchDurationMs =
-      Math.round((performance.now() - warmBatchStartedAt) * 100) / 100;
+    const warmBatchDurationMs = msSince(warmBatchStartedAt);
 
     const sequentialQueryDurationsMs = [];
     for (let index = 0; index < 3; index += 1) {
