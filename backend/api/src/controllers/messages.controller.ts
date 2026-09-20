@@ -147,6 +147,20 @@ function containsImageInput(turns: readonly ChatTurn[]) {
   );
 }
 
+/**
+ * A history turn as the model takes it. Images only ever ride on user turns,
+ * so a turn without them keeps whichever role it had.
+ */
+function toHistoryTurn(
+  role: ChatTurn["role"],
+  content: string,
+  imageUrls: readonly string[],
+): ChatTurn {
+  return imageUrls.length > 0
+    ? buildUserTurn(content, imageUrls)
+    : { role, content };
+}
+
 function assembleCreateMessageContext(
   history: readonly CreateMessageHistory[],
   newTurn: ChatTurn,
@@ -158,11 +172,7 @@ function assembleCreateMessageContext(
       message.content,
       message.transcriptContents,
     );
-    turns.unshift(
-      message.imageUrls.length > 0
-        ? buildUserTurn(content, message.imageUrls)
-        : { role: message.role, content },
-    );
+    turns.unshift(toHistoryTurn(message.role, content, message.imageUrls));
   }
 
   return turns;
@@ -252,11 +262,7 @@ async function assembleConversationContext(
       return url ? [url] : [];
     });
 
-    turns.unshift(
-      imageUrls.length > 0
-        ? buildUserTurn(content, imageUrls)
-        : { role: message.role, content },
-    );
+    turns.unshift(toHistoryTurn(message.role, content, imageUrls));
   }
 
   return turns;
