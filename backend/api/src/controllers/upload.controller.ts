@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { createYoutubeAudioJob } from "../../../shared/data/jobs.data";
-import { queueAudioTranscription } from "../../../shared/audioTranscription";
+import {
+  publishOrFail,
+  queueAudioTranscription,
+} from "../../../shared/audioTranscription";
 import { checkUpload, startUpload } from "../../../shared/uploads";
 import { mq } from "../../../shared/message-queue/messageQueue";
 import { CTX_KEYS } from "../../../shared/keys";
@@ -123,13 +126,17 @@ export async function handleYoutubeUpload(c: Context) {
     transcriptModelId,
   });
 
-  await mq.publish(mq.queues.YT_FETCH, {
-    audioUploadId,
-    captionUploadId,
-    url,
-    userId,
-    useCaptionsIfAvailable,
-  });
+  // A failed publish would leave the job queued with no fetcher coming for
+  // it; failing it puts that in front of the user instead.
+  await publishOrFail(audioUploadId, () =>
+    mq.publish(mq.queues.YT_FETCH, {
+      audioUploadId,
+      captionUploadId,
+      url,
+      userId,
+      useCaptionsIfAvailable,
+    }),
+  );
   return c.json({
     message: "Queued",
     audioUploadId,

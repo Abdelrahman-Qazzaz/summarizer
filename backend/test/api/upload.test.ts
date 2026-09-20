@@ -4,6 +4,8 @@ const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 
 const {
   mockInsert,
+  mockUpdate,
+  mockUpdateSet,
   mockSendEvent,
   mockCreateUploadUrl,
   mockInspectUploadedObject,
@@ -11,6 +13,8 @@ const {
   ledger,
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
+  mockUpdate: vi.fn(),
+  mockUpdateSet: vi.fn(),
   mockSendEvent: vi.fn(),
   mockCreateUploadUrl: vi.fn(),
   mockInspectUploadedObject: vi.fn(),
@@ -49,6 +53,7 @@ vi.mock("../../shared/ai/ai_transcribe_client", async (importActual) => {
 vi.mock("../../shared/db", async () => ({
   db: {
     insert: mockInsert,
+    update: mockUpdate,
     // Job writes run in (nested) transactions; run them against the same
     // insert mock so those writes are recorded like plain ones.
     transaction: (run: (tx: unknown) => unknown) =>
@@ -207,6 +212,8 @@ describe("POST /upload/audio/confirm", () => {
     vi.clearAllMocks();
     mockValues = vi.fn().mockResolvedValue(undefined);
     mockInsert.mockReturnValue({ values: mockValues });
+    mockUpdateSet.mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    mockUpdate.mockReturnValue({ set: mockUpdateSet });
     mockSendEvent.mockResolvedValue(undefined);
     mockIsValidTranscribeModel.mockResolvedValue(true);
     ledger.findLedgerEntry.mockResolvedValue({
@@ -466,6 +473,19 @@ describe("POST /upload/audio/confirm", () => {
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
+  // Otherwise the job would sit queued with no worker ever coming for it.
+  it("fails the job when its queue publish doesn't go through", async () => {
+    mockSendEvent.mockRejectedValueOnce(new Error("broker down"));
+
+    const res = await postJson("/upload/audio/confirm", confirmBody());
+
+    expect(res.status).toBe(500);
+    expect(mockUpdateSet).toHaveBeenCalledWith({
+      status: "failed",
+      error: "Could not be queued for processing",
+    });
+  });
+
   it("fails loudly and queues nothing when the job can't be written", async () => {
     mockValues.mockRejectedValueOnce(new Error("connection reset"));
 
@@ -485,6 +505,8 @@ describe("POST /upload/youtube", () => {
     vi.clearAllMocks();
     mockValues = vi.fn().mockResolvedValue(undefined);
     mockInsert.mockReturnValue({ values: mockValues });
+    mockUpdateSet.mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    mockUpdate.mockReturnValue({ set: mockUpdateSet });
     mockSendEvent.mockResolvedValue(undefined);
     mockIsValidTranscribeModel.mockResolvedValue(true);
   });
@@ -565,6 +587,27 @@ describe("POST /upload/youtube", () => {
       url: YT_URL,
       userId: "user_01",
       useCaptionsIfAvailable: false,
+    });
+  });
+
+  it("fails the job when its fetch publish doesn't go through", async () => {
+    mockSendEvent.mockRejectedValueOnce(new Error("broker down"));
+
+    const res = await (
+      await createApp()
+    ).request("http://localhost/upload/youtube", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: await sessionCookieHeader("user_01"),
+      },
+      body: JSON.stringify({ youtubeUrl: YT_URL }),
+    });
+
+    expect(res.status).toBe(500);
+    expect(mockUpdateSet).toHaveBeenCalledWith({
+      status: "failed",
+      error: "Could not be queued for processing",
     });
   });
 

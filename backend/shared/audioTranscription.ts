@@ -1,4 +1,4 @@
-import { createAudioJob } from "./data/jobs.data";
+import { createAudioJob, failAudioJobById } from "./data/jobs.data";
 import { mq } from "./message-queue/messageQueue";
 import type { UploadId } from "./types";
 import { confirmCheckedUpload } from "./uploads";
@@ -9,8 +9,9 @@ import { confirmCheckedUpload } from "./uploads";
  * upload, so returns false, queueing nothing, when another confirm got there
  * first.
  *
- * The publish is not part of that transaction: a publish that fails leaves a
- * queued row that nothing will pick up.
+ * The publish is not part of that transaction, so a failed publish would
+ * leave a queued job no worker will ever take. Failing the job says so
+ * instead, and the error reaches the user on the source.
  */
 export async function queueAudioTranscription(job: {
   audioUploadId: UploadId;
@@ -28,6 +29,25 @@ export async function queueAudioTranscription(job: {
   );
   if (!confirmed) return false;
 
-  await mq.publish(mq.queues.TRANSCRIBE, { audioUploadId: job.audioUploadId });
+  await publishOrFail(job.audioUploadId, () =>
+    mq.publish(mq.queues.TRANSCRIBE, { audioUploadId: job.audioUploadId }),
+  );
   return true;
+}
+
+/**
+ * Publishes the work a job is waiting on, and fails the job if that publish
+ * doesn't go through. It can't cover a process that dies between the two:
+ * a job left queued past its worker's reach is a separate problem.
+ */
+export async function publishOrFail(
+  audioUploadId: UploadId,
+  publish: () => Promise<unknown>,
+) {
+  try {
+    await publish();
+  } catch (error) {
+    await failAudioJobById(audioUploadId, "Could not be queued for processing");
+    throw error;
+  }
 }
