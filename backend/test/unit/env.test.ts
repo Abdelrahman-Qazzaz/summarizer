@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { apiEnvSchema, workerEnvSchema } from "../../shared/env";
+import { apiEnvSchema, baseEnvSchema } from "../../shared/env";
 
 const validBase = {
   DATABASE_URL: "postgres://localhost:5432/test",
@@ -66,15 +66,15 @@ describe("apiEnvSchema", () => {
   );
 });
 
-describe("workerEnvSchema", () => {
-  it("accepts valid worker env", () => {
-    const result = workerEnvSchema.safeParse(validBase);
+describe("baseEnvSchema", () => {
+  it("accepts a valid base env — all the worker needs", () => {
+    const result = baseEnvSchema.safeParse(validBase);
     expect(result.success).toBe(true);
   });
 
   it("requires the same base vars the API does", () => {
     const { MQ_URL: _omitted, ...withoutMq } = validBase;
-    const result = workerEnvSchema.safeParse(withoutMq);
+    const result = baseEnvSchema.safeParse(withoutMq);
     expect(result.success).toBe(false);
   });
 });

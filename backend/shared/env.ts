@@ -47,8 +47,8 @@ const nodeEnvSchema = z
   .enum(["development", "production", "test"])
   .default("development");
 
-/** Shared by API, worker, and Drizzle. */
-const baseEnvSchema = z.object({
+/** Shared by API, worker, and Drizzle. Exported for its own unit test. */
+export const baseEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   MQ_URL: z.string().min(1),
   SUPABASE_URL: z.string().url(),
@@ -74,16 +74,12 @@ export const apiEnvSchema = baseEnvSchema.extend({
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
 });
 
-/** The worker consumes one queue, so it needs nothing beyond the base env. */
-export const workerEnvSchema = baseEnvSchema;
-
 const drizzleEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
 });
 
 export type BaseEnv = z.infer<typeof baseEnvSchema>;
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
-export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 
 /** For `drizzle-kit` only — does not require MQ, WorkOS, etc. */
 export const drizzleEnv = parseEnv(drizzleEnvSchema, "drizzle");
@@ -98,10 +94,4 @@ let cachedApiEnv: ApiEnv | undefined;
 export function getApiEnv(): ApiEnv {
   cachedApiEnv ??= parseEnv(apiEnvSchema, "api");
   return cachedApiEnv;
-}
-
-let cachedWorkerEnv: WorkerEnv | undefined;
-export function getWorkerEnv(): WorkerEnv {
-  cachedWorkerEnv ??= parseEnv(workerEnvSchema, "worker");
-  return cachedWorkerEnv;
 }
