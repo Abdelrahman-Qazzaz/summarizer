@@ -49,35 +49,28 @@ type MessageCursor = Pick<
   "id" | "role" | "createdAt"
 >;
 
-function messageIsAfter(cursor: MessageCursor) {
+/**
+ * Messages are ordered by (createdAt, role, id), so a cursor comparison has to
+ * walk that tuple rather than compare one column. `side` picks the direction:
+ * `gt` for what follows the cursor, `lt` for what precedes it.
+ */
+function messageIsOn(side: typeof gt | typeof lt, cursor: MessageCursor) {
   return or(
-    gt(ChatMessages.createdAt, cursor.createdAt),
+    side(ChatMessages.createdAt, cursor.createdAt),
     and(
       eq(ChatMessages.createdAt, cursor.createdAt),
-      gt(ChatMessages.role, cursor.role),
+      side(ChatMessages.role, cursor.role),
     ),
     and(
       eq(ChatMessages.createdAt, cursor.createdAt),
       eq(ChatMessages.role, cursor.role),
-      gt(ChatMessages.id, cursor.id),
+      side(ChatMessages.id, cursor.id),
     ),
   );
 }
 
-function messageIsBefore(cursor: MessageCursor) {
-  return or(
-    lt(ChatMessages.createdAt, cursor.createdAt),
-    and(
-      eq(ChatMessages.createdAt, cursor.createdAt),
-      lt(ChatMessages.role, cursor.role),
-    ),
-    and(
-      eq(ChatMessages.createdAt, cursor.createdAt),
-      eq(ChatMessages.role, cursor.role),
-      lt(ChatMessages.id, cursor.id),
-    ),
-  );
-}
+const messageIsAfter = (cursor: MessageCursor) => messageIsOn(gt, cursor);
+const messageIsBefore = (cursor: MessageCursor) => messageIsOn(lt, cursor);
 
 export type MessageRow = Pick<
   typeof ChatMessages.$inferSelect,
