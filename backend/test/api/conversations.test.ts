@@ -15,7 +15,7 @@ const {
   mockDelete,
   mockDeleteWhere,
   mockDeleteReturning,
-  mockReleaseObjects,
+  mockDeleteObjects,
   mockImageWhere,
   mockImageRows,
 } = vi.hoisted(() => ({
@@ -34,7 +34,7 @@ const {
   mockDelete: vi.fn(),
   mockDeleteWhere: vi.fn(),
   mockDeleteReturning: vi.fn(),
-  mockReleaseObjects: vi.fn(),
+  mockDeleteObjects: vi.fn(),
   mockImageWhere: vi.fn(),
   mockImageRows: vi.fn(),
 }));
@@ -51,7 +51,7 @@ vi.mock("../../shared/db", async () => ({
 
 // Controllers release deleted objects through the upload module.
 vi.mock("../../shared/uploads", () => ({
-  releaseObjects: mockReleaseObjects,
+  deleteObjects: mockDeleteObjects,
 }));
 
 vi.mock("../../shared/bucket", () => ({
@@ -88,7 +88,7 @@ beforeEach(() => {
   }));
   mockImageWhere.mockImplementation(async () => mockImageRows());
   mockImageRows.mockReturnValue([]);
-  mockReleaseObjects.mockResolvedValue([]);
+  mockDeleteObjects.mockResolvedValue([]);
   mockInsert.mockImplementation(() => ({ values: mockValues }));
   mockValues.mockImplementation(() => ({ returning: mockInsertReturning }));
   mockUpdate.mockImplementation(() => ({ set: mockSet }));
@@ -297,6 +297,6 @@ describe("DELETE /conversations/:conversationId", () => {
     expect(await res.json()).toEqual({
       message: "A response is already in progress",
     });
-    expect(mockReleaseObjects).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
   });
 });

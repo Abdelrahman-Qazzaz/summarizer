@@ -15,7 +15,7 @@ vi.mock("../../shared/db", async () => ({
 import {
   claimConversationTurn,
   completeConversationTurn,
-  releaseConversationTurn,
+  unclaimConversationTurn,
 } from "../../shared/data/conversations.data";
 
 beforeEach(() => {
@@ -65,7 +65,7 @@ describe("conversation turn claims", () => {
   });
 
   it("releases only the caller's claim token", async () => {
-    await releaseConversationTurn("user-1", "conversation-1", "claim-1");
+    await unclaimConversationTurn("user-1", "conversation-1", "claim-1");
 
     expect(mockSet).toHaveBeenCalledWith({
       activeTurnClaimToken: null,

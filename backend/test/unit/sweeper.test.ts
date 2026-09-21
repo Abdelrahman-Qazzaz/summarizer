@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockWithAdvisoryLock, mockFindLedgerEntries, mockReleaseObjects } =
+const { mockWithAdvisoryLock, mockFindLedgerEntries, mockDeleteObjects } =
   vi.hoisted(() => ({
     mockWithAdvisoryLock: vi.fn(),
     mockFindLedgerEntries: vi.fn(),
-    mockReleaseObjects: vi.fn(),
+    mockDeleteObjects: vi.fn(),
   }));
 
 vi.mock("../../shared/data/advisoryLock.data", () => ({
@@ -15,7 +15,7 @@ vi.mock("../../shared/data/storageLedger.data", () => ({
 }));
 vi.mock("../../shared/uploads", () => ({
   UPLOAD_CONFIRM_WINDOW_MS: 2 * 60 * 60 * 1000,
-  releaseObjects: mockReleaseObjects,
+  deleteObjects: mockDeleteObjects,
 }));
 
 import { scheduleSweeper, sweepUnusedObjects } from "../../shared/sweeper";
@@ -28,7 +28,7 @@ beforeEach(() => {
     async (_name: string, run: () => unknown) => run(),
   );
   mockFindLedgerEntries.mockResolvedValue([]);
-  mockReleaseObjects.mockResolvedValue(undefined);
+  mockDeleteObjects.mockResolvedValue(undefined);
 });
 
 describe("sweepUnusedObjects", () => {
@@ -58,12 +58,12 @@ describe("sweepUnusedObjects", () => {
     ]);
 
     expect(await sweepUnusedObjects()).toBe(3);
-    expect(mockReleaseObjects).toHaveBeenCalledTimes(2);
-    expect(mockReleaseObjects).toHaveBeenCalledWith("u1", [
+    expect(mockDeleteObjects).toHaveBeenCalledTimes(2);
+    expect(mockDeleteObjects).toHaveBeenCalledWith("u1", [
       { kind: "image", uploadId: "i1" },
       { kind: "text", uploadId: "t1" },
     ]);
-    expect(mockReleaseObjects).toHaveBeenCalledWith("u2", [
+    expect(mockDeleteObjects).toHaveBeenCalledWith("u2", [
       { kind: "audio", uploadId: "a1" },
     ]);
   });
@@ -73,10 +73,10 @@ describe("sweepUnusedObjects", () => {
       { userId: "u1", kind: "image", uploadId: "i1" },
       { userId: "u2", kind: "image", uploadId: "i2" },
     ]);
-    mockReleaseObjects.mockRejectedValueOnce(new Error("storage down"));
+    mockDeleteObjects.mockRejectedValueOnce(new Error("storage down"));
 
     expect(await sweepUnusedObjects()).toBe(1);
-    expect(mockReleaseObjects).toHaveBeenCalledTimes(2);
+    expect(mockDeleteObjects).toHaveBeenCalledTimes(2);
   });
 
   it("does nothing while another process holds the lock", async () => {

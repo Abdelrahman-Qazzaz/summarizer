@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockFindTerminalCaptionUpload,
   mockClearCaptionUploadId,
-  mockReleaseObjects,
+  mockDeleteObjects,
 } = vi.hoisted(() => ({
   mockFindTerminalCaptionUpload: vi.fn(),
   mockClearCaptionUploadId: vi.fn(),
-  mockReleaseObjects: vi.fn(),
+  mockDeleteObjects: vi.fn(),
 }));
 
 vi.mock("../../shared/data/jobs.data", () => ({
@@ -16,7 +16,7 @@ vi.mock("../../shared/data/jobs.data", () => ({
 }));
 
 vi.mock("../../shared/uploads", () => ({
-  releaseObjects: mockReleaseObjects,
+  deleteObjects: mockDeleteObjects,
 }));
 
 import { cleanupTerminalCaptionUpload } from "../../shared/captionUploads";
@@ -28,7 +28,7 @@ const terminalUpload = { audioUploadId, captionUploadId, userId: "user_01" };
 describe("cleanupTerminalCaptionUpload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockReleaseObjects.mockResolvedValue(undefined);
+    mockDeleteObjects.mockResolvedValue(undefined);
     mockClearCaptionUploadId.mockResolvedValue(true);
   });
 
@@ -43,7 +43,7 @@ describe("cleanupTerminalCaptionUpload", () => {
       audioUploadId,
       "user_01",
     );
-    expect(mockReleaseObjects).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
     expect(mockClearCaptionUploadId).not.toHaveBeenCalled();
   });
 
@@ -61,11 +61,11 @@ describe("cleanupTerminalCaptionUpload", () => {
       captionUploadId,
       "user_01",
     );
-    expect(mockReleaseObjects).toHaveBeenCalledWith("user_01", [
+    expect(mockDeleteObjects).toHaveBeenCalledWith("user_01", [
       { kind: "text", uploadId: captionUploadId },
     ]);
     expect(mockClearCaptionUploadId.mock.invocationCallOrder[0]).toBeLessThan(
-      mockReleaseObjects.mock.invocationCallOrder[0],
+      mockDeleteObjects.mock.invocationCallOrder[0],
     );
   });
 
@@ -76,12 +76,12 @@ describe("cleanupTerminalCaptionUpload", () => {
     await expect(cleanupTerminalCaptionUpload(audioUploadId)).resolves.toBe(
       false,
     );
-    expect(mockReleaseObjects).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
   });
 
   it("reports a storage failure", async () => {
     mockFindTerminalCaptionUpload.mockResolvedValue(terminalUpload);
-    mockReleaseObjects.mockRejectedValue(new Error("storage failed"));
+    mockDeleteObjects.mockRejectedValue(new Error("storage failed"));
 
     await expect(cleanupTerminalCaptionUpload(audioUploadId)).rejects.toThrow(
       "storage failed",

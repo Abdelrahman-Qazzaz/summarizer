@@ -5,13 +5,13 @@ const {
   mockFindUserJobsPage,
   mockDeleteAudioJob,
   mockFindTranscripts,
-  mockReleaseObjects,
+  mockDeleteObjects,
 } = vi.hoisted(() => ({
   mockFindAudioJob: vi.fn(),
   mockFindUserJobsPage: vi.fn(),
   mockDeleteAudioJob: vi.fn(),
   mockFindTranscripts: vi.fn(),
-  mockReleaseObjects: vi.fn(),
+  mockDeleteObjects: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => ({
@@ -54,7 +54,7 @@ vi.mock("../../shared/message-queue/messageQueue", () => {
 });
 
 vi.mock("../../shared/uploads", () => ({
-  releaseObjects: mockReleaseObjects,
+  deleteObjects: mockDeleteObjects,
 }));
 
 vi.mock("../../shared/bucket", () => ({
@@ -89,7 +89,7 @@ beforeEach(() => {
     captionUploadId: null,
     fetchMayStillWrite: false,
   });
-  mockReleaseObjects.mockResolvedValue(undefined);
+  mockDeleteObjects.mockResolvedValue(undefined);
 });
 
 describe("GET /jobs/summarize/:audioUploadId", () => {
@@ -254,7 +254,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
       "user_01OWNER",
       audioUploadId,
     );
-    expect(mockReleaseObjects).toHaveBeenCalledWith("user_01OWNER", [
+    expect(mockDeleteObjects).toHaveBeenCalledWith("user_01OWNER", [
       { kind: "audio", uploadId: audioUploadId },
       { kind: "text", uploadId: captionUploadId },
     ]);
@@ -269,7 +269,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(mockReleaseObjects).toHaveBeenCalledWith("user_01OWNER", [
+    expect(mockDeleteObjects).toHaveBeenCalledWith("user_01OWNER", [
       { kind: "audio", uploadId: audioUploadId },
     ]);
   });
@@ -290,7 +290,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(mockReleaseObjects).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
   });
 
   it("preserves a source that is linked to a message", async () => {
@@ -307,7 +307,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
     expect(await response.json()).toEqual({
       message: "Source is linked to a message or reserved for a response",
     });
-    expect(mockReleaseObjects).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
   });
 
   it("scopes the delete to the requesting user", async () => {
@@ -320,7 +320,7 @@ describe("DELETE /jobs/transcribe/:audioUploadId", () => {
       headers: await authedHeaders("user_01INTRUDER"),
     });
     expect(res.status).toBe(200);
-    expect(mockReleaseObjects).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
     expect(mockDeleteAudioJob).not.toHaveBeenCalled();
   });
 });

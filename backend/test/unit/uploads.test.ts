@@ -20,7 +20,7 @@ vi.mock("../../shared/data/storageLedger.data", () => ledger);
 import {
   checkUpload,
   confirmCheckedUpload,
-  releaseObjects,
+  deleteObjects,
   startUpload,
 } from "../../shared/uploads";
 
@@ -119,9 +119,9 @@ describe("confirmCheckedUpload", () => {
   });
 });
 
-describe("releaseObjects", () => {
+describe("deleteObjects", () => {
   it("deletes from storage, then forgets", async () => {
-    await releaseObjects(USER, [image]);
+    await deleteObjects(USER, [image]);
 
     expect(bucket.deleteFromBucket).toHaveBeenCalledWith(USER, [image]);
     expect(ledger.forgetObjects).toHaveBeenCalledWith(USER, [image]);
@@ -133,12 +133,12 @@ describe("releaseObjects", () => {
   it("keeps the record when storage fails, for the sweep", async () => {
     bucket.deleteFromBucket.mockRejectedValue(new Error("storage down"));
 
-    await expect(releaseObjects(USER, [image])).rejects.toThrow("storage down");
+    await expect(deleteObjects(USER, [image])).rejects.toThrow("storage down");
     expect(ledger.forgetObjects).not.toHaveBeenCalled();
   });
 
   it("does nothing for an empty list", async () => {
-    await releaseObjects(USER, []);
+    await deleteObjects(USER, []);
 
     expect(bucket.deleteFromBucket).not.toHaveBeenCalled();
   });

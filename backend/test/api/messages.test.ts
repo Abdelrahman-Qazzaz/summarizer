@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const {
   mockFindOwnedConversation,
   mockClaimConversationTurn,
-  mockReleaseConversationTurn,
+  mockUnclaimConversationTurn,
   mockFindCreateMessageHistory,
   mockPersistChatTurn,
   mockFindConversationMessages,
@@ -13,17 +13,17 @@ const {
   mockResolveImageAttachmentUrls,
   mockFindMessageTranscriptAttachments,
   mockFindTranscripts,
-  mockReleaseObjects,
+  mockDeleteObjects,
   mockValidateModel,
   mockValidateModelInput,
   mockChatAI,
   mockGenerateTitle,
-  mockReserveAttachments,
-  mockReleaseAttachmentReservations,
+  mockClaimAttachments,
+  mockUnclaimAttachments,
 } = vi.hoisted(() => ({
   mockFindOwnedConversation: vi.fn(),
   mockClaimConversationTurn: vi.fn(),
-  mockReleaseConversationTurn: vi.fn(),
+  mockUnclaimConversationTurn: vi.fn(),
   mockFindCreateMessageHistory: vi.fn(),
   mockPersistChatTurn: vi.fn(),
   mockFindConversationMessages: vi.fn(),
@@ -33,21 +33,21 @@ const {
   mockResolveImageAttachmentUrls: vi.fn(),
   mockFindMessageTranscriptAttachments: vi.fn(),
   mockFindTranscripts: vi.fn(),
-  mockReleaseObjects: vi.fn(),
+  mockDeleteObjects: vi.fn(),
   mockValidateModel: vi.fn(),
   mockValidateModelInput: vi.fn(),
   mockChatAI: vi.fn(),
   mockGenerateTitle: vi.fn(),
-  mockReserveAttachments: vi.fn(),
-  mockReleaseAttachmentReservations: vi.fn(),
+  mockClaimAttachments: vi.fn(),
+  mockUnclaimAttachments: vi.fn(),
 }));
 
 vi.mock("../../shared/data/attachments.data", async (importActual) => ({
   ...(await importActual<
     typeof import("../../shared/data/attachments.data")
   >()),
-  reserveAttachments: mockReserveAttachments,
-  releaseAttachmentReservations: mockReleaseAttachmentReservations,
+  claimAttachments: mockClaimAttachments,
+  unclaimAttachments: mockUnclaimAttachments,
 }));
 
 // The data layer is mocked directly — these tests drive the controller's
@@ -66,7 +66,7 @@ vi.mock("../../shared/data/conversations.data", async (importActual) => ({
   >()),
   findOwnedConversation: mockFindOwnedConversation,
   claimConversationTurn: mockClaimConversationTurn,
-  releaseConversationTurn: mockReleaseConversationTurn,
+  unclaimConversationTurn: mockUnclaimConversationTurn,
 }));
 
 vi.mock("../../shared/data/messages.data", async (importActual) => ({
@@ -95,7 +95,7 @@ vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
 
 // Controllers release deleted objects through the upload module.
 vi.mock("../../shared/uploads", () => ({
-  releaseObjects: mockReleaseObjects,
+  deleteObjects: mockDeleteObjects,
 }));
 
 vi.mock("../../shared/bucket", () => ({
@@ -125,10 +125,7 @@ import {
   MAX_RESPONSE_TOKENS,
 } from "../../api/src/controllers/messages.controller";
 import { authedHeaders, sessionCookieHeader } from "../helpers/session";
-import type {
-  ContextMessage,
-  CreateMessageHistory,
-} from "../../shared/data/messages.data";
+import type { CreateMessageHistory } from "../../shared/data/messages.data";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
 const messageId = "650e8400-e29b-41d4-a716-446655440111";
@@ -230,9 +227,9 @@ beforeEach(() => {
     (_userId, _conversationId, _lastMessageId, claimToken = "claim-token") =>
       Promise.resolve(claimToken),
   );
-  mockReleaseConversationTurn.mockResolvedValue(undefined);
-  mockReserveAttachments.mockResolvedValue(true);
-  mockReleaseAttachmentReservations.mockResolvedValue(undefined);
+  mockUnclaimConversationTurn.mockResolvedValue(undefined);
+  mockClaimAttachments.mockResolvedValue(true);
+  mockUnclaimAttachments.mockResolvedValue(undefined);
   mockFindCreateMessageHistory.mockResolvedValue([]);
   mockResolveImages.mockResolvedValue([]);
   mockResolveMessageImages.mockResolvedValue(new Map());
@@ -249,7 +246,7 @@ beforeEach(() => {
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
   mockGenerateTitle.mockResolvedValue("Friendly greeting");
-  mockReleaseObjects.mockResolvedValue([]);
+  mockDeleteObjects.mockResolvedValue([]);
 });
 
 describe("GET /conversations/:conversationId/messages", () => {
@@ -387,7 +384,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
   it("rejects an attachment that cannot be reserved before starting either model call", async () => {
     mockResolveImages.mockResolvedValueOnce([resolvedImage]);
-    mockReserveAttachments.mockResolvedValueOnce(false);
+    mockClaimAttachments.mockResolvedValueOnce(false);
 
     const response = await postMessage({
       messageContent: "Describe this",
@@ -398,7 +395,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(response.status).toBe(404);
     expect(mockChatAI).not.toHaveBeenCalled();
     expect(mockGenerateTitle).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -426,18 +423,18 @@ describe("POST /conversations/:conversationId/messages", () => {
       audioUploadIds: [audioUploadId],
     });
 
-    expect(mockReserveAttachments).toHaveBeenCalledWith(
+    expect(mockClaimAttachments).toHaveBeenCalledWith(
       userId,
       [imageUploadId, audioUploadId],
       requestClaimToken(),
     );
-    expect(mockReserveAttachments.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockClaimAttachments.mock.invocationCallOrder[0]).toBeLessThan(
       mockChatAI.mock.invocationCallOrder[0],
     );
-    expect(mockReserveAttachments.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockClaimAttachments.mock.invocationCallOrder[0]).toBeLessThan(
       mockGenerateTitle.mock.invocationCallOrder[0],
     );
-    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
 
     finishGeneration("Summary");
@@ -458,10 +455,8 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(await response.text()).toContain("event: error");
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(
-      requestClaimToken(),
-    );
-    expect(mockReleaseConversationTurn).toHaveBeenCalled();
+    expect(mockUnclaimAttachments).toHaveBeenCalledWith(requestClaimToken());
+    expect(mockUnclaimConversationTurn).toHaveBeenCalled();
   });
 
   it("reserves attachments while history is still loading", async () => {
@@ -477,22 +472,22 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     await vi.waitFor(() =>
-      expect(mockReserveAttachments).toHaveBeenCalledWith(
+      expect(mockClaimAttachments).toHaveBeenCalledWith(
         userId,
         [imageUploadId],
         requestClaimToken(),
       ),
     );
     expect(mockChatAI).not.toHaveBeenCalled();
-    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
     history.resolve([]);
 
     const response = await responsePromise;
     expect(await response.text()).toContain("event: done");
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
       requestClaimToken(),
     );
-    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -503,7 +498,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     const claim = Promise.withResolvers<string>();
     const reservation = Promise.withResolvers<boolean>();
     mockClaimConversationTurn.mockReturnValueOnce(claim.promise);
-    mockReserveAttachments.mockReturnValueOnce(reservation.promise);
+    mockClaimAttachments.mockReturnValueOnce(reservation.promise);
     mockFindCreateMessageHistory.mockRejectedValueOnce(
       new Error("history unavailable"),
     );
@@ -517,19 +512,19 @@ describe("POST /conversations/:conversationId/messages", () => {
     await vi.waitFor(() =>
       expect(mockFindCreateMessageHistory).toHaveBeenCalled(),
     );
-    expect(mockReserveAttachments).toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    expect(mockClaimAttachments).toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
     claim.resolve(requestClaimToken());
-    await vi.waitFor(() => expect(mockReserveAttachments).toHaveBeenCalled());
-    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mockClaimAttachments).toHaveBeenCalled());
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
     reservation.resolve(true);
 
     expect((await responsePromise).status).toBe(500);
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
       requestClaimToken(),
     );
-    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -538,7 +533,7 @@ describe("POST /conversations/:conversationId/messages", () => {
   });
 
   it("cleans up the conversation claim when reservation fails", async () => {
-    mockReserveAttachments.mockRejectedValueOnce(
+    mockClaimAttachments.mockRejectedValueOnce(
       new Error("reservation unavailable"),
     );
 
@@ -549,10 +544,10 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(response.status).toBe(500);
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
       requestClaimToken(),
     );
-    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -563,7 +558,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
   it("waits for a late reservation and releases it when claiming fails", async () => {
     const reservation = Promise.withResolvers<boolean>();
-    mockReserveAttachments.mockReturnValueOnce(reservation.promise);
+    mockClaimAttachments.mockReturnValueOnce(reservation.promise);
     mockClaimConversationTurn.mockRejectedValueOnce(
       new Error("claim unavailable"),
     );
@@ -574,21 +569,21 @@ describe("POST /conversations/:conversationId/messages", () => {
       imageUploadIds: [imageUploadId],
     });
 
-    await vi.waitFor(() => expect(mockReserveAttachments).toHaveBeenCalled());
-    expect(mockReserveAttachments).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(mockClaimAttachments).toHaveBeenCalled());
+    expect(mockClaimAttachments).toHaveBeenCalledWith(
       userId,
       [imageUploadId],
       requestClaimToken(),
     );
-    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
     reservation.resolve(true);
 
     expect((await responsePromise).status).toBe(500);
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
       requestClaimToken(),
     );
-    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -605,15 +600,15 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ message: "Transcript not found" });
-    expect(mockReserveAttachments).toHaveBeenCalledWith(
+    expect(mockClaimAttachments).toHaveBeenCalledWith(
       userId,
       [audioUploadId],
       requestClaimToken(),
     );
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
       requestClaimToken(),
     );
-    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -624,11 +619,11 @@ describe("POST /conversations/:conversationId/messages", () => {
     "preserves validation errors when %s cleanup fails",
     async (cleanup) => {
       if (cleanup === "reservations") {
-        mockReleaseAttachmentReservations.mockRejectedValueOnce(
+        mockUnclaimAttachments.mockRejectedValueOnce(
           new Error("cleanup unavailable"),
         );
       } else {
-        mockReleaseConversationTurn.mockRejectedValueOnce(
+        mockUnclaimConversationTurn.mockRejectedValueOnce(
           new Error("cleanup unavailable"),
         );
       }
@@ -641,8 +636,8 @@ describe("POST /conversations/:conversationId/messages", () => {
 
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual({ message: "Image not found" });
-      expect(mockReleaseAttachmentReservations).toHaveBeenCalledOnce();
-      expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+      expect(mockUnclaimAttachments).toHaveBeenCalledOnce();
+      expect(mockUnclaimConversationTurn).toHaveBeenCalledOnce();
     },
   );
 
@@ -664,23 +659,23 @@ describe("POST /conversations/:conversationId/messages", () => {
     );
     client.abort();
     await response.text().catch(() => {});
-    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
 
     generation.resolve("Description");
     await vi.waitFor(() => expect(mockPersistChatTurn).toHaveBeenCalled());
-    expect(mockReleaseAttachmentReservations).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).not.toHaveBeenCalled();
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
     persistence.resolve(assistantRow.id);
 
     await vi.waitFor(() =>
-      expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+      expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
         userId,
         conversationId,
         requestClaimToken(),
       ),
     );
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
       requestClaimToken(),
     );
   });
@@ -739,7 +734,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     await vi.waitFor(() => {
-      expect(mockReserveAttachments).toHaveBeenCalledWith(
+      expect(mockClaimAttachments).toHaveBeenCalledWith(
         userId,
         [],
         requestClaimToken(),
@@ -765,7 +760,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(res.status).toBe(500);
-    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -782,15 +777,15 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
 
     expect(res.status).toBe(409);
-    expect(mockReserveAttachments).toHaveBeenCalledWith(
+    expect(mockClaimAttachments).toHaveBeenCalledWith(
       userId,
       [],
       requestClaimToken(),
     );
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
       requestClaimToken(),
     );
-    expect(mockReleaseConversationTurn).toHaveBeenCalledExactlyOnceWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -1062,7 +1057,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
     expect(mockChatAI).not.toHaveBeenCalled();
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -1183,7 +1178,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       });
       expect(mockChatAI).not.toHaveBeenCalled();
       expect(mockPersistChatTurn).not.toHaveBeenCalled();
-      expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
+      expect(mockUnclaimConversationTurn).toHaveBeenCalledTimes(1);
     });
 
     it("refuses combined transcript content past the context budget", async () => {
@@ -1204,7 +1199,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         chars: expect.any(Number),
       });
       expect(mockChatAI).not.toHaveBeenCalled();
-      expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
+      expect(mockUnclaimConversationTurn).toHaveBeenCalledTimes(1);
     });
 
     it("passes every current transcript to history admission", async () => {
@@ -1257,10 +1252,8 @@ describe("POST /conversations/:conversationId/messages", () => {
     // The writes only run once a reply is known, so a failed turn saves nothing.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(
-      requestClaimToken(),
-    );
-    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+    expect(mockUnclaimAttachments).toHaveBeenCalledWith(requestClaimToken());
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
       requestClaimToken(),
@@ -1314,7 +1307,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Image not found" });
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledTimes(1);
   });
 
   it("releases once and returns the first of multiple validation errors", async () => {
@@ -1333,7 +1326,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Image not found" });
-    expect(mockReleaseConversationTurn).toHaveBeenCalledTimes(1);
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledTimes(1);
     expect(mockChatAI).not.toHaveBeenCalled();
   });
 
@@ -1476,7 +1469,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       messageId,
       { claimToken, onlyRole: "user" },
     );
-    expect(mockReleaseObjects).toHaveBeenCalledWith(userId, [
+    expect(mockDeleteObjects).toHaveBeenCalledWith(userId, [
       { kind: "image", uploadId: "old-image" },
     ]);
     expect(mockChatAI).toHaveBeenCalledWith(
@@ -1524,12 +1517,12 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     await response.text();
 
     const claimToken = mockClaimConversationTurn.mock.calls[0][3];
-    expect(mockReserveAttachments).toHaveBeenCalledWith(
+    expect(mockClaimAttachments).toHaveBeenCalledWith(
       userId,
       [imageUploadId],
       claimToken,
     );
-    expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(claimToken);
+    expect(mockUnclaimAttachments).toHaveBeenCalledWith(claimToken);
   });
 
   it("keeps the rewind and releases its claim when generation fails", async () => {
@@ -1541,7 +1534,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     expect(await response.text()).toContain("event: error");
     expect(mockDeleteOwnedMessage).toHaveBeenCalledOnce();
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
       mockClaimConversationTurn.mock.calls[0][3],
@@ -1559,7 +1552,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     });
     expect(mockChatAI).not.toHaveBeenCalled();
     expect(mockPersistChatTurn).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledOnce();
   });
 
   it("returns 404 and releases the claim when the message is unavailable", async () => {
@@ -1570,7 +1563,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ message: "Message not found" });
     expect(mockChatAI).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledOnce();
   });
 
   it("returns 409 when the submitted conversation head is stale", async () => {
@@ -1603,11 +1596,11 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ message: "Image not found" });
     expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledOnce();
   });
 
   it("does not rewind when an attachment can't be reserved", async () => {
-    mockReserveAttachments.mockResolvedValueOnce(false);
+    mockClaimAttachments.mockResolvedValueOnce(false);
 
     const response = await patchMessage(edit);
 
@@ -1631,7 +1624,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
 
     expect(response.status).toBe(400);
     expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledOnce();
   });
 
   it("does not rewind when the edited turn exceeds the context budget", async () => {
@@ -1646,7 +1639,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
 
     expect(response.status).toBe(413);
     expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
+    expect(mockUnclaimConversationTurn).toHaveBeenCalledOnce();
   });
 });
 
@@ -1690,7 +1683,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockReleaseObjects).toHaveBeenCalledWith(userId, [
+    expect(mockDeleteObjects).toHaveBeenCalledWith(userId, [
       { kind: "image", uploadId: imageUploadId },
       { kind: "image", uploadId: "another-upload" },
     ]);
@@ -1727,7 +1720,7 @@ describe("DELETE /conversations/:conversationId/messages/:messageId", () => {
     expect(await res.json()).toEqual({
       message: "A response is already in progress",
     });
-    expect(mockReleaseObjects).not.toHaveBeenCalled();
+    expect(mockDeleteObjects).not.toHaveBeenCalled();
   });
 
   it("rejects a non-uuid message id with 400", async () => {
