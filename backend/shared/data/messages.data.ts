@@ -149,6 +149,8 @@ export async function findCreateMessageHistory(input: {
   maximumContextCharCount: number;
   maximumMessageCount: number;
   maximumImageCount: number;
+  /** Editing a message: take history from before it, not from the tail. */
+  beforeMessageId?: string;
 }): Promise<CreateMessageHistory[]> {
   const currentTranscriptFilter =
     input.newTranscriptUploadIds.length > 0
@@ -156,6 +158,24 @@ export async function findCreateMessageHistory(input: {
           ...input.newTranscriptUploadIds,
         ])
       : sql`false`;
+
+  // Same order as messageIsBefore: created_at, then role, then id.
+  const historyBound =
+    input.beforeMessageId === undefined
+      ? sql``
+      : sql`and (
+          ${ChatMessages.createdAt},
+          ${ChatMessages.role},
+          ${ChatMessages.id}
+        ) < (
+          select
+            bound.${sql.identifier(ChatMessages.createdAt.name)},
+            bound.${sql.identifier(ChatMessages.role.name)},
+            bound.${sql.identifier(ChatMessages.id.name)}
+          from ${ChatMessages} as bound
+          where bound.${sql.identifier(ChatMessages.id.name)} = ${input.beforeMessageId}
+            and bound.${sql.identifier(ChatMessages.conversationId.name)} = ${input.conversationId}
+        )`;
 
   const rows = await db.execute<CreateMessageHistoryRow>(sql`
     with current_turn as (
@@ -186,6 +206,7 @@ export async function findCreateMessageHistory(input: {
         ${ChatMessages.createdAt} as created_at
       from ${ChatMessages}
       where ${ChatMessages.conversationId} = ${input.conversationId}
+        ${historyBound}
       order by
         ${ChatMessages.createdAt} desc,
         ${ChatMessages.role} desc,
@@ -482,10 +503,17 @@ async function createMessage(
  * matched, which the caller reports as a 404.
  */
 
+/**
+ * Deletes a message and everything after it, moving the conversation head
+ * back. A claimed turn blocks it, unless the claim is the caller's own
+ * (`claimToken`) — editing a message rewinds under the claim it already holds.
+ * `onlyRole` refuses a message of any other role, before anything is deleted.
+ */
 export async function deleteOwnedMessage(
   userId: string,
   conversationId: string,
   messageId: string,
+  options: { claimToken?: string; onlyRole?: MessageRow["role"] } = {},
 ) {
   return db.transaction(async (tx) => {
     const [conversation] = await tx
@@ -503,7 +531,11 @@ export async function deleteOwnedMessage(
       .for("update");
 
     if (!conversation) return null;
-    if (conversation.activeTurnClaimToken) return { status: "active" } as const;
+    if (
+      conversation.activeTurnClaimToken &&
+      conversation.activeTurnClaimToken !== options.claimToken
+    )
+      return { status: "active" } as const;
 
     const [targetMessage] = await tx
       .select({
@@ -522,6 +554,8 @@ export async function deleteOwnedMessage(
       .limit(1);
 
     if (!targetMessage) return null;
+    if (options.onlyRole && targetMessage.role !== options.onlyRole)
+      return { status: "wrong_role" } as const;
 
     const [newHead] = await tx
       .select({ id: ChatMessages.id })

@@ -5,10 +5,7 @@ const {
   mockClaimConversationTurn,
   mockReleaseConversationTurn,
   mockFindCreateMessageHistory,
-  mockFindMessagePatchContext,
   mockPersistChatTurn,
-  mockPersistAssistantMessage,
-  mockPatchOwnedUserMessage,
   mockFindConversationMessages,
   mockDeleteOwnedMessage,
   mockResolveImages,
@@ -28,10 +25,7 @@ const {
   mockClaimConversationTurn: vi.fn(),
   mockReleaseConversationTurn: vi.fn(),
   mockFindCreateMessageHistory: vi.fn(),
-  mockFindMessagePatchContext: vi.fn(),
   mockPersistChatTurn: vi.fn(),
-  mockPersistAssistantMessage: vi.fn(),
-  mockPatchOwnedUserMessage: vi.fn(),
   mockFindConversationMessages: vi.fn(),
   mockDeleteOwnedMessage: vi.fn(),
   mockResolveImages: vi.fn(),
@@ -78,10 +72,7 @@ vi.mock("../../shared/data/conversations.data", async (importActual) => ({
 vi.mock("../../shared/data/messages.data", async (importActual) => ({
   ...(await importActual<typeof import("../../shared/data/messages.data")>()),
   findCreateMessageHistory: mockFindCreateMessageHistory,
-  findMessagePatchContext: mockFindMessagePatchContext,
   persistChatTurn: mockPersistChatTurn,
-  persistAssistantMessage: mockPersistAssistantMessage,
-  patchOwnedUserMessage: mockPatchOwnedUserMessage,
   findConversationMessages: mockFindConversationMessages,
   deleteOwnedMessage: mockDeleteOwnedMessage,
 }));
@@ -182,18 +173,6 @@ const resolvedImage = {
 };
 
 /** A history turn as findRecentMessagesWithContext hands it back, newest first. */
-function contextMessage(partial: Partial<ContextMessage> = {}): ContextMessage {
-  return {
-    id: messageId,
-    role: "user",
-    content: "",
-    createdAt: new Date(createdAt),
-    transcripts: [],
-    images: [],
-    ...partial,
-  };
-}
-
 function createMessageHistory(
   partial: Partial<CreateMessageHistory> = {},
 ): CreateMessageHistory {
@@ -255,20 +234,17 @@ beforeEach(() => {
   mockReserveAttachments.mockResolvedValue(true);
   mockReleaseAttachmentReservations.mockResolvedValue(undefined);
   mockFindCreateMessageHistory.mockResolvedValue([]);
-  mockFindMessagePatchContext.mockResolvedValue({
-    target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
-    history: [],
-  });
   mockResolveImages.mockResolvedValue([]);
   mockResolveMessageImages.mockResolvedValue(new Map());
   mockResolveImageAttachmentUrls.mockResolvedValue(new Map());
   mockFindMessageTranscriptAttachments.mockResolvedValue(new Map());
   mockFindTranscripts.mockResolvedValue(new Map());
   mockPersistChatTurn.mockResolvedValue(assistantRow.id);
-  mockPersistAssistantMessage.mockResolvedValue(assistantRow.id);
-  mockPatchOwnedUserMessage.mockResolvedValue({
-    status: "patched",
+  mockDeleteOwnedMessage.mockResolvedValue({
+    status: "deleted",
+    ids: [messageId],
     imageUploadIds: [],
+    lastMessageId: null,
   });
   mockValidateModel.mockResolvedValue(true);
   mockValidateModelInput.mockResolvedValue(true);
@@ -1425,29 +1401,36 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     );
   }
 
-  it("rewinds, replaces the complete user turn, and streams a new answer", async () => {
-    mockFindMessagePatchContext.mockResolvedValueOnce({
-      target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
-      history: [
-        contextMessage({
-          id: assistantRow.id,
-          role: "assistant",
-          content: "Earlier answer",
-        }),
-        contextMessage({
-          id: "450e8400-e29b-41d4-a716-446655440999",
-          role: "user",
-          content: "Earlier question",
-        }),
-      ],
-    });
+  const edit = {
+    messageContent: "Updated question",
+    chosenModelId: modelId,
+    imageUploadIds: [] as string[],
+    audioUploadIds: [] as string[],
+    lastMessageId: assistantRow.id,
+  };
+
+  it("validates, rewinds under its own claim, and streams a new turn", async () => {
+    mockFindCreateMessageHistory.mockResolvedValueOnce([
+      createMessageHistory({
+        id: assistantRow.id,
+        role: "assistant",
+        content: "Earlier answer",
+      }),
+      createMessageHistory({
+        id: "450e8400-e29b-41d4-a716-446655440999",
+        role: "user",
+        content: "Earlier question",
+      }),
+    ]);
     mockResolveImages.mockResolvedValueOnce([resolvedImage]);
     mockFindTranscripts.mockResolvedValueOnce(
       new Map([[audioUploadId, "Edited transcript"]]),
     );
-    mockPatchOwnedUserMessage.mockResolvedValueOnce({
-      status: "patched",
+    mockDeleteOwnedMessage.mockResolvedValueOnce({
+      status: "deleted",
+      ids: [messageId],
       imageUploadIds: ["old-image"],
+      lastMessageId: null,
     });
     mockChatAI.mockImplementationOnce(
       async (
@@ -1461,30 +1444,38 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     );
 
     const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
+      ...edit,
       imageUploadIds: [imageUploadId],
       audioUploadIds: [audioUploadId],
-      lastMessageId: assistantRow.id,
     });
     const body = await response.text();
 
     expect(response.status).toBe(200);
     expect(body).toContain("event: delta");
     expect(body).toContain(JSON.stringify({ lastMessageId: assistantRow.id }));
+
+    // The history stops before the edited message.
+    expect(mockFindCreateMessageHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        conversationId,
+        beforeMessageId: messageId,
+      }),
+    );
+    // One claim serves the whole request, the rewind included.
+    const claimToken = mockClaimConversationTurn.mock.calls[0][3];
     expect(mockClaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
       assistantRow.id,
+      expect.any(String),
     );
-    expect(mockPatchOwnedUserMessage).toHaveBeenCalledWith({
+    expect(mockDeleteOwnedMessage).toHaveBeenCalledWith(
       userId,
       conversationId,
       messageId,
-      content: "Updated question",
-      attachmentIds: [imageUploadId, audioUploadId],
-      claimToken: "claim-token",
-    });
+      { claimToken, onlyRole: "user" },
+    );
     expect(mockReleaseObjects).toHaveBeenCalledWith(userId, [
       { kind: "image", uploadId: "old-image" },
     ]);
@@ -1496,167 +1487,150 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: "Edited transcript\n\nUpdated question",
-            },
+            { type: "text", text: "Edited transcript\n\nUpdated question" },
             { type: "image_url", imageUrl: { url: resolvedImage.url } },
           ],
         },
       ],
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
-    expect(mockPersistAssistantMessage).toHaveBeenCalledWith({
-      userId,
-      conversationId,
-      chosenModelId: modelId,
-      assistantContent: "Replacement answer",
-      claimToken: "claim-token",
-    });
-  });
-
-  it("keeps the edited prompt and releases its claim when generation fails", async () => {
-    mockChatAI.mockRejectedValueOnce(new Error("provider unavailable"));
-
-    const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
-      imageUploadIds: [],
-      audioUploadIds: [],
-      lastMessageId: assistantRow.id,
-    });
-
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain("event: error");
-    expect(mockPatchOwnedUserMessage).toHaveBeenCalledOnce();
-    expect(mockPersistAssistantMessage).not.toHaveBeenCalled();
-    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
-      userId,
-      conversationId,
-      "claim-token",
+    // The replacement is stored like any other turn.
+    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        conversationId,
+        content: "Updated question",
+        attachmentIds: [imageUploadId, audioUploadId],
+        assistantContent: "Replacement answer",
+        claimToken,
+      }),
+    );
+    // Validated first, rewound second, only then the model.
+    expect(
+      mockFindCreateMessageHistory.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockDeleteOwnedMessage.mock.invocationCallOrder[0]);
+    expect(mockDeleteOwnedMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      mockChatAI.mock.invocationCallOrder[0],
     );
   });
 
-  it("rejects assistant-message edits before rewinding", async () => {
-    mockFindMessagePatchContext.mockResolvedValueOnce({
-      target: {
-        id: assistantRow.id,
-        role: "assistant",
-        createdAt: new Date(createdAt),
-      },
-      history: [],
-    });
+  it("reserves the edit's attachments, as a new message does", async () => {
+    mockResolveImages.mockResolvedValueOnce([resolvedImage]);
 
     const response = await patchMessage({
-      messageContent: "Updated answer",
-      chosenModelId: modelId,
-      imageUploadIds: [],
-      audioUploadIds: [],
-      lastMessageId: assistantRow.id,
+      ...edit,
+      imageUploadIds: [imageUploadId],
     });
+    await response.text();
+
+    const claimToken = mockClaimConversationTurn.mock.calls[0][3];
+    expect(mockReserveAttachments).toHaveBeenCalledWith(
+      userId,
+      [imageUploadId],
+      claimToken,
+    );
+    expect(mockReleaseAttachmentReservations).toHaveBeenCalledWith(claimToken);
+  });
+
+  it("keeps the rewind and releases its claim when generation fails", async () => {
+    mockChatAI.mockRejectedValueOnce(new Error("provider unavailable"));
+
+    const response = await patchMessage(edit);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("event: error");
+    expect(mockDeleteOwnedMessage).toHaveBeenCalledOnce();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockReleaseConversationTurn).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      mockClaimConversationTurn.mock.calls[0][3],
+    );
+  });
+
+  it("rejects assistant-message edits, and releases the claim", async () => {
+    mockDeleteOwnedMessage.mockResolvedValueOnce({ status: "wrong_role" });
+
+    const response = await patchMessage(edit);
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       message: "Only user messages can be edited",
     });
-    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockChatAI).not.toHaveBeenCalled();
+    expect(mockPersistChatTurn).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
   });
 
   it("returns 404 and releases the claim when the message is unavailable", async () => {
-    mockFindMessagePatchContext.mockResolvedValueOnce(null);
+    mockDeleteOwnedMessage.mockResolvedValueOnce(null);
 
-    const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
-      imageUploadIds: [],
-      audioUploadIds: [],
-      lastMessageId: assistantRow.id,
-    });
+    const response = await patchMessage(edit);
 
     expect(response.status).toBe(404);
-    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({ message: "Message not found" });
+    expect(mockChatAI).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
   });
 
   it("returns 409 when the submitted conversation head is stale", async () => {
     mockClaimConversationTurn.mockResolvedValueOnce(null);
 
-    const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
-      imageUploadIds: [],
-      audioUploadIds: [],
-      lastMessageId: messageId,
-    });
+    const response = await patchMessage({ ...edit, lastMessageId: messageId });
 
     expect(response.status).toBe(409);
-    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the conversation is unavailable", async () => {
     mockClaimConversationTurn.mockResolvedValueOnce(null);
     mockFindOwnedConversation.mockResolvedValueOnce(null);
 
-    const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
-      imageUploadIds: [],
-      audioUploadIds: [],
-      lastMessageId: assistantRow.id,
-    });
+    const response = await patchMessage(edit);
 
     expect(response.status).toBe(404);
-    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
   });
 
-  it("does not rewind when an exact attachment id is unavailable", async () => {
+  it("does not rewind when an image is unavailable", async () => {
     mockResolveImages.mockResolvedValueOnce([]);
 
     const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
+      ...edit,
       imageUploadIds: [imageUploadId],
-      audioUploadIds: [],
-      lastMessageId: assistantRow.id,
     });
 
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ message: "Attachment not found" });
-    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({ message: "Image not found" });
+    expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
   });
 
+  it("does not rewind when an attachment can't be reserved", async () => {
+    mockReserveAttachments.mockResolvedValueOnce(false);
+
+    const response = await patchMessage(edit);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ message: "Attachment not found" });
+    expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
+  });
+
   it("does not rewind when retained history needs image input", async () => {
-    mockFindMessagePatchContext.mockResolvedValueOnce({
-      target: { id: messageId, role: "user", createdAt: new Date(createdAt) },
-      history: [
-        contextMessage({
-          images: [
-            {
-              imageUploadId,
-              signedUrl: null,
-              signedUrlExpiresAt: null,
-            },
-          ],
-        }),
-      ],
-    });
-    mockResolveImageAttachmentUrls.mockResolvedValueOnce(
-      new Map([[imageUploadId, resolvedImage.url]]),
-    );
+    mockFindCreateMessageHistory.mockResolvedValueOnce([
+      createMessageHistory({
+        id: messageId,
+        role: "user",
+        content: "What is this?",
+        imageUrls: [resolvedImage.url],
+      }),
+    ]);
     mockValidateModelInput.mockResolvedValueOnce(false);
 
-    const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
-      imageUploadIds: [],
-      audioUploadIds: [],
-      lastMessageId: assistantRow.id,
-    });
+    const response = await patchMessage(edit);
 
     expect(response.status).toBe(400);
-    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
   });
 
@@ -1666,15 +1640,12 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     );
 
     const response = await patchMessage({
-      messageContent: "Updated question",
-      chosenModelId: modelId,
-      imageUploadIds: [],
+      ...edit,
       audioUploadIds: [audioUploadId],
-      lastMessageId: assistantRow.id,
     });
 
     expect(response.status).toBe(413);
-    expect(mockPatchOwnedUserMessage).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedMessage).not.toHaveBeenCalled();
     expect(mockReleaseConversationTurn).toHaveBeenCalledOnce();
   });
 });

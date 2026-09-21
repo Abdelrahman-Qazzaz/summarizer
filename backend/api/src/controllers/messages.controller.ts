@@ -9,12 +9,8 @@ import {
   deleteOwnedMessage,
   findCreateMessageHistory,
   findConversationMessages,
-  findMessagePatchContext,
-  patchOwnedUserMessage,
-  persistAssistantMessage,
   persistChatTurn,
   type CreateMessageHistory,
-  type ContextMessage,
   type MessageRow,
 } from "../../../shared/data/messages.data";
 import { CTX_KEYS } from "../../../shared/keys";
@@ -27,17 +23,11 @@ import {
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger, messageOf } from "../../../shared/logger";
 import {
-  measurePreparation,
-  roundMs,
-  withPreparationMetrics,
-} from "../../../shared/preparationMetrics";
-import {
   claimConversationTurn,
   findOwnedConversation,
   releaseConversationTurn,
 } from "../../../shared/data/conversations.data";
 import {
-  resolveImageAttachmentUrls,
   resolveImages,
   resolveMessageImages,
   type ResolvedImage,
@@ -118,20 +108,6 @@ function withTranscripts(content: string, transcripts: readonly string[]) {
   return `${transcripts.join(TRANSCRIPT_SEPARATOR)}${TRANSCRIPT_SEPARATOR}${content}`;
 }
 
-function turnCharCount(
-  content: string,
-  transcripts: readonly StoredTranscriptAttachment[],
-) {
-  return (
-    content.length +
-    transcripts.reduce(
-      (total, transcript) =>
-        total + (transcript.charCount ?? 0) + TRANSCRIPT_SEPARATOR.length,
-      0,
-    )
-  );
-}
-
 /** Assistant turns never carry images, so they're not worth looking up. */
 function userMessageIds(
   rows: readonly { id: string; role: MessageRow["role"] }[],
@@ -192,80 +168,6 @@ function countMessagesInContextWindow(
   }
 
   return messageCount;
-}
-
-/**
- * The model context for a new user turn: the conversation's most recent
- * `history` (fetched newest-first by the caller, then reversed here into the
- * oldest-first order the model expects) plus the new turn itself.
- *
- * The new turn is always included, however long it is; history is admitted
- * newest-first until MAX_CONTEXT_CHARS is spent and truncated at the first turn
- * that doesn't fit. A turn's cost is its content length plus its transcripts'
- * `charCount` values, so the budget is decided without reading any bodies, and
- * only the transcripts that fit are then fetched. Images each past turn was
- * sent with ride along under their own MAX_CONTEXT_IMAGES cap.
- */
-async function assembleConversationContext(
-  userId: string,
-  history: ContextMessage[],
-  newTurn: ChatTurn,
-  spentChars: number,
-): Promise<ChatTurn[]> {
-  // First decide which turns fit, spending only content lengths and transcript
-  // char counts — no transcript body is read for a turn the budget will drop.
-  let charBudget = MAX_CONTEXT_CHARS - spentChars;
-  let imageBudget = MAX_CONTEXT_IMAGES;
-  const admitted: {
-    message: ContextMessage;
-    imageSlots: ContextMessage["images"];
-  }[] = [];
-
-  for (const message of history) {
-    const cost = turnCharCount(message.content, message.transcripts);
-    if (charBudget - cost < 0) break;
-    charBudget -= cost;
-
-    // Slots, not resolved urls, spend the budget — an image that failed to sign
-    // is dropped, the same as it would be on the turn it was first sent.
-    const imageSlots = message.images.slice(0, imageBudget);
-    imageBudget -= imageSlots.length;
-    admitted.push({ message, imageSlots });
-  }
-
-  // Only now read the bodies and sign the images — for the admitted turns only.
-  const audioUploadIds = admitted.flatMap(({ message }) =>
-    message.transcripts.flatMap((transcript) =>
-      transcript.charCount !== null ? [transcript.audioUploadId] : [],
-    ),
-  );
-  const [transcripts, urlByImageUploadId] = await Promise.all([
-    findTranscripts(userId, audioUploadIds),
-    resolveImageAttachmentUrls(
-      userId,
-      admitted.flatMap((entry) => entry.imageSlots),
-    ),
-  ]);
-
-  const turns: ChatTurn[] = [newTurn];
-  for (const { message, imageSlots } of admitted) {
-    // Past transcripts are replayed so follow-ups can still see them.
-    const resolvedTranscripts = message.transcripts.flatMap((transcript) =>
-      transcripts.has(transcript.audioUploadId)
-        ? [transcripts.get(transcript.audioUploadId) as string]
-        : [],
-    );
-    const content = withTranscripts(message.content, resolvedTranscripts);
-
-    const imageUrls = imageSlots.flatMap((image) => {
-      const url = urlByImageUploadId.get(image.imageUploadId);
-      return url ? [url] : [];
-    });
-
-    turns.unshift(toHistoryTurn(message.role, content, imageUrls));
-  }
-
-  return turns;
 }
 
 /** GET /conversations/:conversationId/messages — full history, oldest first. */
@@ -384,131 +286,167 @@ function mergeTranscriptsIntoContent(
   return withTranscripts(messageInput.content, transcripts);
 }
 
-export async function handleCreateMessage(c: Context) {
-  const messageInput = messageRequestFrom(c);
-  const responseReady = Promise.withResolvers<Response>();
-  const preparationStartedAt = performance.now();
-  const preparationLog = log.child({
-    requestId: randomUUID(),
-    conversationId: messageInput.conversationId,
-  });
+type PreparedTurn = {
+  turns: ChatTurn[];
+  history: CreateMessageHistory[];
+  newMessageContextCharCount: number;
+};
 
-  const metricsContext = {
-    log: preparationLog,
-    startedAt: preparationStartedAt,
-  };
+/**
+ * Settles the claim, the reservations and everything the turn reads in one
+ * batch, then checks all of it. Throws a MessageRequestError for anything
+ * that stops the turn. `beforeMessageId` takes the history from before a
+ * message instead of from the tail: an edit replaces that message and
+ * everything after it, so none of it is context.
+ */
+async function prepareMessageTurn(
+  messageInput: MessageRequest,
+  claimPromises: readonly [Promise<string | null>, Promise<boolean>],
+  beforeMessageId?: string,
+): Promise<PreparedTurn> {
+  const [
+    acquiredClaimToken,
+    attachmentsReserved,
+    resolvedImages,
+    transcriptContentsByAudioUploadId,
+    history,
+  ] = await Promise.all([
+    ...claimPromises,
+    resolveImages(messageInput.userId, messageInput.imageUploadIds),
+    findTranscripts(messageInput.userId, messageInput.audioUploadIds),
+    findCreateMessageHistory({
+      userId: messageInput.userId,
+      conversationId: messageInput.conversationId,
+      newMessageContentCharCount: messageInput.content.length,
+      newTranscriptUploadIds: messageInput.audioUploadIds,
+      transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
+      maximumContextCharCount: MAX_CONTEXT_CHARS,
+      maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
+      maximumImageCount: MAX_CONTEXT_IMAGES,
+      ...(beforeMessageId === undefined ? {} : { beforeMessageId }),
+    }),
+  ]);
+
+  if (!acquiredClaimToken) {
+    const ownedConversation = await findOwnedConversation(
+      messageInput.userId,
+      messageInput.conversationId,
+    );
+    throw ownedConversation
+      ? new MessageRequestError(409, {
+          message: "Conversation changed or a response is already in progress",
+        })
+      : new MessageRequestError(404, { message: "Conversation not found" });
+  }
+  if (resolvedImages.length !== messageInput.imageUploadIds.length) {
+    throw new MessageRequestError(404, { message: "Image not found" });
+  }
+  if (
+    transcriptContentsByAudioUploadId.size !==
+    messageInput.audioUploadIds.length
+  ) {
+    throw new MessageRequestError(404, { message: "Transcript not found" });
+  }
+
+  const newTurnContent = mergeTranscriptsIntoContent(
+    messageInput,
+    transcriptContentsByAudioUploadId,
+  );
+  const newMessageContextCharCount = newTurnContent.length;
+  if (newTurnContent.length >= MAX_CONTEXT_CHARS) {
+    throw new MessageRequestError(413, {
+      message: "Message is too long for one message",
+      maxChars: MAX_CONTEXT_CHARS,
+      chars: newTurnContent.length,
+    });
+  }
+
+  const turns = assembleCreateMessageContext(
+    history,
+    buildUserTurn(
+      newTurnContent,
+      resolvedImages.map((image) => image.url),
+    ),
+  );
+  if (
+    containsImageInput(turns) &&
+    !(await validateChatModelInput(messageInput.chosenModelId, "image"))
+  ) {
+    throw new MessageRequestError(400, {
+      message: "Invalid model: must accept image input",
+    });
+  }
+  if (!attachmentsReserved) {
+    throw new MessageRequestError(404, { message: "Attachment not found" });
+  }
+
+  return { turns, history, newMessageContextCharCount };
+}
+
+/**
+ * Drops a message and everything after it, under the claim this turn already
+ * holds, and releases the images that lose their last link. Only a user
+ * message can be replaced; the check happens before anything is deleted.
+ */
+async function rewind(
+  messageInput: MessageRequest,
+  claimToken: string,
+  messageId: string,
+) {
+  const rewound = await deleteOwnedMessage(
+    messageInput.userId,
+    messageInput.conversationId,
+    messageId,
+    { claimToken, onlyRole: "user" },
+  );
+
+  if (!rewound) {
+    throw new MessageRequestError(404, { message: "Message not found" });
+  }
+  if (rewound.status === "wrong_role") {
+    throw new MessageRequestError(400, {
+      message: "Only user messages can be edited",
+    });
+  }
+  if (rewound.status === "active") {
+    throw new MessageRequestError(409, {
+      message: "A response is already in progress",
+    });
+  }
+
+  await releaseObjects(
+    messageInput.userId,
+    rewound.imageUploadIds.map((uploadId) => ({
+      kind: "image" as const,
+      uploadId,
+    })),
+  );
+}
+
+/**
+ * Streams the answer and stores the turn, and owns the claim throughout:
+ * whatever `prepareTurn` and the run do, the claim and reservations are released
+ * at the end. `prepareTurn` settles everything the turn needs and throws if it
+ * can't run, so nothing it destroys (an edit's rewind) is destroyed for a turn
+ * that was never going to happen.
+ */
+function streamAndPersistMessageTurn(
+  c: Context,
+  messageInput: MessageRequest,
+  claimPromises: readonly [Promise<string | null>, Promise<boolean>],
+  claimToken: string,
+  prepareTurn: () => Promise<PreparedTurn>,
+) {
+  const responseReady = Promise.withResolvers<Response>();
 
   // The HTTP response can be ready before the task that owns the claims finishes.
-  void withPreparationMetrics(metricsContext, async () => {
-    const preparationPromiseAllId = randomUUID();
-    const claimToken = randomUUID();
-    const claimPromises = [
-      measurePreparation("claimConversationTurn", preparationPromiseAllId, () =>
-        claimConversationTurn(
-          messageInput.userId,
-          messageInput.conversationId,
-          messageInput.expectedLastMessageId,
-          claimToken,
-        ),
-      ),
-      measurePreparation("reserveAttachments", preparationPromiseAllId, () =>
-        reserveAttachments(
-          messageInput.userId,
-          messageInput.attachmentIds,
-          claimToken,
-        ),
-      ),
-    ] as const;
+  void (async () => {
     const events = new SSEEventQueue();
     let streamResponse: Response | undefined;
 
     try {
-      const [
-        acquiredClaimToken,
-        attachmentsReserved,
-        resolvedImages,
-        transcriptContentsByAudioUploadId,
-        history,
-      ] = await Promise.all([
-        ...claimPromises,
-        measurePreparation("resolveImages", preparationPromiseAllId, () =>
-          resolveImages(messageInput.userId, messageInput.imageUploadIds),
-        ),
-        measurePreparation("findTranscripts", preparationPromiseAllId, () =>
-          findTranscripts(messageInput.userId, messageInput.audioUploadIds),
-        ),
-        measurePreparation(
-          "findCreateMessageHistory",
-          preparationPromiseAllId,
-          () =>
-            findCreateMessageHistory({
-              userId: messageInput.userId,
-              conversationId: messageInput.conversationId,
-              newMessageContentCharCount: messageInput.content.length,
-              newTranscriptUploadIds: messageInput.audioUploadIds,
-              transcriptSeparatorCharCount: TRANSCRIPT_SEPARATOR.length,
-              maximumContextCharCount: MAX_CONTEXT_CHARS,
-              maximumMessageCount: MAX_CONTEXT_MESSAGES - 1,
-              maximumImageCount: MAX_CONTEXT_IMAGES,
-            }),
-        ),
-      ]);
-
-      if (!acquiredClaimToken) {
-        const ownedConversation = await findOwnedConversation(
-          messageInput.userId,
-          messageInput.conversationId,
-        );
-        throw ownedConversation
-          ? new MessageRequestError(409, {
-              message:
-                "Conversation changed or a response is already in progress",
-            })
-          : new MessageRequestError(404, { message: "Conversation not found" });
-      }
-      if (resolvedImages.length !== messageInput.imageUploadIds.length) {
-        throw new MessageRequestError(404, { message: "Image not found" });
-      }
-      if (
-        transcriptContentsByAudioUploadId.size !==
-        messageInput.audioUploadIds.length
-      ) {
-        throw new MessageRequestError(404, { message: "Transcript not found" });
-      }
-
-      const newTurnContent = mergeTranscriptsIntoContent(
-        messageInput,
-        transcriptContentsByAudioUploadId,
-      );
-      const newMessageContextCharCount = newTurnContent.length;
-      if (newTurnContent.length >= MAX_CONTEXT_CHARS) {
-        throw new MessageRequestError(413, {
-          message: "Message is too long for one message",
-          maxChars: MAX_CONTEXT_CHARS,
-          chars: newTurnContent.length,
-        });
-      }
-
-      const turns = assembleCreateMessageContext(
-        history,
-        buildUserTurn(
-          newTurnContent,
-          resolvedImages.map((image) => image.url),
-        ),
-      );
-      if (
-        containsImageInput(turns) &&
-        !(await measurePreparation("validateChatModelInput", undefined, () =>
-          validateChatModelInput(messageInput.chosenModelId, "image"),
-        ))
-      ) {
-        throw new MessageRequestError(400, {
-          message: "Invalid model: must accept image input",
-        });
-      }
-      if (!attachmentsReserved) {
-        throw new MessageRequestError(404, { message: "Attachment not found" });
-      }
+      const { turns, history, newMessageContextCharCount } =
+        await prepareTurn();
 
       streamResponse = streamSSE(c, (stream) =>
         events.pipeTo(stream, c.req.raw.signal),
@@ -519,21 +457,8 @@ export async function handleCreateMessage(c: Context) {
         messageInput.expectedLastMessageId === null
           ? titleForFirstTurn(messageInput.content, messageInput.conversationId)
           : Promise.resolve(undefined);
-      const modelStartedAt = performance.now();
-      let firstTokenRecorded = false;
       const assistantContent = await chatAI(messageInput.chosenModelId, turns, {
         onDelta: async (delta) => {
-          if (delta.length > 0 && !firstTokenRecorded) {
-            firstTokenRecorded = true;
-            const firstTokenAt = performance.now();
-            preparationLog.info("Message first token generated", {
-              modelStartedAfterMs: roundMs(
-                modelStartedAt - preparationStartedAt,
-              ),
-              modelTimeToFirstTokenMs: roundMs(firstTokenAt - modelStartedAt),
-              firstTokenAfterMs: roundMs(firstTokenAt - preparationStartedAt),
-            });
-          }
           events.push("delta", { delta });
         },
         maxOutputTokens: MAX_RESPONSE_TOKENS,
@@ -566,20 +491,12 @@ export async function handleCreateMessage(c: Context) {
         throw error;
       }
 
-      log.error("Chat completion run failed", error, {
-        conversationId: messageInput.conversationId,
-        chosenModelId: messageInput.chosenModelId,
-      });
       events.push("error", { message: "Model response failed" });
       return streamResponse;
     } finally {
       // A failed read does not cancel acquisition; settle it before releasing anything.
       await Promise.allSettled(claimPromises);
-      await releaseAttachmentReservations(claimToken).catch((error) => {
-        log.error("Failed to release attachment reservations", error, {
-          conversationId: messageInput.conversationId,
-        });
-      });
+      await releaseAttachmentReservations(claimToken).catch(() => {});
       await releaseConversationClaimSafely(
         messageInput.userId,
         messageInput.conversationId,
@@ -587,188 +504,73 @@ export async function handleCreateMessage(c: Context) {
       );
       events.end();
     }
-  }).then(responseReady.resolve, responseReady.reject);
+  })().then(responseReady.resolve, responseReady.reject);
 
   return responseReady.promise;
 }
 
-/** PATCH /conversations/:conversationId/messages/:messageId */
-/** How `patchOwnedUserMessage` reports a turn it would not apply. */
-const PATCH_FAILURES = {
-  claim_lost: [409, "Conversation changed or the edit claim was lost"],
-  attachments_changed: [409, "Attachments changed during the edit"],
-  not_found: [404, "Message not found"],
-  not_user: [400, "Only user messages can be edited"],
-} as const;
+function createClaimData(messageInput: MessageRequest) {
+  const claimToken = randomUUID();
+  const claimPromises = [
+    claimConversationTurn(
+      messageInput.userId,
+      messageInput.conversationId,
+      messageInput.expectedLastMessageId,
+      claimToken,
+    ),
+    reserveAttachments(
+      messageInput.userId,
+      messageInput.attachmentIds,
+      claimToken,
+    ),
+  ] as const;
 
-export async function handlePatchMessage(c: Context) {
-  const request = messageRequestFrom(c);
-  const messageId = c.get(CTX_KEYS.messageId);
-  const claimPromise = claimConversationTurn(
-    request.userId,
-    request.conversationId,
-    request.expectedLastMessageId,
-  );
+  return [claimToken, claimPromises] as const;
+}
+export async function handleCreateMessage(c: Context) {
+  const messageInput = messageRequestFrom(c);
+  const [claimToken, claimPromises] = createClaimData(messageInput);
 
-  let requestData;
-  try {
-    requestData = await Promise.all([
-      claimPromise,
-      resolveImages(request.userId, request.imageUploadIds),
-      request.audioUploadIds.length > 0
-        ? findTranscripts(request.userId, request.audioUploadIds)
-        : Promise.resolve(new Map<string, string>()),
-      findMessagePatchContext(
-        request.userId,
-        request.conversationId,
-        messageId,
-        MAX_CONTEXT_MESSAGES - 1,
-      ),
-    ]);
-  } catch (error) {
-    const acquiredClaimToken = await claimPromise.catch(() => null);
-    if (acquiredClaimToken) {
-      await releaseConversationClaimSafely(
-        request.userId,
-        request.conversationId,
-        acquiredClaimToken,
-      );
-    }
-    throw error;
-  }
-
-  const [
+  return streamAndPersistMessageTurn(
+    c,
+    messageInput,
+    claimPromises,
     claimToken,
-    resolvedImages,
-    transcriptContentsByAudioUploadId,
-    patchContext,
-  ] = requestData;
-  if (!claimToken) {
-    const ownedConversation = await findOwnedConversation(
-      request.userId,
-      request.conversationId,
-    );
-    return ownedConversation
-      ? c.json(
-          {
-            message:
-              "Conversation changed or a response is already in progress",
-          },
-          409,
-        )
-      : c.json({ message: "Conversation not found" }, 404);
-  }
+    async () => {
+      const prepared = await prepareMessageTurn(messageInput, claimPromises);
 
-  const releaseClaim = () =>
-    releaseConversationClaimSafely(
-      request.userId,
-      request.conversationId,
-      claimToken,
-    );
+      return prepared;
+    },
+  );
+}
 
-  let turns: ChatTurn[];
-  try {
-    if (!patchContext)
-      throw new MessageRequestError(404, { message: "Message not found" });
-    if (patchContext.target.role !== "user")
-      throw new MessageRequestError(400, {
-        message: "Only user messages can be edited",
-      });
-    if (resolvedImages.length !== request.imageUploadIds.length)
-      throw new MessageRequestError(404, { message: "Attachment not found" });
-    if (
-      transcriptContentsByAudioUploadId.size !== request.audioUploadIds.length
-    )
-      throw new MessageRequestError(404, { message: "Transcript not found" });
+/**
+ * PATCH /conversations/:conversationId/messages/:messageId — replace a message
+ * and everything after it with a fresh turn. The claim is taken up front, the
+ * new turn is validated, and only then is the old tail dropped, so a request
+ * that would be rejected takes nothing with it. The replacement is a new
+ * message; the edited one is gone.
+ */
+export async function handlePatchMessage(c: Context) {
+  const messageInput = messageRequestFrom(c);
+  const messageId = c.get(CTX_KEYS.messageId);
+  const [claimToken, claimPromises] = createClaimData(messageInput);
 
-    const transcripts = request.audioUploadIds.map(
-      (audioUploadId) =>
-        transcriptContentsByAudioUploadId.get(audioUploadId) as string,
-    );
-    const newTurnContent = withTranscripts(request.content, transcripts);
-    if (newTurnContent.length >= MAX_CONTEXT_CHARS)
-      throw new MessageRequestError(413, {
-        message: "Transcripts are too long for one message",
-        maxChars: MAX_CONTEXT_CHARS,
-        chars: newTurnContent.length,
-      });
-
-    turns = await assembleConversationContext(
-      request.userId,
-      patchContext.history,
-      buildUserTurn(
-        newTurnContent,
-        resolvedImages.map((image) => image.url),
-      ),
-      newTurnContent.length,
-    );
-    if (
-      containsImageInput(turns) &&
-      !(await validateChatModelInput(request.chosenModelId, "image"))
-    )
-      throw new MessageRequestError(400, {
-        message: "Invalid model: must accept image input",
-      });
-
-    const patchResult = await patchOwnedUserMessage({
-      userId: request.userId,
-      conversationId: request.conversationId,
-      messageId,
-      content: request.content,
-      attachmentIds: request.attachmentIds,
-      claimToken,
-    });
-    if (patchResult.status !== "patched") {
-      const [status, message] = PATCH_FAILURES[patchResult.status];
-      throw new MessageRequestError(status, { message });
-    }
-
-    await releaseObjects(
-      request.userId,
-      patchResult.imageUploadIds.map((uploadId) => ({
-        kind: "image",
-        uploadId,
-      })),
-    );
-  } catch (error) {
-    await releaseClaim();
-    if (error instanceof MessageRequestError)
-      return c.json(error.body, error.status);
-    throw error;
-  }
-
-  const events = new SSEEventQueue();
-  const disconnectSignal = c.req.raw.signal;
-
-  void (async () => {
-    try {
-      const assistantContent = await chatAI(request.chosenModelId, turns, {
-        onDelta: async (delta) => events.push("delta", { delta }),
-        maxOutputTokens: MAX_RESPONSE_TOKENS,
-        sessionId: request.conversationId,
-      });
-      const lastMessageId = await persistAssistantMessage({
-        userId: request.userId,
-        conversationId: request.conversationId,
-        chosenModelId: request.chosenModelId,
-        assistantContent,
-        claimToken,
-      });
-      events.push("done", { lastMessageId });
-      events.end();
-    } catch (error) {
-      await releaseClaim();
-      log.error("Chat edit completion run failed", error, {
-        conversationId: request.conversationId,
-        chosenModelId: request.chosenModelId,
+  return streamAndPersistMessageTurn(
+    c,
+    messageInput,
+    claimPromises,
+    claimToken,
+    async () => {
+      const prepared = await prepareMessageTurn(
+        messageInput,
+        claimPromises,
         messageId,
-      });
-      events.push("error", { message: "Model response failed" });
-      events.end();
-    }
-  })();
-
-  return streamSSE(c, (stream) => events.pipeTo(stream, disconnectSignal));
+      );
+      await rewind(messageInput, claimToken, messageId);
+      return prepared;
+    },
+  );
 }
 
 /** DELETE /conversations/:conversationId/messages/:messageId */
@@ -780,7 +582,8 @@ export async function handleDeleteMessage(c: Context) {
   const result = await deleteOwnedMessage(userId, conversationId, messageId);
 
   if (!result) return c.json({ message: "Message not found" }, 404);
-  if (result.status === "active")
+  // Without `onlyRole` the only other outcome is a claimed turn.
+  if (result.status !== "deleted")
     return c.json({ message: "A response is already in progress" }, 409);
 
   await releaseObjects(

@@ -9,7 +9,6 @@ import { conversationReqParamSchema } from "../schema/conversations.schema";
 import {
   messageReqParamSchema,
   messageCreateBodySchema,
-  messagePatchBodySchema,
 } from "../schema/messages.schema";
 import { httpCache } from "../middleware/cache.middleware";
 
@@ -22,6 +21,12 @@ messagesRouter.get(
   messagesController.handleListMessages,
 );
 
+messagesRouter.delete(
+  `/:${CTX_KEYS.messageId}`,
+  validateReqParams(messageReqParamSchema),
+  messagesController.handleDeleteMessage,
+);
+
 messagesRouter.post(
   "/",
   validateReqParams(conversationReqParamSchema),
@@ -29,15 +34,9 @@ messagesRouter.post(
   messagesController.handleCreateMessage,
 );
 
-messagesRouter.delete(
-  `/:${CTX_KEYS.messageId}`,
-  validateReqParams(messageReqParamSchema),
-  messagesController.handleDeleteMessage,
-);
-
 messagesRouter.patch(
   `/:${CTX_KEYS.messageId}`,
   validateReqParams(messageReqParamSchema),
-  validateReqBody(messagePatchBodySchema),
+  validateReqBody(messageCreateBodySchema),
   messagesController.handlePatchMessage,
 );
