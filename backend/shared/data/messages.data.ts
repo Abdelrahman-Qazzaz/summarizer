@@ -1,15 +1,4 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  inArray,
-  lt,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import {
   Attachments,
   ChatMessageAttachmentLinks,
@@ -426,59 +415,6 @@ export async function findRecentMessagesWithContext(
   return hydrateContextMessages(userId, recentMessages);
 }
 
-/** The target user turn and only the history that precedes it. */
-export async function findMessagePatchContext(
-  userId: string,
-  conversationId: string,
-  messageId: string,
-  historyLimit: number,
-) {
-  const [target] = await db
-    .select({
-      id: ChatMessages.id,
-      role: ChatMessages.role,
-      createdAt: ChatMessages.createdAt,
-    })
-    .from(ChatMessages)
-    .where(
-      and(
-        eq(ChatMessages.id, messageId),
-        eq(ChatMessages.conversationId, conversationId),
-        eq(ChatMessages.userId, userId),
-      ),
-    )
-    .limit(1);
-
-  if (!target) return null;
-
-  const recentMessages = await db
-    .select({
-      id: ChatMessages.id,
-      role: ChatMessages.role,
-      content: ChatMessages.content,
-      createdAt: ChatMessages.createdAt,
-    })
-    .from(ChatMessages)
-    .where(
-      and(
-        eq(ChatMessages.conversationId, conversationId),
-        eq(ChatMessages.userId, userId),
-        messageIsBefore(target),
-      ),
-    )
-    .orderBy(
-      desc(ChatMessages.createdAt),
-      desc(ChatMessages.role),
-      desc(ChatMessages.id),
-    )
-    .limit(historyLimit);
-
-  return {
-    target,
-    history: await hydrateContextMessages(userId, recentMessages),
-  };
-}
-
 async function createMessage(
   message: {
     role: "user" | "assistant";
@@ -629,136 +565,6 @@ export async function deleteOwnedMessage(
   });
 }
 
-/** Replaces one user turn and discards its old reply and linear tail. */
-export async function patchOwnedUserMessage(input: {
-  userId: string;
-  conversationId: string;
-  messageId: string;
-  content: string;
-  attachmentIds: readonly string[];
-  claimToken: string;
-}) {
-  return db.transaction(async (tx) => {
-    const [conversation] = await tx
-      .select({ id: Conversations.id })
-      .from(Conversations)
-      .where(
-        and(
-          eq(Conversations.id, input.conversationId),
-          eq(Conversations.userId, input.userId),
-          eq(Conversations.activeTurnClaimToken, input.claimToken),
-        ),
-      )
-      .limit(1)
-      .for("update");
-
-    if (!conversation) return { status: "claim_lost" } as const;
-
-    const [target] = await tx
-      .select({
-        id: ChatMessages.id,
-        role: ChatMessages.role,
-        createdAt: ChatMessages.createdAt,
-      })
-      .from(ChatMessages)
-      .where(
-        and(
-          eq(ChatMessages.id, input.messageId),
-          eq(ChatMessages.conversationId, input.conversationId),
-          eq(ChatMessages.userId, input.userId),
-        ),
-      )
-      .limit(1);
-
-    if (!target) return { status: "not_found" } as const;
-    if (target.role !== "user") return { status: "not_user" } as const;
-
-    if (input.attachmentIds.length > 0) {
-      const ownedAttachments = await tx
-        .select({
-          attachmentId: Attachments.attachmentId,
-        })
-        .from(Attachments)
-        .where(
-          and(
-            eq(Attachments.userId, input.userId),
-            inArray(Attachments.attachmentId, [...input.attachmentIds]),
-          ),
-        )
-        .for("update");
-      if (ownedAttachments.length !== input.attachmentIds.length)
-        return { status: "attachments_changed" } as const;
-    }
-
-    const removedImageRows = await tx
-      .select({ imageUploadId: Attachments.attachmentId })
-      .from(ChatMessageAttachmentLinks)
-      .innerJoin(
-        Attachments,
-        eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
-      )
-      .innerJoin(
-        ChatMessages,
-        eq(ChatMessageAttachmentLinks.messageId, ChatMessages.id),
-      )
-      .where(
-        and(
-          eq(Attachments.userId, input.userId),
-          eq(Attachments.kind, "image"),
-          eq(ChatMessages.conversationId, input.conversationId),
-          or(
-            messageIsAfter(target),
-            and(
-              eq(ChatMessages.id, target.id),
-              input.attachmentIds.length > 0
-                ? notInArray(ChatMessageAttachmentLinks.attachmentId, [
-                    ...input.attachmentIds,
-                  ])
-                : undefined,
-            ),
-          ),
-        ),
-      );
-
-    await tx
-      .delete(ChatMessages)
-      .where(
-        and(
-          eq(ChatMessages.conversationId, input.conversationId),
-          eq(ChatMessages.userId, input.userId),
-          messageIsAfter(target),
-        ),
-      );
-
-    await tx
-      .delete(ChatMessageAttachmentLinks)
-      .where(eq(ChatMessageAttachmentLinks.messageId, target.id));
-    await linkAttachmentsToMessage(target.id, input.attachmentIds, tx);
-
-    const deletedImageUploadIds =
-      await deleteOwnedUnlinkedUnreservedImageAttachments(
-        input.userId,
-        removedImageRows.map((image) => image.imageUploadId),
-        tx,
-      );
-
-    await tx
-      .update(ChatMessages)
-      .set({ content: input.content, updatedAt: new Date() })
-      .where(eq(ChatMessages.id, target.id));
-
-    await tx
-      .update(Conversations)
-      .set({ lastMessageId: target.id, updatedAt: new Date() })
-      .where(eq(Conversations.id, input.conversationId));
-
-    return {
-      status: "patched",
-      imageUploadIds: deletedImageUploadIds,
-    } as const;
-  });
-}
-
 /**
  * Persists a completed turn as one transaction: the user message, its
  * attachments, the assistant reply, and the conversation's new head.
@@ -811,40 +617,6 @@ export async function persistChatTurn(turn: {
     if (!completed) throw new Error("Conversation turn claim was lost");
 
     await unclaimAttachments(turn.claimToken, tx);
-
-    return assistantMessage.id;
-  });
-}
-
-/** Completes a PATCH turn whose edited user message is already stored. */
-export async function persistAssistantMessage(turn: {
-  userId: string;
-  conversationId: string;
-  chosenModelId: string;
-  assistantContent: string;
-  claimToken: string;
-}) {
-  return db.transaction(async (tx) => {
-    const assistantMessage = await createMessage(
-      {
-        role: "assistant",
-        content: turn.assistantContent,
-        chosenModelId: turn.chosenModelId,
-        conversationId: turn.conversationId,
-        userId: turn.userId,
-      },
-      tx,
-    );
-    const completed = await completeConversationTurn(
-      turn.userId,
-      turn.conversationId,
-      turn.claimToken,
-      assistantMessage.id,
-      undefined,
-      undefined,
-      tx,
-    );
-    if (!completed) throw new Error("Conversation turn claim was lost");
 
     return assistantMessage.id;
   });

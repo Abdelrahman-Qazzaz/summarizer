@@ -55,11 +55,7 @@ vi.mock("../../shared/data/transcripts.data", () => ({
   findMessageTranscriptAttachments: vi.fn(),
 }));
 
-import {
-  deleteOwnedMessage,
-  patchOwnedUserMessage,
-  persistAssistantMessage,
-} from "../../shared/data/messages.data";
+import { deleteOwnedMessage } from "../../shared/data/messages.data";
 
 function returnLockedConversation(rows: unknown[]) {
   mockSelect.mockReturnValueOnce({
@@ -93,14 +89,6 @@ function returnImageRows(rows: unknown[]) {
   mockSelect.mockReturnValueOnce({
     from: () => ({
       innerJoin: () => ({ where: vi.fn().mockResolvedValue(rows) }),
-    }),
-  });
-}
-
-function returnLockedImageRows(rows: unknown[]) {
-  mockSelect.mockReturnValueOnce({
-    from: () => ({
-      where: () => ({ for: vi.fn().mockResolvedValue(rows) }),
     }),
   });
 }
@@ -174,123 +162,5 @@ describe("deleteOwnedMessage", () => {
     ).resolves.toBeNull();
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
-  });
-});
-
-describe("patchOwnedUserMessage", () => {
-  const input = {
-    userId: "user-1",
-    conversationId: "conversation-1",
-    messageId: "message-2",
-    content: "Edited question",
-    attachmentIds: ["image-kept", "image-new", "audio-2", "audio-1"],
-    claimToken: "claim-token",
-  };
-
-  it("does not mutate when the conversation claim was lost", async () => {
-    returnLockedConversation([]);
-
-    await expect(patchOwnedUserMessage(input)).resolves.toEqual({
-      status: "claim_lost",
-    });
-    expect(mockDelete).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
-  });
-
-  it("rejects an assistant target before rewinding", async () => {
-    returnLockedConversation([{ id: "conversation-1" }]);
-    returnTargetMessage([
-      { id: "message-2", role: "assistant", createdAt: new Date(2) },
-    ]);
-
-    await expect(patchOwnedUserMessage(input)).resolves.toEqual({
-      status: "not_user",
-    });
-    expect(mockDelete).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
-  });
-
-  it("replaces the turn and returns every removed image", async () => {
-    returnLockedConversation([{ id: "conversation-1" }]);
-    returnTargetMessage([
-      { id: "message-2", role: "user", createdAt: new Date(2) },
-    ]);
-    returnLockedImageRows([
-      { imageUploadId: "image-kept", messageId: "message-2" },
-      { imageUploadId: "image-new", messageId: null },
-    ]);
-    returnImageRows([
-      { imageUploadId: "image-old" },
-      { imageUploadId: "image-tail" },
-    ]);
-
-    await expect(patchOwnedUserMessage(input)).resolves.toEqual({
-      status: "patched",
-      imageUploadIds: ["image-old", "image-tail"],
-    });
-    expect(mockLinkTranscriptions).toHaveBeenCalledWith(
-      "message-2",
-      ["audio-2", "audio-1"],
-      transaction,
-    );
-    expect(mockSet).toHaveBeenCalledWith({ messageId: "message-2" });
-    expect(mockSet).toHaveBeenCalledWith({
-      content: "Edited question",
-      updatedAt: expect.any(Date),
-    });
-    expect(mockSet).toHaveBeenCalledWith({
-      lastMessageId: "message-2",
-      updatedAt: expect.any(Date),
-    });
-  });
-
-  it("does not rewind when an image was claimed by another message", async () => {
-    returnLockedConversation([{ id: "conversation-1" }]);
-    returnTargetMessage([
-      { id: "message-2", role: "user", createdAt: new Date(2) },
-    ]);
-    returnLockedImageRows([
-      { imageUploadId: "image-kept", messageId: "message-2" },
-      { imageUploadId: "image-new", messageId: "message-9" },
-    ]);
-
-    await expect(patchOwnedUserMessage(input)).resolves.toEqual({
-      status: "attachments_changed",
-    });
-    expect(mockDelete).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
-  });
-});
-
-describe("persistAssistantMessage", () => {
-  it("stores the replacement answer and advances the claimed head", async () => {
-    mockInsertReturning.mockResolvedValueOnce([{ id: "assistant-3" }]);
-    mockCompleteConversationTurn.mockResolvedValueOnce(true);
-
-    await expect(
-      persistAssistantMessage({
-        userId: "user-1",
-        conversationId: "conversation-1",
-        chosenModelId: "model-1",
-        assistantContent: "Replacement answer",
-        claimToken: "claim-token",
-      }),
-    ).resolves.toBe("assistant-3");
-    expect(mockValues).toHaveBeenCalledWith({
-      role: "assistant",
-      content: "Replacement answer",
-      chosenModelId: "model-1",
-      conversationId: "conversation-1",
-      userId: "user-1",
-    });
-    expect(mockCompleteConversationTurn).toHaveBeenCalledWith(
-      "user-1",
-      "conversation-1",
-      "claim-token",
-      "assistant-3",
-      undefined,
-      undefined,
-      transaction,
-    );
   });
 });
