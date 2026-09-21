@@ -90,6 +90,3 @@ export const messageCreateBodySchema = z
       });
     }
   });
-
-/** PATCH replaces a stored user turn but accepts the same complete turn input. */
-export const messagePatchBodySchema = messageCreateBodySchema;
