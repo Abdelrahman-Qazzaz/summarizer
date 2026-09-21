@@ -8,13 +8,9 @@ import {
   db,
   type Executor,
 } from "../db";
-import {
-  IMAGE_URL_TTL_SECONDS,
-  createSignedUrls,
-  deleteFromBucket,
-} from "../bucket";
+import { IMAGE_URL_TTL_SECONDS, createSignedUrls } from "../bucket";
 import type { UploadId } from "../types";
-import { forgetObjects } from "./storageLedger.data";
+import { deleteObjects } from "../uploads";
 import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
@@ -350,9 +346,7 @@ export async function deleteOwnedUnlinkedUnreservedImageAttachment(
     // Hold the deletion lock through storage cleanup; rollback keeps failed
     // deletes retryable, and takes the ledger's mark with it.
     const image = [{ kind: "image", uploadId: deletedAttachmentId }] as const;
-    // TODO: replace these 2 calls with deleteObjects()?
-    await deleteFromBucket(userId, image);
-    await forgetObjects(userId, image, transaction);
+    await deleteObjects(userId, image, transaction);
   });
 }
 

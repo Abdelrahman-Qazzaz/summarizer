@@ -74,9 +74,10 @@ export async function confirmCheckedUpload(
 export async function deleteObjects(
   userId: string,
   objects: readonly StoredObject[],
+  executor?: Executor,
 ) {
   if (objects.length === 0) return;
 
   await deleteFromBucket(userId, objects);
-  await forgetObjects(userId, objects);
+  await forgetObjects(userId, objects, executor);
 }

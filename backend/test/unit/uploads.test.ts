@@ -124,7 +124,7 @@ describe("deleteObjects", () => {
     await deleteObjects(USER, [image]);
 
     expect(bucket.deleteFromBucket).toHaveBeenCalledWith(USER, [image]);
-    expect(ledger.forgetObjects).toHaveBeenCalledWith(USER, [image]);
+    expect(ledger.forgetObjects).toHaveBeenCalledWith(USER, [image], undefined);
     expect(bucket.deleteFromBucket.mock.invocationCallOrder[0]).toBeLessThan(
       ledger.forgetObjects.mock.invocationCallOrder[0],
     );
