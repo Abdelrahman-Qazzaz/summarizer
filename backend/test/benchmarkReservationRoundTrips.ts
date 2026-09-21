@@ -12,8 +12,8 @@ import {
   users,
 } from "../shared/db";
 import {
-  reserveAttachments,
-  releaseAttachmentReservations,
+  claimAttachments,
+  unclaimAttachments,
 } from "../shared/data/attachments.data";
 import { CLAIM_LEASE_MS } from "../shared/data/conversations.data";
 import { msSince } from "../shared/preparationMetrics";
@@ -61,7 +61,7 @@ try {
       const claimToken = randomUUID();
       await measure(operation, async () => {
         if (operation === "single statement") {
-          assert(await reserveAttachments(userId, attachmentIds, claimToken));
+          assert(await claimAttachments(userId, attachmentIds, claimToken));
           return;
         }
         await db.transaction(async (transaction) => {
@@ -91,7 +91,7 @@ try {
         .from(AttachmentTurnReservations)
         .where(eq(AttachmentTurnReservations.claimToken, claimToken));
       assert.equal(rows.length, 2);
-      await releaseAttachmentReservations(claimToken);
+      await unclaimAttachments(claimToken);
     }
   }
   const summaries = [...new Set(samples.map((sample) => sample.operation))].map(

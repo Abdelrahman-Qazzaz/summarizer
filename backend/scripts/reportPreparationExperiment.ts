@@ -70,7 +70,7 @@ for (const [name, metrics] of [
       (operation) => operation.operation === "claimConversationTurn",
     )!;
     const reservation = operations.find(
-      (operation) => operation.operation === "reserveAttachments",
+      (operation) => operation.operation === "claimAttachments",
     )!;
     assert(reservation.startOffsetMs < claim.completedAfterMs);
     if (request.scenario === "two screenshots") {

@@ -1,7 +1,7 @@
 import { withAdvisoryLock } from "./data/advisoryLock.data";
 import { findLedgerEntries } from "./data/storageLedger.data";
 import { logger } from "./logger";
-import { UPLOAD_CONFIRM_WINDOW_MS, releaseObjects } from "./uploads";
+import { UPLOAD_CONFIRM_WINDOW_MS, deleteObjects } from "./uploads";
 
 const log = logger.child({ component: "sweeper" });
 
@@ -38,7 +38,7 @@ export async function sweepUnusedObjects() {
     let removed = 0;
     for (const [userId, owned] of Map.groupBy(objects, (o) => o.userId)) {
       try {
-        await releaseObjects(
+        await deleteObjects(
           userId,
           owned.map(({ kind, uploadId }) => ({ kind, uploadId })),
         );

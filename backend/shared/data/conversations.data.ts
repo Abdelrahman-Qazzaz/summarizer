@@ -111,7 +111,7 @@ export async function claimConversationTurn(
   return row ? claimToken : null;
 }
 
-export async function releaseConversationTurn(
+export async function unclaimConversationTurn(
   userId: string,
   conversationId: string,
   claimToken: string,

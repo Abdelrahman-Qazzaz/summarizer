@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
 import { jobCursorSchema, type JobStatus } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
-import { releaseObjects } from "../../../shared/uploads";
+import { deleteObjects } from "../../../shared/uploads";
 import {
   deleteAudioJob,
   findAudioJob,
@@ -103,7 +103,7 @@ export async function handleDeleteTranscribeJob(c: Context) {
   // nothing knows about. Their records stay marked deleted instead, and the
   // sweep removes whatever landed once the fetch is long over.
   if (!deleted.fetchMayStillWrite) {
-    await releaseObjects(userId, [
+    await deleteObjects(userId, [
       { kind: "audio", uploadId: audioUploadId },
       ...(deleted.captionUploadId
         ? [{ kind: "text" as const, uploadId: deleted.captionUploadId }]

@@ -91,7 +91,7 @@ async function lockOwnedAttachments(
     .for("update");
 }
 
-export async function reserveAttachments(
+export async function claimAttachments(
   userId: string,
   attachmentIds: readonly string[],
   claimToken: string,
@@ -131,7 +131,7 @@ export async function reserveAttachments(
   return result?.reservationCount === uniqueAttachmentIds.length;
 }
 
-export async function releaseAttachmentReservations(
+export async function unclaimAttachments(
   claimToken: string,
   executor: Executor = db,
 ) {

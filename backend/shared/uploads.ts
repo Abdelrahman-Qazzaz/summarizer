@@ -71,7 +71,7 @@ export async function confirmCheckedUpload(
  * Deletes objects marked deleted (or never confirmed) from storage, then
  * their records. A failure leaves the records for the sweep.
  */
-export async function releaseObjects(
+export async function deleteObjects(
   userId: string,
   objects: readonly StoredObject[],
 ) {

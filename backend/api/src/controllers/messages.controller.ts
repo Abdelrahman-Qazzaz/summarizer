@@ -25,14 +25,14 @@ import { logger, messageOf } from "../../../shared/logger";
 import {
   claimConversationTurn,
   findOwnedConversation,
-  releaseConversationTurn,
+  unclaimConversationTurn,
 } from "../../../shared/data/conversations.data";
 import {
   resolveImages,
   resolveMessageImages,
   type ResolvedImage,
 } from "../../../shared/data/images.data";
-import { releaseObjects } from "../../../shared/uploads";
+import { deleteObjects } from "../../../shared/uploads";
 import {
   findMessageTranscriptAttachments,
   findTranscripts,
@@ -40,8 +40,8 @@ import {
 } from "../../../shared/data/transcripts.data";
 import type { MessageAttachmentInput } from "../schema/messages.schema";
 import {
-  reserveAttachments,
-  releaseAttachmentReservations,
+  claimAttachments,
+  unclaimAttachments,
 } from "../../../shared/data/attachments.data";
 
 const log = logger.child({ controller: "messages" });
@@ -203,13 +203,13 @@ export async function handleListMessages(c: Context) {
   });
 }
 
-async function releaseConversationClaimSafely(
+async function unclaimConversationSafely(
   userId: string,
   conversationId: string,
   claimToken: string,
 ) {
   try {
-    await releaseConversationTurn(userId, conversationId, claimToken);
+    await unclaimConversationTurn(userId, conversationId, claimToken);
   } catch (error) {
     log.error("Failed to release conversation turn claim", error, {
       conversationId,
@@ -388,7 +388,7 @@ async function prepareMessageTurn(
  * holds, and releases the images that lose their last link. Only a user
  * message can be replaced; the check happens before anything is deleted.
  */
-async function rewind(
+async function deleteMessageTail(
   messageInput: MessageRequest,
   claimToken: string,
   messageId: string,
@@ -414,7 +414,7 @@ async function rewind(
     });
   }
 
-  await releaseObjects(
+  await deleteObjects(
     messageInput.userId,
     rewound.imageUploadIds.map((uploadId) => ({
       kind: "image" as const,
@@ -496,8 +496,8 @@ function streamAndPersistMessageTurn(
     } finally {
       // A failed read does not cancel acquisition; settle it before releasing anything.
       await Promise.allSettled(claimPromises);
-      await releaseAttachmentReservations(claimToken).catch(() => {});
-      await releaseConversationClaimSafely(
+      await unclaimAttachments(claimToken).catch(() => {});
+      await unclaimConversationSafely(
         messageInput.userId,
         messageInput.conversationId,
         claimToken,
@@ -518,7 +518,7 @@ function createClaimData(messageInput: MessageRequest) {
       messageInput.expectedLastMessageId,
       claimToken,
     ),
-    reserveAttachments(
+    claimAttachments(
       messageInput.userId,
       messageInput.attachmentIds,
       claimToken,
@@ -567,7 +567,7 @@ export async function handlePatchMessage(c: Context) {
         claimPromises,
         messageId,
       );
-      await rewind(messageInput, claimToken, messageId);
+      await deleteMessageTail(messageInput, claimToken, messageId);
       return prepared;
     },
   );
@@ -586,7 +586,7 @@ export async function handleDeleteMessage(c: Context) {
   if (result.status !== "deleted")
     return c.json({ message: "A response is already in progress" }, 409);
 
-  await releaseObjects(
+  await deleteObjects(
     userId,
     result.imageUploadIds.map((uploadId) => ({ kind: "image", uploadId })),
   );

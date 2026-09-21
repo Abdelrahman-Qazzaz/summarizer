@@ -2,7 +2,7 @@ import {
   clearCaptionUploadId,
   findTerminalCaptionUpload,
 } from "./data/jobs.data";
-import { releaseObjects } from "./uploads";
+import { deleteObjects } from "./uploads";
 
 /**
  * Removes the caption text a finished job no longer needs. The job stops
@@ -23,7 +23,7 @@ export async function cleanupTerminalCaptionUpload(
   );
   if (!cleared) return false;
 
-  await releaseObjects(upload.userId, [
+  await deleteObjects(upload.userId, [
     { kind: "text", uploadId: upload.captionUploadId },
   ]);
   return true;
