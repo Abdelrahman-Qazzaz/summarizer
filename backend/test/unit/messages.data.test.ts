@@ -44,6 +44,7 @@ vi.mock("../../shared/db", async () => ({
 
 vi.mock("../../shared/data/images.data", () => ({
   linkImagesToMessage: vi.fn(),
+  images: {},
 }));
 
 vi.mock("../../shared/data/conversations.data", () => ({

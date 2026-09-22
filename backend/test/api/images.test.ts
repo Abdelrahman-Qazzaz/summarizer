@@ -59,11 +59,18 @@ vi.mock("../../shared/bucket", () => ({
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
 }));
 
-vi.mock("../../shared/data/images.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../shared/data/images.data")>()),
-  deleteOwnedUnlinkedUnreservedImageAttachment:
-    mockDeleteOwnedUnlinkedUnreservedImageAttachment,
-}));
+vi.mock("../../shared/data/images.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/images.data")>();
+  return {
+    ...actual,
+    images: {
+      ...actual.images,
+      deleteOwnedUnlinkedUnreservedImageAttachment:
+        mockDeleteOwnedUnlinkedUnreservedImageAttachment,
+    },
+  };
+});
 
 import { createApp } from "../../api/app";
 import { authedHeaders, sessionCookieHeader } from "../helpers/session";

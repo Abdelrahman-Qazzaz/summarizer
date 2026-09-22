@@ -12,8 +12,10 @@ vi.mock("../../shared/db", async () => ({
 }));
 
 vi.mock("../../shared/data/images.data", () => ({
-  deleteOwnedUnlinkedUnreservedImageAttachments: vi.fn(),
-  resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
+  images: {
+    deleteOwnedUnlinkedUnreservedImageAttachments: vi.fn(),
+    resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
+  },
 }));
 
 import { findCreateMessageHistory } from "../../shared/data/messages.data";

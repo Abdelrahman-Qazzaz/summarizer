@@ -54,10 +54,7 @@ import {
 } from "../../shared/db";
 import { attachments } from "../../shared/data/attachments.data";
 import { jobs } from "../../shared/data/jobs.data";
-import {
-  createImageAttachment,
-  deleteOwnedUnlinkedUnreservedImageAttachment,
-} from "../../shared/data/images.data";
+import { images } from "../../shared/data/images.data";
 import { sweepUnusedObjects } from "../../shared/sweeper";
 import { storageLedger } from "../../shared/data/storageLedger.data";
 import { advisoryLock } from "../../shared/data/advisoryLock.data";
@@ -219,7 +216,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       ).toBe(true);
       expect(
         await storageLedger.confirmUpload(picture, HOUR_MS, (executor) =>
-          createImageAttachment(
+          images.createImageAttachment(
             {
               userId,
               imageUploadId: picture.uploadId as never,
@@ -571,7 +568,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     it("drops the record once an image's storage delete succeeds", async () => {
       const a = await addImage();
 
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, a);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(userId, a);
 
       expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
         { kind: "image", uploadId: a },
@@ -587,7 +584,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       testState.deleteFromBucket.mockRejectedValueOnce(new Error("down"));
 
       await expect(
-        deleteOwnedUnlinkedUnreservedImageAttachment(userId, a),
+        images.deleteOwnedUnlinkedUnreservedImageAttachment(userId, a),
       ).rejects.toThrow("down");
 
       expect(await statusOf(a)).toBe("confirmed");

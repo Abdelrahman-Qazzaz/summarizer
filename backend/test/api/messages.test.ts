@@ -87,12 +87,19 @@ vi.mock("../../shared/data/messages.data", async (importActual) => ({
   deleteOwnedMessage: mockDeleteOwnedMessage,
 }));
 
-vi.mock("../../shared/data/images.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../shared/data/images.data")>()),
-  resolveImages: mockResolveImages,
-  resolveMessageImages: mockResolveMessageImages,
-  resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
-}));
+vi.mock("../../shared/data/images.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/images.data")>();
+  return {
+    ...actual,
+    images: {
+      ...actual.images,
+      resolveImages: mockResolveImages,
+      resolveMessageImages: mockResolveMessageImages,
+      resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
+    },
+  };
+});
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => {
   const actual =

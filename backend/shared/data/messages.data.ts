@@ -8,10 +8,7 @@ import {
   db,
   type Executor,
 } from "../db";
-import {
-  deleteOwnedUnlinkedUnreservedImageAttachments,
-  resolveImageAttachmentUrls,
-} from "./images.data";
+import { images } from "./images.data";
 import { conversations } from "./conversations.data";
 import { messageAttachmentLinks } from "./messageAttachmentLinks.data";
 import { attachments } from "./attachments.data";
@@ -320,9 +317,10 @@ export async function findCreateMessageHistory(input: {
     }
   }
 
-  const urlByImageUploadId = await resolveImageAttachmentUrls(input.userId, [
-    ...imageRowsByUploadId.values(),
-  ]);
+  const urlByImageUploadId = await images.resolveImageAttachmentUrls(
+    input.userId,
+    [...imageRowsByUploadId.values()],
+  );
 
   return history.map(({ images, ...message }) => ({
     ...message,
@@ -540,7 +538,7 @@ export async function deleteOwnedMessage(
       .returning({ id: ChatMessages.id });
 
     const deletedImageUploadIds =
-      await deleteOwnedUnlinkedUnreservedImageAttachments(
+      await images.deleteOwnedUnlinkedUnreservedImageAttachments(
         userId,
         imageRows.map((image) => image.imageUploadId),
         tx,

@@ -59,7 +59,7 @@ function getSignedUrlExpiryDate() {
  * instead of reading it out again. `executor` lets a direct upload's confirm
  * write it in the transaction that confirms the upload.
  */
-export async function createImageAttachment(
+async function createImageAttachment(
   input: {
     userId: string;
     imageUploadId: UploadId;
@@ -128,7 +128,7 @@ async function findImageAttachments(
  * signature on) only those whose stored url has expired. Takes just the fields
  * it reads, so a projection from a join can be passed straight in.
  */
-export async function resolveImageAttachmentUrls(
+async function resolveImageAttachmentUrls(
   userId: string,
   rows: readonly SignableImageRow[],
 ): Promise<Map<string, string>> {
@@ -235,7 +235,7 @@ async function resolveImagesWhere(
 }
 
 /** The user's images by id, whether or not they've been sent on a message. */
-export async function resolveImages(
+async function resolveImages(
   userId: string,
   imageUploadIds: readonly string[],
 ) {
@@ -247,7 +247,7 @@ export async function resolveImages(
  * a whole page of history rather than one per turn. Messages with no images are
  * absent from the map.
  */
-export async function resolveMessageImages(
+async function resolveMessageImages(
   userId: string,
   messageIds: readonly string[],
 ): Promise<Map<string, ResolvedImage[]>> {
@@ -309,7 +309,7 @@ async function findLinkedImageAttachmentIdsWhere(
 }
 
 /** Same, for every message in a conversation about to be deleted. */
-export async function findConversationImageAttachmentIds(
+async function findConversationImageAttachmentIds(
   userId: string,
   conversationId: string,
 ) {
@@ -325,7 +325,7 @@ export async function findConversationImageAttachmentIds(
   );
 }
 
-export async function deleteOwnedUnlinkedUnreservedImageAttachment(
+async function deleteOwnedUnlinkedUnreservedImageAttachment(
   userId: string,
   imageUploadId: string,
 ) {
@@ -348,7 +348,7 @@ export async function deleteOwnedUnlinkedUnreservedImageAttachment(
   });
 }
 
-export async function deleteOwnedUnlinkedUnreservedImageAttachments(
+async function deleteOwnedUnlinkedUnreservedImageAttachments(
   userId: string,
   candidateAttachmentIds: readonly string[],
   executor: Executor = db,
@@ -362,3 +362,13 @@ export async function deleteOwnedUnlinkedUnreservedImageAttachments(
     executor,
   );
 }
+
+export const images = {
+  createImageAttachment,
+  resolveImageAttachmentUrls,
+  resolveImages,
+  resolveMessageImages,
+  findConversationImageAttachmentIds,
+  deleteOwnedUnlinkedUnreservedImageAttachment,
+  deleteOwnedUnlinkedUnreservedImageAttachments,
+};

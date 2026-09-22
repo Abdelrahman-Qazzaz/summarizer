@@ -23,11 +23,7 @@ import {
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger, messageOf } from "../../../shared/logger";
 import { conversations } from "../../../shared/data/conversations.data";
-import {
-  resolveImages,
-  resolveMessageImages,
-  type ResolvedImage,
-} from "../../../shared/data/images.data";
+import { images, type ResolvedImage } from "../../../shared/data/images.data";
 import { deleteObjects } from "../../../shared/uploads";
 import {
   transcripts,
@@ -179,7 +175,7 @@ export async function handleListMessages(c: Context) {
 
   const messageIds = userMessageIds(rows);
   const [imagesByMessageId, transcriptsByMessageId] = await Promise.all([
-    resolveMessageImages(userId, messageIds),
+    images.resolveMessageImages(userId, messageIds),
     transcripts.findMessageTranscriptAttachments(userId, messageIds),
   ]);
 
@@ -308,7 +304,7 @@ async function prepareMessageTurn(
     history,
   ] = await Promise.all([
     ...claimPromises,
-    resolveImages(messageInput.userId, messageInput.imageUploadIds),
+    images.resolveImages(messageInput.userId, messageInput.imageUploadIds),
     transcripts.findTranscripts(
       messageInput.userId,
       messageInput.audioUploadIds,

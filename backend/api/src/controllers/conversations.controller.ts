@@ -1,10 +1,7 @@
 import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
 import { deleteObjects } from "../../../shared/uploads";
-import {
-  deleteOwnedUnlinkedUnreservedImageAttachments,
-  findConversationImageAttachmentIds,
-} from "../../../shared/data/images.data";
+import { images } from "../../../shared/data/images.data";
 import {
   conversations,
   type ConversationRow,
@@ -72,7 +69,7 @@ export async function handleDeleteConversation(c: Context) {
 
   // Keep the candidates before their message links cascade away. Uploads still
   // referenced by another conversation are filtered out after the delete.
-  const imageUploadIds = await findConversationImageAttachmentIds(
+  const imageUploadIds = await images.findConversationImageAttachmentIds(
     userId,
     conversationId,
   );
@@ -93,7 +90,10 @@ export async function handleDeleteConversation(c: Context) {
   }
 
   const deletedImageAttachmentIds =
-    await deleteOwnedUnlinkedUnreservedImageAttachments(userId, imageUploadIds);
+    await images.deleteOwnedUnlinkedUnreservedImageAttachments(
+      userId,
+      imageUploadIds,
+    );
   await deleteObjects(
     userId,
     deletedImageAttachmentIds.map((uploadId) => ({ kind: "image", uploadId })),

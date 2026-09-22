@@ -53,7 +53,7 @@ import {
   users,
 } from "../../shared/db";
 import { attachments } from "../../shared/data/attachments.data";
-import { deleteOwnedUnlinkedUnreservedImageAttachment } from "../../shared/data/images.data";
+import { images } from "../../shared/data/images.data";
 import { persistChatTurn } from "../../shared/data/messages.data";
 
 const userId = "reservation-owner";
@@ -199,7 +199,10 @@ describe.skipIf(!testState.databaseUrl)(
           claimToken,
         ),
       ).toBe(true);
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).not.toHaveBeenCalled();
       expect(
         await attachments.deleteOwnedUnlinkedUnreservedAttachments({
@@ -223,7 +226,10 @@ describe.skipIf(!testState.databaseUrl)(
         2,
       );
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).not.toHaveBeenCalled();
     });
 
@@ -236,10 +242,16 @@ describe.skipIf(!testState.databaseUrl)(
         otherClaimToken,
       );
       await attachments.unclaimAttachments(claimToken);
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).not.toHaveBeenCalled();
       await attachments.unclaimAttachments(otherClaimToken);
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
         { kind: "image", uploadId: imageUploadId },
       ]);
@@ -269,7 +281,10 @@ describe.skipIf(!testState.databaseUrl)(
         1,
       );
       await attachments.unclaimAttachments(claimToken);
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
         { kind: "image", uploadId: imageUploadId },
       ]);
@@ -280,11 +295,17 @@ describe.skipIf(!testState.databaseUrl)(
       await db
         .update(AttachmentTurnReservations)
         .set({ expiresAt: new Date(0) });
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).not.toHaveBeenCalled();
 
       await db.update(Conversations).set({ activeTurnClaimToken: null });
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
         { kind: "image", uploadId: imageUploadId },
       ]);
@@ -295,7 +316,10 @@ describe.skipIf(!testState.databaseUrl)(
         new Error("storage unavailable"),
       );
       await expect(
-        deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId),
+        images.deleteOwnedUnlinkedUnreservedImageAttachment(
+          userId,
+          imageUploadId,
+        ),
       ).rejects.toThrow("storage unavailable");
       expect(
         await db
@@ -303,7 +327,10 @@ describe.skipIf(!testState.databaseUrl)(
           .from(Attachments)
           .where(eq(Attachments.attachmentId, imageUploadId)),
       ).toHaveLength(1);
-      await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+        userId,
+        imageUploadId,
+      );
       expect(testState.deleteFromBucket).toHaveBeenCalledTimes(2);
     });
 
@@ -314,7 +341,7 @@ describe.skipIf(!testState.databaseUrl)(
         storageStarted.resolve();
         await finishStorage.promise;
       });
-      const deletion = deleteOwnedUnlinkedUnreservedImageAttachment(
+      const deletion = images.deleteOwnedUnlinkedUnreservedImageAttachment(
         userId,
         imageUploadId,
       );
@@ -357,7 +384,7 @@ describe.skipIf(!testState.databaseUrl)(
         await finishReservation.promise;
       });
       await reservationStarted.promise;
-      const deletion = deleteOwnedUnlinkedUnreservedImageAttachment(
+      const deletion = images.deleteOwnedUnlinkedUnreservedImageAttachment(
         userId,
         imageUploadId,
       );
