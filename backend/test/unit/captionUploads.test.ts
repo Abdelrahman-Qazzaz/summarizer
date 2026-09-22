@@ -11,8 +11,10 @@ const {
 }));
 
 vi.mock("../../shared/data/jobs.data", () => ({
-  findTerminalCaptionUpload: mockFindTerminalCaptionUpload,
-  clearCaptionUploadId: mockClearCaptionUploadId,
+  jobs: {
+    findTerminalCaptionUpload: mockFindTerminalCaptionUpload,
+    clearCaptionUploadId: mockClearCaptionUploadId,
+  },
 }));
 
 vi.mock("../../shared/uploads", () => ({

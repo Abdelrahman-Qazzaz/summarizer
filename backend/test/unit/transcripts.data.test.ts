@@ -31,7 +31,9 @@ vi.mock("../../shared/db", () => ({
 }));
 
 vi.mock("../../shared/data/jobs.data", () => ({
-  completeAudioJob: mockCompleteAudioJob,
+  jobs: {
+    completeAudioJob: mockCompleteAudioJob,
+  },
 }));
 
 import {

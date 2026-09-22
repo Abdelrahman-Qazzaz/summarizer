@@ -4,7 +4,7 @@ import {
 } from "../shared/ai/ai_transcribe_client";
 import { createSignedUrl, getTextFromBucket } from "../shared/bucket";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
-import { claimAudioJob, failAudioJob } from "../shared/data/jobs.data";
+import { jobs } from "../shared/data/jobs.data";
 import { saveCompletedTranscript } from "../shared/data/transcripts.data";
 import { logger, messageOf } from "../shared/logger";
 import {
@@ -20,7 +20,7 @@ type HandleTranscribeJobInput = {
   useCaptionUpload: boolean;
 };
 
-type AudioJob = Awaited<ReturnType<typeof claimAudioJob>> & {};
+type AudioJob = Awaited<ReturnType<typeof jobs.claimAudioJob>> & {};
 
 async function runTranscriptionJob(
   audioUploadId: UploadId,
@@ -30,7 +30,7 @@ async function runTranscriptionJob(
   let claimToken: string | null = null;
 
   try {
-    const job = await claimAudioJob(audioUploadId, redelivered);
+    const job = await jobs.claimAudioJob(audioUploadId, redelivered);
     if (!job) return;
     claimToken = job.claimToken;
 
@@ -58,7 +58,7 @@ async function runTranscriptionJob(
     });
   } catch (error) {
     log.error("Transcription job failed", error, { audioUploadId });
-    if (claimToken) await failAudioJob(audioUploadId, claimToken);
+    if (claimToken) await jobs.failAudioJob(audioUploadId, claimToken);
     throw error;
   }
 }

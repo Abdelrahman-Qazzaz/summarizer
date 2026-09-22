@@ -31,7 +31,7 @@ type AudioJobRow = typeof AudioTranscriptionJobs.$inferSelect;
 
 /* ---------------------------------------------------------------- API reads */
 
-export async function findAudioJob(userId: string, audioUploadId: string) {
+async function findAudioJob(userId: string, audioUploadId: string) {
   const [row] = await db
     .select({
       audioUploadId: AudioTranscriptionJobs.audioUploadId,
@@ -116,7 +116,7 @@ type JobsPageFilters = {
  * encoding. The audioUploadId tiebreak in the ordering is what makes the keyset
  * cursor deterministic.
  */
-export async function findUserJobsPage(
+async function findUserJobsPage(
   filters: JobsPageFilters,
 ): Promise<JobSummary[]> {
   const { userId, status, searchQuery, cursor, fetchCount } = filters;
@@ -156,7 +156,7 @@ export async function findUserJobsPage(
  * The attachment row and the job row, together. `executor` lets a direct
  * upload's confirm write them in the transaction that confirms the upload.
  */
-export async function createAudioJob(
+async function createAudioJob(
   job: {
     audioUploadId: UploadId;
     captionUploadId: UploadId | null;
@@ -213,7 +213,7 @@ export async function createAudioJob(
  * object the fetcher writes is never unrecorded; recording one that never
  * arrives costs nothing, since deleting a missing object is a no-op.
  */
-export async function createYoutubeAudioJob(
+async function createYoutubeAudioJob(
   job: Parameters<typeof createAudioJob>[0],
 ) {
   await db.transaction(async (tx) => {
@@ -238,7 +238,7 @@ export async function createYoutubeAudioJob(
  * Returns null when nothing was deleted, and otherwise says whether its fetch
  * could still write the objects the caller is about to remove.
  */
-export async function deleteAudioJob(userId: string, audioUploadId: string) {
+async function deleteAudioJob(userId: string, audioUploadId: string) {
   return db.transaction(async (tx) => {
     const [job] = await tx
       .select({
@@ -279,14 +279,14 @@ export async function deleteAudioJob(userId: string, audioUploadId: string) {
  * Out-of-band failure reported by youtube-fetcher over the broker. Not
  * user-scoped: the event carries no session, only the id it was given.
  */
-export async function failAudioJobById(audioUploadId: string, error: string) {
+async function failAudioJobById(audioUploadId: string, error: string) {
   await db
     .update(AudioTranscriptionJobs)
     .set({ status: "failed", error })
     .where(eq(AudioTranscriptionJobs.audioUploadId, audioUploadId));
 }
 
-export async function findTerminalCaptionUpload(
+async function findTerminalCaptionUpload(
   audioUploadId: string,
   userId?: string,
 ) {
@@ -318,7 +318,7 @@ export async function findTerminalCaptionUpload(
  * Clears a job's caption id and marks its text deleted, in one transaction.
  * False when the job no longer points at that caption.
  */
-export async function clearCaptionUploadId(
+async function clearCaptionUploadId(
   audioUploadId: string,
   captionUploadId: UploadId,
   userId: string,
@@ -353,7 +353,7 @@ export async function clearCaptionUploadId(
  * but does not prove the old process stopped. Replacing claimToken fences that
  * worker out of every terminal write if it later finishes.
  */
-export async function claimAudioJob(
+async function claimAudioJob(
   audioUploadId: UploadId,
   allowProcessingRecovery = false,
 ) {
@@ -389,7 +389,7 @@ export async function claimAudioJob(
  * A terminal transition belongs only to the latest claimant. Returns false when
  * this worker lost ownership, so its caller can discard the stale result.
  */
-export async function completeAudioJob(
+async function completeAudioJob(
   audioUploadId: UploadId,
   claimToken: string,
   executor: Executor = db,
@@ -409,10 +409,7 @@ export async function completeAudioJob(
   return Boolean(row);
 }
 
-export async function failAudioJob(
-  audioUploadId: UploadId,
-  claimToken: string,
-) {
+async function failAudioJob(audioUploadId: UploadId, claimToken: string) {
   await db
     .update(AudioTranscriptionJobs)
     .set({ status: "failed" })
@@ -424,3 +421,17 @@ export async function failAudioJob(
       ),
     );
 }
+
+export const jobs = {
+  findAudioJob,
+  findUserJobsPage,
+  createAudioJob,
+  createYoutubeAudioJob,
+  deleteAudioJob,
+  failAudioJobById,
+  findTerminalCaptionUpload,
+  clearCaptionUploadId,
+  claimAudioJob,
+  completeAudioJob,
+  failAudioJob,
+};

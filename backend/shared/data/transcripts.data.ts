@@ -8,7 +8,7 @@ import {
   type Executor,
 } from "../db";
 
-import { completeAudioJob } from "./jobs.data";
+import { jobs } from "./jobs.data";
 import type { UploadId } from "../types";
 import { attachments } from "./attachments.data";
 
@@ -42,7 +42,7 @@ export async function saveCompletedTranscript(
   claimToken: string,
 ) {
   return db.transaction(async (tx) => {
-    const ownsJob = await completeAudioJob(audioUploadId, claimToken, tx);
+    const ownsJob = await jobs.completeAudioJob(audioUploadId, claimToken, tx);
     if (!ownsJob) return false;
 
     await insertTranscript(audioUploadId, content, tx);

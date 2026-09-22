@@ -19,12 +19,19 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-vi.mock("../../shared/data/jobs.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../shared/data/jobs.data")>()),
-  findAudioJob: mockFindAudioJob,
-  findUserJobsPage: mockFindUserJobsPage,
-  deleteAudioJob: mockDeleteAudioJob,
-}));
+vi.mock("../../shared/data/jobs.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/jobs.data")>();
+  return {
+    ...actual,
+    jobs: {
+      ...actual.jobs,
+      findAudioJob: mockFindAudioJob,
+      findUserJobsPage: mockFindUserJobsPage,
+      deleteAudioJob: mockDeleteAudioJob,
+    },
+  };
+});
 
 vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
   ...(await importActual<

@@ -3,11 +3,7 @@ import { CTX_KEYS } from "../../../shared/keys";
 import { jobCursorSchema, type JobStatus } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
 import { deleteObjects } from "../../../shared/uploads";
-import {
-  deleteAudioJob,
-  findAudioJob,
-  findUserJobsPage,
-} from "../../../shared/data/jobs.data";
+import { jobs } from "../../../shared/data/jobs.data";
 import { findTranscripts } from "../../../shared/data/transcripts.data";
 import { tryCatch } from "../../../shared/try-catch";
 import { logger } from "../../../shared/logger";
@@ -22,7 +18,7 @@ export async function handleGetTranscribeJob(c: Context) {
   // without a separate status check.
   // A transcript-read failure degrades to null rather than failing the job view.
   const [audioJob, transcriptResult] = await Promise.all([
-    findAudioJob(userId, audioUploadId),
+    jobs.findAudioJob(userId, audioUploadId),
     tryCatch(findTranscripts(userId, [audioUploadId])),
   ]);
 
@@ -59,7 +55,7 @@ export async function getUserJobs(c: Context) {
   // A malformed/forged cursor decodes to null → fall back to the first page.
   const cursor = rawCursor ? decodeCursor(rawCursor, jobCursorSchema) : null;
 
-  const rows = await findUserJobsPage({
+  const rows = await jobs.findUserJobsPage({
     userId,
     status,
     searchQuery,
@@ -86,10 +82,10 @@ export async function handleDeleteTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const audioUploadId = c.get(CTX_KEYS.audioUploadId);
 
-  const job = await findAudioJob(userId, audioUploadId);
+  const job = await jobs.findAudioJob(userId, audioUploadId);
   if (!job) return c.json({ message: "Job Deleted" }, 200);
 
-  const deleted = await deleteAudioJob(userId, audioUploadId);
+  const deleted = await jobs.deleteAudioJob(userId, audioUploadId);
   if (!deleted) {
     return c.json(
       { message: "Source is linked to a message or reserved for a response" },

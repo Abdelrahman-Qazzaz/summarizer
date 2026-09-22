@@ -1,7 +1,4 @@
-import {
-  clearCaptionUploadId,
-  findTerminalCaptionUpload,
-} from "./data/jobs.data";
+import { jobs } from "./data/jobs.data";
 import { deleteObjects } from "./uploads";
 
 /**
@@ -13,10 +10,10 @@ export async function cleanupTerminalCaptionUpload(
   audioUploadId: string,
   userId?: string,
 ) {
-  const upload = await findTerminalCaptionUpload(audioUploadId, userId);
+  const upload = await jobs.findTerminalCaptionUpload(audioUploadId, userId);
   if (!upload?.captionUploadId) return false;
 
-  const cleared = await clearCaptionUploadId(
+  const cleared = await jobs.clearCaptionUploadId(
     audioUploadId,
     upload.captionUploadId,
     upload.userId,

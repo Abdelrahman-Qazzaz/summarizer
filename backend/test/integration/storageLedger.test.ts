@@ -53,12 +53,7 @@ import {
   type Executor,
 } from "../../shared/db";
 import { attachments } from "../../shared/data/attachments.data";
-import {
-  clearCaptionUploadId,
-  createAudioJob,
-  createYoutubeAudioJob,
-  deleteAudioJob,
-} from "../../shared/data/jobs.data";
+import { jobs } from "../../shared/data/jobs.data";
 import {
   createImageAttachment,
   deleteOwnedUnlinkedUnreservedImageAttachment,
@@ -199,7 +194,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     });
 
     // The real writes, each running its own transaction inside the confirm's.
-    it("confirms through createAudioJob and createImageAttachment", async () => {
+    it("confirms through jobs.createAudioJob and createImageAttachment", async () => {
       const audio = { userId, kind: "audio" as const, uploadId: randomUUID() };
       const picture = image();
       await storageLedger.recordPendingUpload(audio);
@@ -207,7 +202,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
 
       expect(
         await storageLedger.confirmUpload(audio, HOUR_MS, (executor) =>
-          createAudioJob(
+          jobs.createAudioJob(
             {
               audioUploadId: audio.uploadId as never,
               captionUploadId: null,
@@ -253,7 +248,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
 
       await expect(
         storageLedger.confirmUpload(audio, HOUR_MS, (executor) =>
-          createAudioJob(
+          jobs.createAudioJob(
             {
               audioUploadId: audio.uploadId as never,
               captionUploadId: null,
@@ -429,7 +424,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
 
     async function addJob(captionUploadId: string | null) {
       const audioUploadId = randomUUID();
-      await createAudioJob({
+      await jobs.createAudioJob({
         audioUploadId: audioUploadId as never,
         captionUploadId: captionUploadId as never,
         userId,
@@ -498,7 +493,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
             sql`${AudioTranscriptionJobs.audioUploadId} = ${audioUploadId}`,
           );
 
-        expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
+        expect(await jobs.deleteAudioJob(userId, audioUploadId)).toMatchObject({
           fetchMayStillWrite,
         });
       },
@@ -507,7 +502,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     // Nothing writes a direct upload's objects after it exists.
     it("reports that a queued direct upload's objects are settled", async () => {
       const audioUploadId = randomUUID();
-      await createAudioJob({
+      await jobs.createAudioJob({
         audioUploadId: audioUploadId as never,
         captionUploadId: null,
         userId,
@@ -521,7 +516,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         { kind: "audio", uploadId: audioUploadId },
       ]);
 
-      expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
+      expect(await jobs.deleteAudioJob(userId, audioUploadId)).toMatchObject({
         fetchMayStillWrite: false,
       });
     });
@@ -530,7 +525,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       const captionUploadId = randomUUID();
       const audioUploadId = await addJob(captionUploadId);
 
-      expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
+      expect(await jobs.deleteAudioJob(userId, audioUploadId)).toMatchObject({
         captionUploadId,
       });
       expect(await statusOf(audioUploadId)).toBe("deleted");
@@ -540,7 +535,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     it("marks only the audio of a job without caption text", async () => {
       const audioUploadId = await addJob(null);
 
-      expect(await deleteAudioJob(userId, audioUploadId)).toMatchObject({
+      expect(await jobs.deleteAudioJob(userId, audioUploadId)).toMatchObject({
         captionUploadId: null,
       });
       expect(await statusOf(audioUploadId)).toBe("deleted");
@@ -550,7 +545,9 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       const captionUploadId = randomUUID();
       const audioUploadId = await addJob(captionUploadId);
 
-      expect(await deleteAudioJob("someone-else", audioUploadId)).toBeNull();
+      expect(
+        await jobs.deleteAudioJob("someone-else", audioUploadId),
+      ).toBeNull();
       expect(await statusOf(audioUploadId)).toBe("confirmed");
       expect(await statusOf(captionUploadId)).toBe("confirmed");
     });
@@ -559,7 +556,11 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       const captionUploadId = randomUUID();
       const audioUploadId = await addJob(captionUploadId);
       const clear = () =>
-        clearCaptionUploadId(audioUploadId, captionUploadId as never, userId);
+        jobs.clearCaptionUploadId(
+          audioUploadId,
+          captionUploadId as never,
+          userId,
+        );
 
       expect(await clear()).toBe(true);
       expect(await clear()).toBe(false);
@@ -611,7 +612,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       const captionUploadId = randomUUID();
       const job = youtubeJob(captionUploadId);
 
-      await createYoutubeAudioJob(job);
+      await jobs.createYoutubeAudioJob(job);
 
       expect(await ledger()).toEqual(
         expect.arrayContaining([
@@ -626,7 +627,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     it("records nothing when the job can't be created", async () => {
       const job = { ...youtubeJob(null), userId: "no-such-user" };
 
-      await expect(createYoutubeAudioJob(job)).rejects.toThrow();
+      await expect(jobs.createYoutubeAudioJob(job)).rejects.toThrow();
 
       expect(await ledger()).toEqual([]);
     });
