@@ -60,7 +60,7 @@ vi.mock("../../shared/data/transcripts.data", () => ({
   },
 }));
 
-import { deleteOwnedMessage } from "../../shared/data/messages.data";
+import { messages } from "../../shared/data/messages.data";
 
 function returnLockedConversation(rows: unknown[]) {
   mockSelect.mockReturnValueOnce({
@@ -120,7 +120,7 @@ describe("deleteOwnedMessage", () => {
     ]);
 
     await expect(
-      deleteOwnedMessage("user-1", "conversation-1", "message-1"),
+      messages.deleteOwnedMessage("user-1", "conversation-1", "message-1"),
     ).resolves.toEqual({ status: "active" });
     expect(mockDelete).not.toHaveBeenCalled();
   });
@@ -143,7 +143,7 @@ describe("deleteOwnedMessage", () => {
     ]);
 
     await expect(
-      deleteOwnedMessage("user-1", "conversation-1", "message-2"),
+      messages.deleteOwnedMessage("user-1", "conversation-1", "message-2"),
     ).resolves.toEqual({
       status: "deleted",
       ids: ["message-2", "message-3"],
@@ -163,7 +163,7 @@ describe("deleteOwnedMessage", () => {
     returnTargetMessage([]);
 
     await expect(
-      deleteOwnedMessage("user-1", "conversation-1", "message-1"),
+      messages.deleteOwnedMessage("user-1", "conversation-1", "message-1"),
     ).resolves.toBeNull();
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();

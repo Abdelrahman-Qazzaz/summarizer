@@ -54,7 +54,7 @@ import {
 } from "../../shared/db";
 import { attachments } from "../../shared/data/attachments.data";
 import { images } from "../../shared/data/images.data";
-import { persistChatTurn } from "../../shared/data/messages.data";
+import { messages } from "../../shared/data/messages.data";
 
 const userId = "reservation-owner";
 const imageUploadId = randomUUID();
@@ -212,7 +212,7 @@ describe.skipIf(!testState.databaseUrl)(
         }),
       ).toEqual([]);
 
-      await persistChatTurn({
+      await messages.persistChatTurn({
         userId,
         conversationId,
         content: "Summarize",
@@ -264,7 +264,7 @@ describe.skipIf(!testState.databaseUrl)(
         .set({ activeTurnClaimToken: randomUUID() });
 
       await expect(
-        persistChatTurn({
+        messages.persistChatTurn({
           userId,
           conversationId,
           content: "Describe",

@@ -64,7 +64,7 @@ export type MessageRow = Pick<
 >;
 
 /** Full history for a conversation, oldest first. */
-export async function findConversationMessages(conversationId: string) {
+async function findConversationMessages(conversationId: string) {
   return db
     .select(messageColumns)
     .from(ChatMessages)
@@ -126,7 +126,7 @@ type PendingCreateMessageHistory = Omit<CreateMessageHistory, "imageUrls"> & {
 };
 
 /** Fully resolved admitted history for POST message creation, newest first. */
-export async function findCreateMessageHistory(input: {
+async function findCreateMessageHistory(input: {
   userId: string;
   conversationId: string;
   newMessageContentCharCount: number;
@@ -389,7 +389,7 @@ async function hydrateContextMessages(
  * latest turns. Images and transcript metadata are loaded separately after the
  * limit, avoiding a cross-product when a message carries several of each.
  */
-export async function findRecentMessagesWithContext(
+async function findRecentMessagesWithContext(
   userId: string,
   conversationId: string,
   limit: number,
@@ -443,7 +443,7 @@ async function createMessage(
  * (`claimToken`) — editing a message rewinds under the claim it already holds.
  * `onlyRole` refuses a message of any other role, before anything is deleted.
  */
-export async function deleteOwnedMessage(
+async function deleteOwnedMessage(
   userId: string,
   conversationId: string,
   messageId: string,
@@ -569,7 +569,7 @@ export async function deleteOwnedMessage(
  * All-or-nothing, so a mid-write failure can't leave a turn half-recorded — a
  * user message with no reply, or a reply the conversation never points at.
  */
-export async function persistChatTurn(turn: {
+async function persistChatTurn(turn: {
   userId: string;
   conversationId: string;
   content: string;
@@ -623,3 +623,11 @@ export async function persistChatTurn(turn: {
     return assistantMessage.id;
   });
 }
+
+export const messages = {
+  findConversationMessages,
+  findCreateMessageHistory,
+  findRecentMessagesWithContext,
+  deleteOwnedMessage,
+  persistChatTurn,
+};

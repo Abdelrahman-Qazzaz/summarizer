@@ -18,7 +18,7 @@ vi.mock("../../shared/data/images.data", () => ({
   },
 }));
 
-import { findCreateMessageHistory } from "../../shared/data/messages.data";
+import { messages } from "../../shared/data/messages.data";
 
 const createdAt = new Date("2026-08-31T00:00:00.000Z");
 
@@ -92,7 +92,7 @@ describe("findCreateMessageHistory", () => {
     );
 
     await expect(
-      findCreateMessageHistory({
+      messages.findCreateMessageHistory({
         userId: "user-1",
         conversationId: "conversation-1",
         newMessageContentCharCount: 8,

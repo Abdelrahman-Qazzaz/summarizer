@@ -79,13 +79,20 @@ vi.mock("../../shared/data/conversations.data", async (importActual) => {
   };
 });
 
-vi.mock("../../shared/data/messages.data", async (importActual) => ({
-  ...(await importActual<typeof import("../../shared/data/messages.data")>()),
-  findCreateMessageHistory: mockFindCreateMessageHistory,
-  persistChatTurn: mockPersistChatTurn,
-  findConversationMessages: mockFindConversationMessages,
-  deleteOwnedMessage: mockDeleteOwnedMessage,
-}));
+vi.mock("../../shared/data/messages.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/messages.data")>();
+  return {
+    ...actual,
+    messages: {
+      ...actual.messages,
+      findCreateMessageHistory: mockFindCreateMessageHistory,
+      persistChatTurn: mockPersistChatTurn,
+      findConversationMessages: mockFindConversationMessages,
+      deleteOwnedMessage: mockDeleteOwnedMessage,
+    },
+  };
+});
 
 vi.mock("../../shared/data/images.data", async (importActual) => {
   const actual =
@@ -147,7 +154,7 @@ import {
   MAX_RESPONSE_TOKENS,
 } from "../../api/src/controllers/messages.controller";
 import { authedHeaders, sessionCookieHeader } from "../helpers/session";
-import type { CreateMessageHistory } from "../../shared/data/messages.data";
+import { type CreateMessageHistory } from "../../shared/data/messages.data";
 
 const conversationId = "550e8400-e29b-41d4-a716-446655440000";
 const messageId = "650e8400-e29b-41d4-a716-446655440111";

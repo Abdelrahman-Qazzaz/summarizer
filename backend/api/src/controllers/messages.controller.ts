@@ -6,10 +6,7 @@ import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { SSEEventQueue } from "../utils/sse";
 import {
-  deleteOwnedMessage,
-  findCreateMessageHistory,
-  findConversationMessages,
-  persistChatTurn,
+  messages,
   type CreateMessageHistory,
   type MessageRow,
 } from "../../../shared/data/messages.data";
@@ -167,7 +164,7 @@ export async function handleListMessages(c: Context) {
   // are simply discarded on the 404 path.
   const [ownedConversation, rows] = await Promise.all([
     conversations.findOwnedConversation(userId, conversationId),
-    findConversationMessages(conversationId),
+    messages.findConversationMessages(conversationId),
   ]);
 
   if (!ownedConversation)
@@ -309,7 +306,7 @@ async function prepareMessageTurn(
       messageInput.userId,
       messageInput.audioUploadIds,
     ),
-    findCreateMessageHistory({
+    messages.findCreateMessageHistory({
       userId: messageInput.userId,
       conversationId: messageInput.conversationId,
       newMessageContentCharCount: messageInput.content.length,
@@ -388,7 +385,7 @@ async function deleteMessageTail(
   claimToken: string,
   messageId: string,
 ) {
-  const rewound = await deleteOwnedMessage(
+  const rewound = await messages.deleteOwnedMessage(
     messageInput.userId,
     messageInput.conversationId,
     messageId,
@@ -464,7 +461,7 @@ function streamAndPersistMessageTurn(
         newMessageContextCharCount,
         ...history.map((message) => message.contextCharCount),
       ]);
-      const lastMessageId = await persistChatTurn({
+      const lastMessageId = await messages.persistChatTurn({
         userId: messageInput.userId,
         conversationId: messageInput.conversationId,
         content: messageInput.content,
@@ -574,7 +571,11 @@ export async function handleDeleteMessage(c: Context) {
   const conversationId = c.get(CTX_KEYS.conversationId);
   const messageId = c.get(CTX_KEYS.messageId);
 
-  const result = await deleteOwnedMessage(userId, conversationId, messageId);
+  const result = await messages.deleteOwnedMessage(
+    userId,
+    conversationId,
+    messageId,
+  );
 
   if (!result) return c.json({ message: "Message not found" }, 404);
   // Without `onlyRole` the only other outcome is a claimed turn.
