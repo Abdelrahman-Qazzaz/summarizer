@@ -12,11 +12,7 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-import {
-  claimConversationTurn,
-  completeConversationTurn,
-  unclaimConversationTurn,
-} from "../../shared/data/conversations.data";
+import { conversations } from "../../shared/data/conversations.data";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -29,7 +25,7 @@ describe("conversation turn claims", () => {
   it("returns the token written by a successful claim", async () => {
     mockReturning.mockResolvedValueOnce([{ id: "conversation-1" }]);
 
-    const claimToken = await claimConversationTurn(
+    const claimToken = await conversations.claimConversationTurn(
       "user-1",
       "conversation-1",
       null,
@@ -49,7 +45,11 @@ describe("conversation turn claims", () => {
     mockReturning.mockResolvedValueOnce([]);
 
     await expect(
-      claimConversationTurn("user-1", "conversation-1", "message-1"),
+      conversations.claimConversationTurn(
+        "user-1",
+        "conversation-1",
+        "message-1",
+      ),
     ).resolves.toBeNull();
   });
 
@@ -57,7 +57,12 @@ describe("conversation turn claims", () => {
     mockReturning.mockResolvedValueOnce([{ id: "conversation-1" }]);
 
     await expect(
-      claimConversationTurn("user-1", "conversation-1", null, "shared-token"),
+      conversations.claimConversationTurn(
+        "user-1",
+        "conversation-1",
+        null,
+        "shared-token",
+      ),
     ).resolves.toBe("shared-token");
     expect(mockSet).toHaveBeenCalledWith(
       expect.objectContaining({ activeTurnClaimToken: "shared-token" }),
@@ -65,7 +70,11 @@ describe("conversation turn claims", () => {
   });
 
   it("releases only the caller's claim token", async () => {
-    await unclaimConversationTurn("user-1", "conversation-1", "claim-1");
+    await conversations.unclaimConversationTurn(
+      "user-1",
+      "conversation-1",
+      "claim-1",
+    );
 
     expect(mockSet).toHaveBeenCalledWith({
       activeTurnClaimToken: null,
@@ -79,7 +88,7 @@ describe("conversation turn claims", () => {
     mockReturning.mockResolvedValueOnce([{ id: "conversation-1" }]);
 
     await expect(
-      completeConversationTurn(
+      conversations.completeConversationTurn(
         "user-1",
         "conversation-1",
         "claim-1",

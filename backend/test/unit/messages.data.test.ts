@@ -47,7 +47,9 @@ vi.mock("../../shared/data/images.data", () => ({
 }));
 
 vi.mock("../../shared/data/conversations.data", () => ({
-  completeConversationTurn: mockCompleteConversationTurn,
+  conversations: {
+    completeConversationTurn: mockCompleteConversationTurn,
+  },
 }));
 
 vi.mock("../../shared/data/transcripts.data", () => ({

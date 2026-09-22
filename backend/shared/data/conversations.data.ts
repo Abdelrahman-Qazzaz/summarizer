@@ -33,7 +33,7 @@ function ownedBy(userId: string, conversationId: string): SQL | undefined {
  * Most recently active first. `updatedAt` is touched by both posting a message
  * and renaming, so a revived old conversation surfaces back to the top.
  */
-export async function findUserConversations(userId: string) {
+async function findUserConversations(userId: string) {
   return db
     .select(conversationColumns)
     .from(Conversations)
@@ -42,10 +42,7 @@ export async function findUserConversations(userId: string) {
 }
 
 /** Ownership gate shared by every message route: null unless the user owns it. */
-export async function findOwnedConversation(
-  userId: string,
-  conversationId: string,
-) {
+async function findOwnedConversation(userId: string, conversationId: string) {
   const [row] = await db
     .select(conversationColumns)
     .from(Conversations)
@@ -84,7 +81,7 @@ function claimIsFreeOrExpired(): SQL | undefined {
   );
 }
 
-export async function claimConversationTurn(
+async function claimConversationTurn(
   userId: string,
   conversationId: string,
   expectedLastMessageId: string | null,
@@ -111,7 +108,7 @@ export async function claimConversationTurn(
   return row ? claimToken : null;
 }
 
-export async function unclaimConversationTurn(
+async function unclaimConversationTurn(
   userId: string,
   conversationId: string,
   claimToken: string,
@@ -132,7 +129,7 @@ export async function unclaimConversationTurn(
     );
 }
 
-export async function completeConversationTurn(
+async function completeConversationTurn(
   userId: string,
   conversationId: string,
   claimToken: string,
@@ -169,7 +166,7 @@ export async function completeConversationTurn(
 }
 
 /** Omitting `title` leaves the column to its DB default. */
-export async function createConversation(userId: string, title?: string) {
+async function createConversation(userId: string, title?: string) {
   const [row] = await db
     .insert(Conversations)
     .values({ userId, ...(title !== undefined ? { title } : {}) })
@@ -178,7 +175,7 @@ export async function createConversation(userId: string, title?: string) {
   return row;
 }
 
-export async function renameConversation(
+async function renameConversation(
   userId: string,
   conversationId: string,
   title: string,
@@ -193,10 +190,7 @@ export async function renameConversation(
 }
 
 /** Null when the user doesn't own it, which the caller reports as a 404. */
-export async function deleteOwnedConversation(
-  userId: string,
-  conversationId: string,
-) {
+async function deleteOwnedConversation(userId: string, conversationId: string) {
   const [row] = await db
     .delete(Conversations)
     .where(and(ownedBy(userId, conversationId), claimIsFreeOrExpired()))
@@ -204,3 +198,14 @@ export async function deleteOwnedConversation(
 
   return row ?? null;
 }
+
+export const conversations = {
+  findUserConversations,
+  findOwnedConversation,
+  claimConversationTurn,
+  unclaimConversationTurn,
+  completeConversationTurn,
+  createConversation,
+  renameConversation,
+  deleteOwnedConversation,
+};

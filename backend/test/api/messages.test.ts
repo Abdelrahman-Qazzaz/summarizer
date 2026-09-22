@@ -60,14 +60,19 @@ vi.mock("../../shared/db", async () => ({
   ...(await import("../helpers/dbTableStubs")).tableStubs,
 }));
 
-vi.mock("../../shared/data/conversations.data", async (importActual) => ({
-  ...(await importActual<
-    typeof import("../../shared/data/conversations.data")
-  >()),
-  findOwnedConversation: mockFindOwnedConversation,
-  claimConversationTurn: mockClaimConversationTurn,
-  unclaimConversationTurn: mockUnclaimConversationTurn,
-}));
+vi.mock("../../shared/data/conversations.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/conversations.data")>();
+  return {
+    ...actual,
+    conversations: {
+      ...actual.conversations,
+      findOwnedConversation: mockFindOwnedConversation,
+      claimConversationTurn: mockClaimConversationTurn,
+      unclaimConversationTurn: mockUnclaimConversationTurn,
+    },
+  };
+});
 
 vi.mock("../../shared/data/messages.data", async (importActual) => ({
   ...(await importActual<typeof import("../../shared/data/messages.data")>()),

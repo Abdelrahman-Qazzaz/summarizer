@@ -22,11 +22,7 @@ import {
 } from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger, messageOf } from "../../../shared/logger";
-import {
-  claimConversationTurn,
-  findOwnedConversation,
-  unclaimConversationTurn,
-} from "../../../shared/data/conversations.data";
+import { conversations } from "../../../shared/data/conversations.data";
 import {
   resolveImages,
   resolveMessageImages,
@@ -178,7 +174,7 @@ export async function handleListMessages(c: Context) {
   // Ownership check and the rows themselves are independent reads; the rows
   // are simply discarded on the 404 path.
   const [ownedConversation, rows] = await Promise.all([
-    findOwnedConversation(userId, conversationId),
+    conversations.findOwnedConversation(userId, conversationId),
     findConversationMessages(conversationId),
   ]);
 
@@ -209,7 +205,11 @@ async function unclaimConversationSafely(
   claimToken: string,
 ) {
   try {
-    await unclaimConversationTurn(userId, conversationId, claimToken);
+    await conversations.unclaimConversationTurn(
+      userId,
+      conversationId,
+      claimToken,
+    );
   } catch (error) {
     log.error("Failed to release conversation turn claim", error, {
       conversationId,
@@ -328,7 +328,7 @@ async function prepareMessageTurn(
   ]);
 
   if (!acquiredClaimToken) {
-    const ownedConversation = await findOwnedConversation(
+    const ownedConversation = await conversations.findOwnedConversation(
       messageInput.userId,
       messageInput.conversationId,
     );
@@ -512,7 +512,7 @@ function streamAndPersistMessageTurn(
 function createClaimData(messageInput: MessageRequest) {
   const claimToken = randomUUID();
   const claimPromises = [
-    claimConversationTurn(
+    conversations.claimConversationTurn(
       messageInput.userId,
       messageInput.conversationId,
       messageInput.expectedLastMessageId,

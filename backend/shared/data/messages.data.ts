@@ -12,7 +12,7 @@ import {
   deleteOwnedUnlinkedUnreservedImageAttachments,
   resolveImageAttachmentUrls,
 } from "./images.data";
-import { completeConversationTurn } from "./conversations.data";
+import { conversations } from "./conversations.data";
 import { messageAttachmentLinks } from "./messageAttachmentLinks.data";
 import { unclaimAttachments } from "./attachments.data";
 import {
@@ -609,7 +609,7 @@ export async function persistChatTurn(turn: {
         tx,
       ),
     ]);
-    const completed = await completeConversationTurn(
+    const completed = await conversations.completeConversationTurn(
       turn.userId,
       turn.conversationId,
       turn.claimToken,
