@@ -36,7 +36,7 @@ const AUDIO_URL_TTL_SECONDS = 60 * 60;
  * through, so `supabase.storage` and the bucket name are named in one place.
  * (pingBucket uses the bucket-management API `getBucket`, not this handle.)
  */
-function bucket() {
+function storage() {
   return supabase.storage.from(BUCKET);
 }
 
@@ -108,7 +108,7 @@ export async function createUploadUrl(
   userId: string,
   object: UploadableObject,
 ) {
-  const { data, error } = await bucket().createSignedUploadUrl(
+  const { data, error } = await storage().createSignedUploadUrl(
     objectPath(userId, object),
   );
 
@@ -131,7 +131,7 @@ export async function createUploadUrl(
 export async function verifyUploadUrlLifetime(
   maxLifetimeMs: number,
 ): Promise<void> {
-  const { data, error } = await bucket().createSignedUploadUrl(
+  const { data, error } = await storage().createSignedUploadUrl(
     objectPath("preflight", { kind: "image", uploadId: randomUUID() }),
   );
   if (error) throw error;
@@ -178,7 +178,7 @@ export async function inspectUploadedObject(
   object: UploadableObject,
 ) {
   const { contentTypePrefix, maxBytes } = KINDS[object.kind].upload;
-  const { data, error } = await bucket().info(objectPath(userId, object));
+  const { data, error } = await storage().info(objectPath(userId, object));
 
   if (error) {
     if (isMissingObject(error))
@@ -202,7 +202,7 @@ export async function inspectUploadedObject(
 
 /** Stored text, such as the caption track the youtube-fetcher saves in place of audio. */
 export async function getTextFromBucket(userId: string, uploadId: string) {
-  const { data, error } = await bucket().download(
+  const { data, error } = await storage().download(
     objectPath(userId, { kind: "text", uploadId }),
   );
 
@@ -220,7 +220,7 @@ export async function deleteFromBucket(
 ) {
   if (objects.length === 0) return [];
 
-  const { data, error } = await bucket().remove(
+  const { data, error } = await storage().remove(
     objects.map((object) => objectPath(userId, object)),
   );
 
@@ -237,7 +237,7 @@ export async function createSignedUrl(
   userId: string,
   object: UploadableObject,
 ) {
-  const { data, error } = await bucket().createSignedUrl(
+  const { data, error } = await storage().createSignedUrl(
     objectPath(userId, object),
     KINDS[object.kind].upload.readUrlTtlSeconds,
   );
@@ -266,7 +266,7 @@ async function signGroup(
   entries: readonly (UploadableObject & { userId: string })[],
 ) {
   const paths = entries.map((entry) => objectPath(entry.userId, entry));
-  const { data, error } = await bucket().createSignedUrls(
+  const { data, error } = await storage().createSignedUrls(
     paths,
     KINDS[kind].upload.readUrlTtlSeconds,
   );
