@@ -20,7 +20,7 @@ import {
   createUploadUrl,
   verifyUploadUrlLifetime,
   deleteFromBucket,
-  getTextFromBucket,
+  getText,
   inspectUploadedObject,
 } from "../../shared/bucket";
 
@@ -68,14 +68,14 @@ describe("deleteFromBucket", () => {
   });
 });
 
-describe("getTextFromBucket", () => {
+describe("getText", () => {
   it("reads from texts/", async () => {
     storage.download.mockResolvedValue({
       data: new Blob(["caption text"]),
       error: null,
     });
 
-    expect(await getTextFromBucket(USER, "t1")).toBe("caption text");
+    expect(await getText(USER, "t1")).toBe("caption text");
     expect(storage.download).toHaveBeenCalledWith("user_01/texts/t1");
   });
 });

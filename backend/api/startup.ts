@@ -1,7 +1,7 @@
 import { verifyServices } from "../shared/preflight";
 import { pingMQ } from "../shared/message-queue/messageQueue";
 import { pingDb } from "../shared/db";
-import { pingBucket, verifyUploadUrlLifetime } from "../shared/bucket";
+import { ping, verifyUploadUrlLifetime } from "../shared/bucket";
 import { pingRedis } from "../shared/cache/redis";
 import { pingChatAI } from "../shared/ai/ai_chat_client";
 import { pingWorkos } from "./src/auth/auth";
@@ -15,7 +15,7 @@ export function verifyApiServices(): Promise<void> {
   return verifyServices([
     { name: "RabbitMQ", check: pingMQ },
     { name: "Postgres", check: pingDb },
-    { name: "Supabase Storage", check: pingBucket },
+    { name: "Supabase Storage", check: ping },
     // Only the API hands out upload URLs, so only it needs their lifetime to
     // fit inside the window an upload can be confirmed in.
     {

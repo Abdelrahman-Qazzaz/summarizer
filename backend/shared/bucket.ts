@@ -34,14 +34,14 @@ const AUDIO_URL_TTL_SECONDS = 60 * 60;
 /**
  * The single handle every object operation (upload/download/remove/sign) goes
  * through, so `supabase.storage` and the bucket name are named in one place.
- * (pingBucket uses the bucket-management API `getBucket`, not this handle.)
+ * (ping uses the bucket-management API `getBucket`, not this handle.)
  */
 function storage() {
   return supabase.storage.from(BUCKET);
 }
 
 /** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
-export async function pingBucket(): Promise<void> {
+export async function ping(): Promise<void> {
   const { error } = await supabase.storage.getBucket(BUCKET);
   if (error) throw error;
 }
@@ -201,7 +201,7 @@ export async function inspectUploadedObject(
 }
 
 /** Stored text, such as the caption track the youtube-fetcher saves in place of audio. */
-export async function getTextFromBucket(userId: string, uploadId: string) {
+export async function getText(userId: string, uploadId: string) {
   const { data, error } = await storage().download(
     objectPath(userId, { kind: "text", uploadId }),
   );
