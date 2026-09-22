@@ -25,6 +25,11 @@ const dbClientRestriction = {
       message:
         "Table access belongs in a *.data.ts module — import a function from one instead of the db client. Schema imports (tables, enums, pingDb) are fine.",
     },
+    {
+      group: ["**/data/*.data"],
+      message:
+        "Import { data } from shared/data and call data.<table>.<operation>(), so the call reads as a database operation.",
+    },
   ],
 };
 
