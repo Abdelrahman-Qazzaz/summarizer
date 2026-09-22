@@ -7,7 +7,7 @@ import {
   type Executor,
 } from "../db";
 import { CLAIM_LEASE_MS } from "./conversations.data";
-import { attachmentIsUnlinked } from "./messageAttachmentLinks.data";
+import { messageAttachmentLinks } from "./messageAttachmentLinks.data";
 import { markDeleted } from "./storageLedger.data";
 
 type AttachmentValues = Pick<
@@ -56,7 +56,7 @@ function ownedUnlinkedUnreservedAttachments(
 ) {
   return and(
     userOwnsAttachments(input),
-    attachmentIsUnlinked(executor),
+    messageAttachmentLinks.attachmentIsUnlinked(executor),
     attachmentIsUnreserved(),
   );
 }

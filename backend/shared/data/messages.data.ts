@@ -13,7 +13,7 @@ import {
   resolveImageAttachmentUrls,
 } from "./images.data";
 import { completeConversationTurn } from "./conversations.data";
-import { linkAttachmentsToMessage } from "./messageAttachmentLinks.data";
+import { messageAttachmentLinks } from "./messageAttachmentLinks.data";
 import { unclaimAttachments } from "./attachments.data";
 import {
   findMessageTranscriptAttachments,
@@ -603,7 +603,11 @@ export async function persistChatTurn(turn: {
         },
         tx,
       ),
-      linkAttachmentsToMessage(userMessage.id, turn.attachmentIds, tx),
+      messageAttachmentLinks.linkAttachmentsToMessage(
+        userMessage.id,
+        turn.attachmentIds,
+        tx,
+      ),
     ]);
     const completed = await completeConversationTurn(
       turn.userId,
