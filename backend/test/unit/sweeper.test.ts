@@ -13,7 +13,9 @@ vi.mock("../../shared/data/advisoryLock.data", () => ({
   },
 }));
 vi.mock("../../shared/data/storageLedger.data", () => ({
-  findLedgerEntries: mockFindLedgerEntries,
+  storageLedger: {
+    findLedgerEntries: mockFindLedgerEntries,
+  },
 }));
 vi.mock("../../shared/uploads", () => ({
   UPLOAD_CONFIRM_WINDOW_MS: 2 * 60 * 60 * 1000,

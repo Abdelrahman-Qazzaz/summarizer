@@ -18,7 +18,7 @@ import {
   createAttachment,
   deleteOwnedUnlinkedUnreservedAttachment,
 } from "./attachments.data";
-import { markDeleted, recordConfirmedObjects } from "./storageLedger.data";
+import { storageLedger } from "./storageLedger.data";
 
 /**
  * Both process types read and write this table — the API on the request path,
@@ -221,7 +221,7 @@ export async function createYoutubeAudioJob(
 ) {
   await db.transaction(async (tx) => {
     await createAudioJob(job, tx);
-    await recordConfirmedObjects(
+    await storageLedger.recordConfirmedObjects(
       job.userId,
       [
         { kind: "audio", uploadId: job.audioUploadId },
@@ -260,7 +260,7 @@ export async function deleteAudioJob(userId: string, audioUploadId: string) {
 
     const captionUploadId = job?.captionUploadId ?? null;
     if (captionUploadId) {
-      await markDeleted(
+      await storageLedger.markDeleted(
         userId,
         [{ kind: "text", uploadId: captionUploadId }],
         tx,
@@ -338,7 +338,7 @@ export async function clearCaptionUploadId(
       .returning({ audioUploadId: AudioTranscriptionJobs.audioUploadId });
     if (!cleared) return false;
 
-    await markDeleted(
+    await storageLedger.markDeleted(
       userId,
       [{ kind: "text", uploadId: captionUploadId }],
       tx,

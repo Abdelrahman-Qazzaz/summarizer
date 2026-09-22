@@ -15,7 +15,9 @@ const { bucket, ledger } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../shared/bucket", () => bucket);
-vi.mock("../../shared/data/storageLedger.data", () => ledger);
+vi.mock("../../shared/data/storageLedger.data", () => ({
+  storageLedger: ledger,
+}));
 
 import {
   checkUpload,

@@ -42,7 +42,9 @@ const { mockMarkDeleted } = vi.hoisted(() => ({
 
 // The ledger update itself is covered by the storage ledger integration tests.
 vi.mock("../../shared/data/storageLedger.data", () => ({
-  markDeleted: mockMarkDeleted,
+  storageLedger: {
+    markDeleted: mockMarkDeleted,
+  },
 }));
 
 import {

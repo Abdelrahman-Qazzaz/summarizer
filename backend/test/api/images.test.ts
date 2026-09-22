@@ -31,17 +31,19 @@ vi.mock("../../shared/db", async () => ({
 // The ledger's SQL is covered by the integration tests. A confirm that goes
 // through runs its write against the insert mock.
 vi.mock("../../shared/data/storageLedger.data", () => ({
-  recordPendingUpload: ledger.recordPendingUpload,
-  findLedgerEntry: ledger.findLedgerEntry,
-  forgetObjects: ledger.forgetObjects,
-  confirmUpload: async (
-    entry: unknown,
-    withinMs: number,
-    write: (executor: unknown) => Promise<unknown>,
-  ) => {
-    if (!(await ledger.claim(entry, withinMs))) return false;
-    await write({ insert: mockInsert });
-    return true;
+  storageLedger: {
+    recordPendingUpload: ledger.recordPendingUpload,
+    findLedgerEntry: ledger.findLedgerEntry,
+    forgetObjects: ledger.forgetObjects,
+    confirmUpload: async (
+      entry: unknown,
+      withinMs: number,
+      write: (executor: unknown) => Promise<unknown>,
+    ) => {
+      if (!(await ledger.claim(entry, withinMs))) return false;
+      await write({ insert: mockInsert });
+      return true;
+    },
   },
 }));
 

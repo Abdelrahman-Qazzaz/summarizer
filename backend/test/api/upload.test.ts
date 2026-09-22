@@ -70,22 +70,24 @@ vi.mock("../../shared/db", async () => ({
 // decisions made around it. A confirm that goes through runs its writes
 // against the same insert mock as everything else.
 vi.mock("../../shared/data/storageLedger.data", () => ({
-  recordPendingUpload: ledger.recordPendingUpload,
-  recordConfirmedObjects: ledger.recordConfirmedObjects,
-  findLedgerEntry: ledger.findLedgerEntry,
-  forgetObjects: ledger.forgetObjects,
-  confirmUpload: async (
-    entry: unknown,
-    withinMs: number,
-    write: (executor: unknown) => Promise<unknown>,
-  ) => {
-    if (!(await ledger.claim(entry, withinMs))) return false;
-    await write({
-      insert: mockInsert,
-      transaction: (run: (tx: unknown) => unknown) =>
-        run({ insert: mockInsert }),
-    });
-    return true;
+  storageLedger: {
+    recordPendingUpload: ledger.recordPendingUpload,
+    recordConfirmedObjects: ledger.recordConfirmedObjects,
+    findLedgerEntry: ledger.findLedgerEntry,
+    forgetObjects: ledger.forgetObjects,
+    confirmUpload: async (
+      entry: unknown,
+      withinMs: number,
+      write: (executor: unknown) => Promise<unknown>,
+    ) => {
+      if (!(await ledger.claim(entry, withinMs))) return false;
+      await write({
+        insert: mockInsert,
+        transaction: (run: (tx: unknown) => unknown) =>
+          run({ insert: mockInsert }),
+      });
+      return true;
+    },
   },
 }));
 

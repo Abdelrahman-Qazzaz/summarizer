@@ -28,7 +28,7 @@ function ownedObjects(userId: string, objects: readonly StoredObject[]) {
 }
 
 /** Records an upload whose URL is being handed out. */
-export async function recordPendingUpload(entry: LedgerEntry) {
+async function recordPendingUpload(entry: LedgerEntry) {
   await db.insert(StorageLedger).values({ ...entry, status: "pending" });
 }
 
@@ -36,7 +36,7 @@ export async function recordPendingUpload(entry: LedgerEntry) {
  * Records objects that rows will reference from the start, without an
  * upload to confirm: what the youtube-fetcher writes for a job.
  */
-export async function recordConfirmedObjects(
+async function recordConfirmedObjects(
   userId: string,
   objects: readonly StoredObject[],
   executor: Executor = db,
@@ -53,7 +53,7 @@ export async function recordConfirmedObjects(
 }
 
 /** An object's ledger status and when it was recorded, for this owner and kind. */
-export async function findLedgerEntry(entry: LedgerEntry) {
+async function findLedgerEntry(entry: LedgerEntry) {
   const [row] = await db
     .select({
       status: StorageLedger.status,
@@ -65,7 +65,7 @@ export async function findLedgerEntry(entry: LedgerEntry) {
 }
 
 /** Entries in any of `statuses` recorded before `createdBefore`, oldest first. */
-export async function findLedgerEntries({
+async function findLedgerEntries({
   statuses,
   createdBefore,
   limit,
@@ -98,7 +98,7 @@ export async function findLedgerEntries({
  * pending and recent any more, which covers a concurrent confirm having got
  * there first.
  */
-export async function confirmUpload(
+async function confirmUpload(
   entry: LedgerEntry,
   withinMs: number,
   write: (executor: Executor) => Promise<unknown>,
@@ -126,7 +126,7 @@ export async function confirmUpload(
  * Marks objects as no longer referenced. Call it in the transaction that
  * removes the last rows pointing at them, so they're never left unrecorded.
  */
-export async function markDeleted(
+async function markDeleted(
   userId: string,
   objects: readonly StoredObject[],
   executor: Executor,
@@ -143,7 +143,7 @@ export async function markDeleted(
  * Drops the records of objects that are gone from storage. A confirmed
  * record is never dropped: its object is still in use.
  */
-export async function forgetObjects(
+async function forgetObjects(
   userId: string,
   objects: readonly StoredObject[],
   executor: Executor = db,
@@ -156,3 +156,13 @@ export async function forgetObjects(
       and(ownedObjects(userId, objects), ne(StorageLedger.status, "confirmed")),
     );
 }
+
+export const storageLedger = {
+  recordPendingUpload,
+  recordConfirmedObjects,
+  findLedgerEntry,
+  findLedgerEntries,
+  confirmUpload,
+  markDeleted,
+  forgetObjects,
+};

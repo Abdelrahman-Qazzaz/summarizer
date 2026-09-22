@@ -8,7 +8,7 @@ import {
 } from "../db";
 import { CLAIM_LEASE_MS } from "./conversations.data";
 import { messageAttachmentLinks } from "./messageAttachmentLinks.data";
-import { markDeleted } from "./storageLedger.data";
+import { storageLedger } from "./storageLedger.data";
 
 type AttachmentValues = Pick<
   typeof Attachments.$inferInsert,
@@ -193,7 +193,7 @@ export async function deleteOwnedUnlinkedUnreservedAttachments(
 
   // Same transaction: once the rows are gone, the objects are due for
   // removal on record, whatever happens to the caller's storage delete.
-  await markDeleted(
+  await storageLedger.markDeleted(
     input.userId,
     deletedIds.map((uploadId) => ({ kind: input.kind, uploadId })),
     executor,

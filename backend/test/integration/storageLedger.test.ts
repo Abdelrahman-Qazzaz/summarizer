@@ -64,15 +64,7 @@ import {
   deleteOwnedUnlinkedUnreservedImageAttachment,
 } from "../../shared/data/images.data";
 import { sweepUnusedObjects } from "../../shared/sweeper";
-import {
-  confirmUpload,
-  findLedgerEntries,
-  findLedgerEntry,
-  forgetObjects,
-  markDeleted,
-  recordConfirmedObjects,
-  recordPendingUpload,
-} from "../../shared/data/storageLedger.data";
+import { storageLedger } from "../../shared/data/storageLedger.data";
 import { advisoryLock } from "../../shared/data/advisoryLock.data";
 
 const userId = "ledger-owner";
@@ -147,17 +139,20 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
   describe("recording", () => {
     it("finds an entry only under its own owner and kind", async () => {
       const upload = image();
-      await recordPendingUpload(upload);
+      await storageLedger.recordPendingUpload(upload);
 
-      expect(await findLedgerEntry(upload)).toEqual({
+      expect(await storageLedger.findLedgerEntry(upload)).toEqual({
         status: "pending",
         createdAt: expect.any(Date),
       });
       expect(
-        await findLedgerEntry({ ...upload, userId: "someone-else" }),
+        await storageLedger.findLedgerEntry({
+          ...upload,
+          userId: "someone-else",
+        }),
       ).toBeUndefined();
       expect(
-        await findLedgerEntry({ ...upload, kind: "audio" }),
+        await storageLedger.findLedgerEntry({ ...upload, kind: "audio" }),
       ).toBeUndefined();
     });
 
@@ -165,7 +160,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       const audio = randomUUID();
       const text = randomUUID();
 
-      await recordConfirmedObjects(userId, [
+      await storageLedger.recordConfirmedObjects(userId, [
         { kind: "audio", uploadId: audio },
         { kind: "text", uploadId: text },
       ]);
@@ -182,16 +177,24 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
   describe("confirmUpload", () => {
     it("confirms once, writing the referencing row in the same transaction", async () => {
       const upload = image();
-      await recordPendingUpload(upload);
+      await storageLedger.recordPendingUpload(upload);
 
       expect(
-        await confirmUpload(upload, HOUR_MS, insertAttachment(upload.uploadId)),
+        await storageLedger.confirmUpload(
+          upload,
+          HOUR_MS,
+          insertAttachment(upload.uploadId),
+        ),
       ).toBe(true);
-      expect((await findLedgerEntry(upload))?.status).toBe("confirmed");
+      expect((await storageLedger.findLedgerEntry(upload))?.status).toBe(
+        "confirmed",
+      );
       expect(await db.select().from(Attachments)).toHaveLength(1);
 
       const again = vi.fn();
-      expect(await confirmUpload(upload, HOUR_MS, again)).toBe(false);
+      expect(await storageLedger.confirmUpload(upload, HOUR_MS, again)).toBe(
+        false,
+      );
       expect(again).not.toHaveBeenCalled();
     });
 
@@ -199,11 +202,11 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     it("confirms through createAudioJob and createImageAttachment", async () => {
       const audio = { userId, kind: "audio" as const, uploadId: randomUUID() };
       const picture = image();
-      await recordPendingUpload(audio);
-      await recordPendingUpload(picture);
+      await storageLedger.recordPendingUpload(audio);
+      await storageLedger.recordPendingUpload(picture);
 
       expect(
-        await confirmUpload(audio, HOUR_MS, (executor) =>
+        await storageLedger.confirmUpload(audio, HOUR_MS, (executor) =>
           createAudioJob(
             {
               audioUploadId: audio.uploadId as never,
@@ -220,7 +223,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         ),
       ).toBe(true);
       expect(
-        await confirmUpload(picture, HOUR_MS, (executor) =>
+        await storageLedger.confirmUpload(picture, HOUR_MS, (executor) =>
           createImageAttachment(
             {
               userId,
@@ -246,10 +249,10 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
 
     it("stays pending when the job row fails after its attachment row", async () => {
       const audio = { userId, kind: "audio" as const, uploadId: randomUUID() };
-      await recordPendingUpload(audio);
+      await storageLedger.recordPendingUpload(audio);
 
       await expect(
-        confirmUpload(audio, HOUR_MS, (executor) =>
+        storageLedger.confirmUpload(audio, HOUR_MS, (executor) =>
           createAudioJob(
             {
               audioUploadId: audio.uploadId as never,
@@ -267,31 +270,45 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         ),
       ).rejects.toThrow();
 
-      expect((await findLedgerEntry(audio))?.status).toBe("pending");
+      expect((await storageLedger.findLedgerEntry(audio))?.status).toBe(
+        "pending",
+      );
       expect(await db.select().from(Attachments)).toEqual([]);
     });
 
     it("refuses an upload recorded before the window", async () => {
       const upload = image();
-      await recordPendingUpload(upload);
+      await storageLedger.recordPendingUpload(upload);
       await backdate(upload.uploadId, HOUR_MS + 1000);
 
       const write = vi.fn();
-      expect(await confirmUpload(upload, HOUR_MS, write)).toBe(false);
+      expect(await storageLedger.confirmUpload(upload, HOUR_MS, write)).toBe(
+        false,
+      );
       expect(write).not.toHaveBeenCalled();
-      expect((await findLedgerEntry(upload))?.status).toBe("pending");
+      expect((await storageLedger.findLedgerEntry(upload))?.status).toBe(
+        "pending",
+      );
     });
 
     it("refuses another owner's or another kind's upload", async () => {
       const upload = image();
-      await recordPendingUpload(upload);
+      await storageLedger.recordPendingUpload(upload);
       const write = vi.fn();
 
       expect(
-        await confirmUpload({ ...upload, userId: "x" }, HOUR_MS, write),
+        await storageLedger.confirmUpload(
+          { ...upload, userId: "x" },
+          HOUR_MS,
+          write,
+        ),
       ).toBe(false);
       expect(
-        await confirmUpload({ ...upload, kind: "audio" }, HOUR_MS, write),
+        await storageLedger.confirmUpload(
+          { ...upload, kind: "audio" },
+          HOUR_MS,
+          write,
+        ),
       ).toBe(false);
       expect(write).not.toHaveBeenCalled();
     });
@@ -299,34 +316,40 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     // A deleted object can't be brought back by confirming it again.
     it("refuses an object marked deleted", async () => {
       const upload = image();
-      await recordPendingUpload(upload);
-      await db.transaction((tx) => markDeleted(userId, [upload], tx));
+      await storageLedger.recordPendingUpload(upload);
+      await db.transaction((tx) =>
+        storageLedger.markDeleted(userId, [upload], tx),
+      );
 
-      expect(await confirmUpload(upload, HOUR_MS, vi.fn())).toBe(false);
+      expect(await storageLedger.confirmUpload(upload, HOUR_MS, vi.fn())).toBe(
+        false,
+      );
     });
 
     it("stays pending when the write fails", async () => {
       const upload = image();
-      await recordPendingUpload(upload);
+      await storageLedger.recordPendingUpload(upload);
 
       await expect(
-        confirmUpload(upload, HOUR_MS, async () => {
+        storageLedger.confirmUpload(upload, HOUR_MS, async () => {
           throw new Error("insert failed");
         }),
       ).rejects.toThrow("insert failed");
-      expect((await findLedgerEntry(upload))?.status).toBe("pending");
+      expect((await storageLedger.findLedgerEntry(upload))?.status).toBe(
+        "pending",
+      );
     });
 
     it("lets exactly one of two concurrent confirms through", async () => {
       const upload = image();
-      await recordPendingUpload(upload);
+      await storageLedger.recordPendingUpload(upload);
       const write = vi.fn(async (executor: Executor) => {
         await executor.execute(sql`select pg_sleep(0.2)`);
       });
 
       const results = await Promise.all([
-        confirmUpload(upload, HOUR_MS, write),
-        confirmUpload(upload, HOUR_MS, write),
+        storageLedger.confirmUpload(upload, HOUR_MS, write),
+        storageLedger.confirmUpload(upload, HOUR_MS, write),
       ]);
 
       expect(results.sort()).toEqual([false, true]);
@@ -337,39 +360,51 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
   describe("deletion", () => {
     it("marks inside the caller's transaction and rolls back with it", async () => {
       const [kept, rolledBack] = [image(), image()];
-      await recordConfirmedObjects(userId, [kept, rolledBack]);
+      await storageLedger.recordConfirmedObjects(userId, [kept, rolledBack]);
 
-      await db.transaction((tx) => markDeleted(userId, [kept], tx));
+      await db.transaction((tx) =>
+        storageLedger.markDeleted(userId, [kept], tx),
+      );
       await expect(
         db.transaction(async (tx) => {
-          await markDeleted(userId, [rolledBack], tx);
+          await storageLedger.markDeleted(userId, [rolledBack], tx);
           throw new Error("rolled back");
         }),
       ).rejects.toThrow("rolled back");
 
-      expect((await findLedgerEntry(kept))?.status).toBe("deleted");
-      expect((await findLedgerEntry(rolledBack))?.status).toBe("confirmed");
+      expect((await storageLedger.findLedgerEntry(kept))?.status).toBe(
+        "deleted",
+      );
+      expect((await storageLedger.findLedgerEntry(rolledBack))?.status).toBe(
+        "confirmed",
+      );
     });
 
     it("marks only the owner's objects", async () => {
       const upload = image();
-      await recordConfirmedObjects(userId, [upload]);
+      await storageLedger.recordConfirmedObjects(userId, [upload]);
 
-      await db.transaction((tx) => markDeleted("someone-else", [upload], tx));
+      await db.transaction((tx) =>
+        storageLedger.markDeleted("someone-else", [upload], tx),
+      );
 
-      expect((await findLedgerEntry(upload))?.status).toBe("confirmed");
+      expect((await storageLedger.findLedgerEntry(upload))?.status).toBe(
+        "confirmed",
+      );
     });
 
     it("forgets deleted and pending records, never confirmed ones", async () => {
       const [deleted, pending, confirmed] = [image(), image(), image()];
-      await recordConfirmedObjects(userId, [deleted, confirmed]);
-      await recordPendingUpload(pending);
-      await db.transaction((tx) => markDeleted(userId, [deleted], tx));
+      await storageLedger.recordConfirmedObjects(userId, [deleted, confirmed]);
+      await storageLedger.recordPendingUpload(pending);
+      await db.transaction((tx) =>
+        storageLedger.markDeleted(userId, [deleted], tx),
+      );
 
-      await forgetObjects("someone-else", [deleted, pending]);
+      await storageLedger.forgetObjects("someone-else", [deleted, pending]);
       expect(await ledger()).toHaveLength(3);
 
-      await forgetObjects(userId, [deleted, pending, confirmed]);
+      await storageLedger.forgetObjects(userId, [deleted, pending, confirmed]);
       expect(await ledger()).toEqual([
         { uploadId: confirmed.uploadId, kind: "image", status: "confirmed" },
       ]);
@@ -386,7 +421,9 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         fileName: "a.png",
         sizeBytes: 1,
       });
-      await recordConfirmedObjects(userId, [{ kind: "image", uploadId }]);
+      await storageLedger.recordConfirmedObjects(userId, [
+        { kind: "image", uploadId },
+      ]);
       return uploadId;
     }
 
@@ -402,7 +439,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         sizeBytes: 0,
         transcriptModelId: "nova-3",
       });
-      await recordConfirmedObjects(userId, [
+      await storageLedger.recordConfirmedObjects(userId, [
         { kind: "audio", uploadId: audioUploadId },
         ...(captionUploadId
           ? [{ kind: "text" as const, uploadId: captionUploadId }]
@@ -479,7 +516,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         sizeBytes: 1,
         transcriptModelId: "nova-3",
       });
-      await recordConfirmedObjects(userId, [
+      await storageLedger.recordConfirmedObjects(userId, [
         { kind: "audio", uploadId: audioUploadId },
       ]);
 
@@ -602,10 +639,15 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         image(),
         image(),
       ];
-      await recordPendingUpload(oldPending);
-      await recordPendingUpload(freshPending);
-      await recordConfirmedObjects(userId, [oldDeleted, oldConfirmed]);
-      await db.transaction((tx) => markDeleted(userId, [oldDeleted], tx));
+      await storageLedger.recordPendingUpload(oldPending);
+      await storageLedger.recordPendingUpload(freshPending);
+      await storageLedger.recordConfirmedObjects(userId, [
+        oldDeleted,
+        oldConfirmed,
+      ]);
+      await db.transaction((tx) =>
+        storageLedger.markDeleted(userId, [oldDeleted], tx),
+      );
       await backdate(oldPending.uploadId, 5 * HOUR_MS);
       await backdate(oldDeleted.uploadId, 4 * HOUR_MS);
       await backdate(oldConfirmed.uploadId, 6 * HOUR_MS);
@@ -620,13 +662,21 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
 
       const statuses = ["pending", "deleted"] as const;
       expect(
-        await findLedgerEntries({ statuses, createdBefore, limit: 10 }),
+        await storageLedger.findLedgerEntries({
+          statuses,
+          createdBefore,
+          limit: 10,
+        }),
       ).toEqual([strip(oldPending), strip(oldDeleted)]);
       expect(
-        await findLedgerEntries({ statuses, createdBefore, limit: 1 }),
+        await storageLedger.findLedgerEntries({
+          statuses,
+          createdBefore,
+          limit: 1,
+        }),
       ).toEqual([strip(oldPending)]);
       expect(
-        await findLedgerEntries({
+        await storageLedger.findLedgerEntries({
           statuses: ["confirmed"],
           createdBefore,
           limit: 10,
@@ -648,14 +698,19 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         kind: "text" as const,
         uploadId: randomUUID(),
       };
-      await recordPendingUpload(stalePending);
-      await recordPendingUpload(freshPending);
-      await recordConfirmedObjects(userId, [staleDeleted, staleConfirmed]);
-      await recordPendingUpload({ ...failing, kind: "image" });
+      await storageLedger.recordPendingUpload(stalePending);
+      await storageLedger.recordPendingUpload(freshPending);
+      await storageLedger.recordConfirmedObjects(userId, [
+        staleDeleted,
+        staleConfirmed,
+      ]);
+      await storageLedger.recordPendingUpload({ ...failing, kind: "image" });
       await db.execute(
         sql`update ${StorageLedger} set kind = 'text' where upload_id = ${failing.uploadId}`,
       );
-      await db.transaction((tx) => markDeleted(userId, [staleDeleted], tx));
+      await db.transaction((tx) =>
+        storageLedger.markDeleted(userId, [staleDeleted], tx),
+      );
       for (const { uploadId } of [
         stalePending,
         staleDeleted,
