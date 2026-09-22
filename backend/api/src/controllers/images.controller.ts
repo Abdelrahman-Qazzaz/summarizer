@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import { createSignedUrl } from "../../../shared/bucket";
+import { bucket } from "../../../shared/bucket";
 import {
   checkUpload,
   confirmCheckedUpload,
@@ -59,7 +59,7 @@ export async function handleImageConfirm(c: Context) {
     return c.json(body, status);
   }
 
-  const signedUrl = await createSignedUrl(userId, image);
+  const signedUrl = await bucket.createSignedUrl(userId, image);
   const confirmed = await confirmCheckedUpload(userId, image, (executor) =>
     data.images.createImageAttachment(
       {

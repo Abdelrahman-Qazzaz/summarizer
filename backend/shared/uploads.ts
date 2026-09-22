@@ -1,10 +1,4 @@
-import {
-  createUploadUrl,
-  deleteFromBucket,
-  inspectUploadedObject,
-  type StoredObject,
-  type UploadableObject,
-} from "./bucket";
+import { bucket, type StoredObject, type UploadableObject } from "./bucket";
 import type { Executor } from "./db";
 import { data } from "./data";
 
@@ -22,7 +16,7 @@ export const UPLOAD_CONFIRM_WINDOW_MS = 2 * 60 * 60 * 1000;
 export async function startUpload(userId: string, object: UploadableObject) {
   const [, signedUrl] = await Promise.all([
     data.storageLedger.recordPendingUpload({ userId, ...object }),
-    createUploadUrl(userId, object),
+    bucket.createUploadUrl(userId, object),
   ]);
 
   return signedUrl;
@@ -46,7 +40,7 @@ export async function checkUpload(userId: string, object: UploadableObject) {
     return { ok: false, reason: "expired" } as const;
   }
 
-  return inspectUploadedObject(userId, object);
+  return bucket.inspectUploadedObject(userId, object);
 }
 
 /**
@@ -77,6 +71,6 @@ export async function deleteObjects(
 ) {
   if (objects.length === 0) return;
 
-  await deleteFromBucket(userId, objects);
+  await bucket.delete(userId, objects);
   await data.storageLedger.forgetObjects(userId, objects, executor);
 }

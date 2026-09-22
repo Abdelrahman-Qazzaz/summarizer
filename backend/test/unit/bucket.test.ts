@@ -13,16 +13,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ storage: { from: () => storage } }),
 }));
 
-import {
-  MAX_AUDIO_BYTES,
-  createSignedUrl,
-  createSignedUrls,
-  createUploadUrl,
-  verifyUploadUrlLifetime,
-  deleteFromBucket,
-  getText,
-  inspectUploadedObject,
-} from "../../shared/bucket";
+import { bucket, MAX_AUDIO_BYTES } from "../../shared/bucket";
 
 const USER = "user_01";
 const IMAGE_CAP = 10 * 1024 * 1024;
@@ -39,13 +30,9 @@ beforeEach(() => {
 
 // Every key is <userId>/<folder>/<id>. youtube-fetcher/app/bucket.py builds the
 // same keys for audio and text, and the worker reads them back from here.
-describe("deleteFromBucket", () => {
+describe("delete", () => {
   it("removes a mix of kinds in one request", async () => {
-    await deleteFromBucket(USER, [
-      audio,
-      { kind: "text", uploadId: "t1" },
-      image,
-    ]);
+    await bucket.delete(USER, [audio, { kind: "text", uploadId: "t1" }, image]);
 
     expect(storage.remove).toHaveBeenCalledTimes(1);
     expect(storage.remove).toHaveBeenCalledWith([
@@ -56,7 +43,7 @@ describe("deleteFromBucket", () => {
   });
 
   it("makes no request for an empty list", async () => {
-    await deleteFromBucket(USER, []);
+    await bucket.delete(USER, []);
 
     expect(storage.remove).not.toHaveBeenCalled();
   });
@@ -64,7 +51,7 @@ describe("deleteFromBucket", () => {
   it("throws a storage error", async () => {
     storage.remove.mockResolvedValue({ data: null, error: new Error("down") });
 
-    await expect(deleteFromBucket(USER, [image])).rejects.toThrow("down");
+    await expect(bucket.delete(USER, [image])).rejects.toThrow("down");
   });
 });
 
@@ -75,7 +62,7 @@ describe("getText", () => {
       error: null,
     });
 
-    expect(await getText(USER, "t1")).toBe("caption text");
+    expect(await bucket.getText(USER, "t1")).toBe("caption text");
     expect(storage.download).toHaveBeenCalledWith("user_01/texts/t1");
   });
 });
@@ -89,7 +76,7 @@ describe("createSignedUrl", () => {
   });
 
   it("signs audio for an hour", async () => {
-    await createSignedUrl(USER, audio);
+    await bucket.createSignedUrl(USER, audio);
 
     expect(storage.createSignedUrl).toHaveBeenCalledWith(
       "user_01/audios/a1",
@@ -98,7 +85,7 @@ describe("createSignedUrl", () => {
   });
 
   it("signs an image for a week", async () => {
-    await createSignedUrl(USER, image);
+    await bucket.createSignedUrl(USER, image);
 
     expect(storage.createSignedUrl).toHaveBeenCalledWith(
       "user_01/images/i1",
@@ -114,7 +101,7 @@ describe("createSignedUrls", () => {
       error: null,
     }));
 
-    const urls = await createSignedUrls([
+    const urls = await bucket.createSignedUrls([
       { userId: "user_01", ...image },
       { userId: "user_01", ...audio },
       { userId: "user_02", kind: "image", uploadId: "i2" },
@@ -144,13 +131,15 @@ describe("createSignedUrls", () => {
       error: null,
     });
 
-    const urls = await createSignedUrls([{ userId: "user_01", ...image }]);
+    const urls = await bucket.createSignedUrls([
+      { userId: "user_01", ...image },
+    ]);
 
     expect(urls.size).toBe(0);
   });
 
   it("makes no request for an empty list", async () => {
-    expect(await createSignedUrls([])).toEqual(new Map());
+    expect(await bucket.createSignedUrls([])).toEqual(new Map());
     expect(storage.createSignedUrls).not.toHaveBeenCalled();
   });
 
@@ -162,7 +151,7 @@ describe("createSignedUrls", () => {
     );
 
     await expect(
-      createSignedUrls([
+      bucket.createSignedUrls([
         { userId: "user_01", ...image },
         { userId: "user_01", ...audio },
       ]),
@@ -187,7 +176,7 @@ describe("createUploadUrl", () => {
       error: null,
     });
 
-    expect(await createUploadUrl(USER, object)).toBe("https://upload");
+    expect(await bucket.createUploadUrl(USER, object)).toBe("https://upload");
     expect(storage.createSignedUploadUrl).toHaveBeenCalledWith(path);
   });
 });
@@ -205,7 +194,7 @@ describe("verifyUploadUrlLifetime", () => {
   it("passes when the URL doesn't outlive the window", async () => {
     mintedFor(2 * HOUR);
 
-    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).resolves.toBe(
+    await expect(bucket.verifyUploadUrlLifetime(2 * HOUR * 1000)).resolves.toBe(
       undefined,
     );
     // Probes a key of its own, and creates no object.
@@ -217,9 +206,9 @@ describe("verifyUploadUrlLifetime", () => {
   it("fails when the URL outlives the window", async () => {
     mintedFor(4 * HOUR);
 
-    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).rejects.toThrow(
-      "Upload URLs are valid for 14400000 ms",
-    );
+    await expect(
+      bucket.verifyUploadUrlLifetime(2 * HOUR * 1000),
+    ).rejects.toThrow("Upload URLs are valid for 14400000 ms");
   });
 
   // Without it, nothing could tell whether the window still covers the URL,
@@ -230,9 +219,9 @@ describe("verifyUploadUrlLifetime", () => {
       error: null,
     });
 
-    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).rejects.toThrow(
-      "Upload token carries no lifetime",
-    );
+    await expect(
+      bucket.verifyUploadUrlLifetime(2 * HOUR * 1000),
+    ).rejects.toThrow("Upload token carries no lifetime");
   });
 
   it("fails when storage won't mint one", async () => {
@@ -241,9 +230,9 @@ describe("verifyUploadUrlLifetime", () => {
       error: new Error("storage down"),
     });
 
-    await expect(verifyUploadUrlLifetime(2 * HOUR * 1000)).rejects.toThrow(
-      "storage down",
-    );
+    await expect(
+      bucket.verifyUploadUrlLifetime(2 * HOUR * 1000),
+    ).rejects.toThrow("storage down");
   });
 });
 
@@ -257,7 +246,7 @@ describe("inspectUploadedObject", () => {
   it("reports what storage holds", async () => {
     stored(2048, "audio/webm");
 
-    expect(await inspectUploadedObject(USER, audio)).toEqual({
+    expect(await bucket.inspectUploadedObject(USER, audio)).toEqual({
       ok: true,
       sizeBytes: 2048,
       contentType: "audio/webm",
@@ -275,7 +264,7 @@ describe("inspectUploadedObject", () => {
       }),
     });
 
-    expect(await inspectUploadedObject(USER, audio)).toEqual({
+    expect(await bucket.inspectUploadedObject(USER, audio)).toEqual({
       ok: false,
       reason: "missing",
     });
@@ -290,7 +279,7 @@ describe("inspectUploadedObject", () => {
       }),
     });
 
-    await expect(inspectUploadedObject(USER, audio)).rejects.toThrow(
+    await expect(bucket.inspectUploadedObject(USER, audio)).rejects.toThrow(
       "unauthorized",
     );
   });
@@ -298,7 +287,7 @@ describe("inspectUploadedObject", () => {
   it("rejects audio in an image upload, without deleting it", async () => {
     stored(2048, "audio/webm");
 
-    expect(await inspectUploadedObject(USER, image)).toEqual({
+    expect(await bucket.inspectUploadedObject(USER, image)).toEqual({
       ok: false,
       reason: "wrong-type",
       contentType: "audio/webm",
@@ -315,7 +304,7 @@ describe("inspectUploadedObject", () => {
     async (object, contentType, cap) => {
       stored(cap + 1, contentType);
 
-      expect(await inspectUploadedObject(USER, object)).toEqual({
+      expect(await bucket.inspectUploadedObject(USER, object)).toEqual({
         ok: false,
         reason: "too-large",
         contentType,
@@ -331,7 +320,7 @@ describe("inspectUploadedObject", () => {
   ])("accepts %o exactly at its cap", async (object, contentType, cap) => {
     stored(cap, contentType);
 
-    expect(await inspectUploadedObject(USER, object)).toMatchObject({
+    expect(await bucket.inspectUploadedObject(USER, object)).toMatchObject({
       ok: true,
     });
   });

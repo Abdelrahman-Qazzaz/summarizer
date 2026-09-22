@@ -55,9 +55,11 @@ vi.mock("../../shared/uploads", () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  deleteFromBucket: vi.fn(),
-  createSignedUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
+  bucket: {
+    delete: vi.fn(),
+    createSignedUrls: vi.fn(),
+  },
 }));
 
 import { desc } from "drizzle-orm";

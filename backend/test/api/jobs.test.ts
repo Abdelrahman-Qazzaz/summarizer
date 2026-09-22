@@ -70,8 +70,10 @@ vi.mock("../../shared/uploads", () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  createSignedUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
+  bucket: {
+    createSignedUrls: vi.fn(),
+  },
 }));
 
 vi.mock("../../shared/captionUploads", () => ({

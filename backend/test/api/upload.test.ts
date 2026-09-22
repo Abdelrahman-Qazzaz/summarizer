@@ -92,15 +92,17 @@ vi.mock("../../shared/data/storageLedger.data", () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  createUploadUrl: mockCreateUploadUrl,
-  inspectUploadedObject: mockInspectUploadedObject,
-  createSignedUrl: vi.fn(),
-  createSignedUrls: vi.fn(),
   // Literals (not the top-level consts): vi.mock factories can run during
   // import evaluation, before this module's own bindings initialize.
   BUCKET: "Audio & Text files",
   MAX_AUDIO_BYTES: 100 * 1024 * 1024,
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
+  bucket: {
+    createUploadUrl: mockCreateUploadUrl,
+    inspectUploadedObject: mockInspectUploadedObject,
+    createSignedUrl: vi.fn(),
+    createSignedUrls: vi.fn(),
+  },
 }));
 
 vi.mock("../../shared/message-queue/messageQueue", () => ({

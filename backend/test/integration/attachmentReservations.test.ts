@@ -40,8 +40,10 @@ vi.mock("../../shared/db", async () => {
 
 vi.mock("../../shared/bucket", () => ({
   IMAGE_URL_TTL_SECONDS: 604800,
-  createSignedUrls: vi.fn(),
-  deleteFromBucket: testState.deleteFromBucket,
+  bucket: {
+    createSignedUrls: vi.fn(),
+    delete: testState.deleteFromBucket,
+  },
 }));
 
 import {

@@ -41,7 +41,7 @@ function storage() {
 }
 
 /** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
-export async function ping(): Promise<void> {
+async function ping(): Promise<void> {
   const { error } = await supabase.storage.getBucket(BUCKET);
   if (error) throw error;
 }
@@ -104,10 +104,7 @@ function objectPath(userId: string, { kind, uploadId }: StoredObject) {
  * Nothing here limits what actually lands: size and content type are the
  * client's to set until the object exists. inspectUploadedObject reads both.
  */
-export async function createUploadUrl(
-  userId: string,
-  object: UploadableObject,
-) {
+async function createUploadUrl(userId: string, object: UploadableObject) {
   const { data, error } = await storage().createSignedUploadUrl(
     objectPath(userId, object),
   );
@@ -128,9 +125,7 @@ export async function createUploadUrl(
  *
  * Minting a URL creates no object, so the probe leaves nothing behind.
  */
-export async function verifyUploadUrlLifetime(
-  maxLifetimeMs: number,
-): Promise<void> {
+async function verifyUploadUrlLifetime(maxLifetimeMs: number): Promise<void> {
   const { data, error } = await storage().createSignedUploadUrl(
     objectPath("preflight", { kind: "image", uploadId: randomUUID() }),
   );
@@ -173,10 +168,7 @@ function isMissingObject(error: unknown) {
  * are read back rather than taken from the client. Only reads: an object this
  * rejects is left for the sweep.
  */
-export async function inspectUploadedObject(
-  userId: string,
-  object: UploadableObject,
-) {
+async function inspectUploadedObject(userId: string, object: UploadableObject) {
   const { contentTypePrefix, maxBytes } = KINDS[object.kind].upload;
   const { data, error } = await storage().info(objectPath(userId, object));
 
@@ -201,7 +193,7 @@ export async function inspectUploadedObject(
 }
 
 /** Stored text, such as the caption track the youtube-fetcher saves in place of audio. */
-export async function getText(userId: string, uploadId: string) {
+async function getText(userId: string, uploadId: string) {
   const { data, error } = await storage().download(
     objectPath(userId, { kind: "text", uploadId }),
   );
@@ -214,10 +206,7 @@ export async function getText(userId: string, uploadId: string) {
  * Removes one owner's objects, of any mix of kinds, in a single request.
  * No-ops on an empty list.
  */
-export async function deleteFromBucket(
-  userId: string,
-  objects: readonly StoredObject[],
-) {
+async function deleteObjects(userId: string, objects: readonly StoredObject[]) {
   if (objects.length === 0) return [];
 
   const { data, error } = await storage().remove(
@@ -233,10 +222,7 @@ export async function deleteFromBucket(
  * (client thumbnails and the chat model's vision input), an hour for audio
  * (which the transcription provider fetches for itself).
  */
-export async function createSignedUrl(
-  userId: string,
-  object: UploadableObject,
-) {
+async function createSignedUrl(userId: string, object: UploadableObject) {
   const { data, error } = await storage().createSignedUrl(
     objectPath(userId, object),
     KINDS[object.kind].upload.readUrlTtlSeconds,
@@ -251,7 +237,7 @@ export async function createSignedUrl(
  * TTL, all in parallel. Returns uploadId → url, omitting any the storage API
  * couldn't sign. Entries may span owners; the path carries the owner.
  */
-export async function createSignedUrls(
+async function createSignedUrls(
   entries: readonly (UploadableObject & { userId: string })[],
 ): Promise<Map<string, string>> {
   const byKind = Map.groupBy(entries, (entry) => entry.kind);
@@ -280,3 +266,14 @@ async function signGroup(
     return url ? [[entry.uploadId, url] as const] : [];
   });
 }
+
+export const bucket = {
+  ping,
+  createUploadUrl,
+  verifyUploadUrlLifetime,
+  inspectUploadedObject,
+  getText,
+  delete: deleteObjects,
+  createSignedUrl,
+  createSignedUrls,
+};

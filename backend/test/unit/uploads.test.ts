@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { bucket, ledger } = vi.hoisted(() => ({
   bucket: {
     createUploadUrl: vi.fn(),
-    deleteFromBucket: vi.fn(),
+    delete: vi.fn(),
     inspectUploadedObject: vi.fn(),
   },
   ledger: {
@@ -14,7 +14,7 @@ const { bucket, ledger } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../shared/bucket", () => bucket);
+vi.mock("../../shared/bucket", () => ({ bucket }));
 vi.mock("../../shared/data/storageLedger.data", () => ({
   storageLedger: ledger,
 }));
@@ -38,7 +38,7 @@ const pending = (msAgo = 0) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   bucket.createUploadUrl.mockResolvedValue("https://upload");
-  bucket.deleteFromBucket.mockResolvedValue([]);
+  bucket.delete.mockResolvedValue([]);
   ledger.recordPendingUpload.mockResolvedValue(undefined);
   ledger.findLedgerEntry.mockResolvedValue(pending());
   ledger.forgetObjects.mockResolvedValue(undefined);
@@ -102,7 +102,7 @@ describe("checkUpload", () => {
     expect(await checkUpload(USER, image)).toMatchObject({
       reason: "too-large",
     });
-    expect(bucket.deleteFromBucket).not.toHaveBeenCalled();
+    expect(bucket.delete).not.toHaveBeenCalled();
     expect(ledger.forgetObjects).not.toHaveBeenCalled();
   });
 });
@@ -125,15 +125,15 @@ describe("deleteObjects", () => {
   it("deletes from storage, then forgets", async () => {
     await deleteObjects(USER, [image]);
 
-    expect(bucket.deleteFromBucket).toHaveBeenCalledWith(USER, [image]);
+    expect(bucket.delete).toHaveBeenCalledWith(USER, [image]);
     expect(ledger.forgetObjects).toHaveBeenCalledWith(USER, [image], undefined);
-    expect(bucket.deleteFromBucket.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(bucket.delete.mock.invocationCallOrder[0]).toBeLessThan(
       ledger.forgetObjects.mock.invocationCallOrder[0],
     );
   });
 
   it("keeps the record when storage fails, for the sweep", async () => {
-    bucket.deleteFromBucket.mockRejectedValue(new Error("storage down"));
+    bucket.delete.mockRejectedValue(new Error("storage down"));
 
     await expect(deleteObjects(USER, [image])).rejects.toThrow("storage down");
     expect(ledger.forgetObjects).not.toHaveBeenCalled();
@@ -142,6 +142,6 @@ describe("deleteObjects", () => {
   it("does nothing for an empty list", async () => {
     await deleteObjects(USER, []);
 
-    expect(bucket.deleteFromBucket).not.toHaveBeenCalled();
+    expect(bucket.delete).not.toHaveBeenCalled();
   });
 });

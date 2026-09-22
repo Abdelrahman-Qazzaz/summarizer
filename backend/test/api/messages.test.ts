@@ -128,9 +128,11 @@ vi.mock("../../shared/uploads", () => ({
 }));
 
 vi.mock("../../shared/bucket", () => ({
-  deleteFromBucket: vi.fn(),
-  createSignedUrls: vi.fn(),
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
+  bucket: {
+    delete: vi.fn(),
+    createSignedUrls: vi.fn(),
+  },
 }));
 
 // buildUserTurn is the real one: what the model is handed for an image turn is
