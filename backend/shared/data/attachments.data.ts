@@ -40,7 +40,7 @@ type OwnedAttachments = {
   kind: AttachmentValues["kind"];
 };
 
-export function userOwnsAttachments(input: OwnedAttachments) {
+function userOwnsAttachments(input: OwnedAttachments) {
   return and(
     eq(Attachments.userId, input.userId),
     eq(Attachments.kind, input.kind),
@@ -91,7 +91,7 @@ async function lockOwnedAttachments(
     .for("update");
 }
 
-export async function claimAttachments(
+async function claimAttachments(
   userId: string,
   attachmentIds: readonly string[],
   claimToken: string,
@@ -131,23 +131,20 @@ export async function claimAttachments(
   return result?.reservationCount === uniqueAttachmentIds.length;
 }
 
-export async function unclaimAttachments(
-  claimToken: string,
-  executor: Executor = db,
-) {
+async function unclaimAttachments(claimToken: string, executor: Executor = db) {
   await executor
     .delete(AttachmentTurnReservations)
     .where(eq(AttachmentTurnReservations.claimToken, claimToken));
 }
 
-export async function createAttachment(
+async function createAttachment(
   values: AttachmentValues,
   executor: Executor = db,
 ) {
   await executor.insert(Attachments).values(values);
 }
 
-export async function deleteOwnedUnlinkedUnreservedAttachment(
+async function deleteOwnedUnlinkedUnreservedAttachment(
   input: DeleteAttachmentInput,
   executor: Executor = db,
 ) {
@@ -163,7 +160,7 @@ export async function deleteOwnedUnlinkedUnreservedAttachment(
   return deletedAttachmentId ?? null;
 }
 
-export async function deleteOwnedUnlinkedUnreservedAttachments(
+async function deleteOwnedUnlinkedUnreservedAttachments(
   input: DeleteAttachmentsInput,
   executor: Executor = db,
 ): Promise<string[]> {
@@ -201,3 +198,12 @@ export async function deleteOwnedUnlinkedUnreservedAttachments(
 
   return deletedIds;
 }
+
+export const attachments = {
+  userOwnsAttachments,
+  claimAttachments,
+  unclaimAttachments,
+  createAttachment,
+  deleteOwnedUnlinkedUnreservedAttachment,
+  deleteOwnedUnlinkedUnreservedAttachments,
+};

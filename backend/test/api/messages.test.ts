@@ -42,13 +42,18 @@ const {
   mockUnclaimAttachments: vi.fn(),
 }));
 
-vi.mock("../../shared/data/attachments.data", async (importActual) => ({
-  ...(await importActual<
-    typeof import("../../shared/data/attachments.data")
-  >()),
-  claimAttachments: mockClaimAttachments,
-  unclaimAttachments: mockUnclaimAttachments,
-}));
+vi.mock("../../shared/data/attachments.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/attachments.data")>();
+  return {
+    ...actual,
+    attachments: {
+      ...actual.attachments,
+      claimAttachments: mockClaimAttachments,
+      unclaimAttachments: mockUnclaimAttachments,
+    },
+  };
+});
 
 // The data layer is mocked directly — these tests drive the controller's
 // context assembly, streaming and (non-blocking) persistence, not the SQL. The

@@ -14,7 +14,7 @@ import {
 } from "./images.data";
 import { conversations } from "./conversations.data";
 import { messageAttachmentLinks } from "./messageAttachmentLinks.data";
-import { unclaimAttachments } from "./attachments.data";
+import { attachments } from "./attachments.data";
 import {
   findMessageTranscriptAttachments,
   type StoredTranscriptAttachment,
@@ -620,7 +620,7 @@ export async function persistChatTurn(turn: {
     );
     if (!completed) throw new Error("Conversation turn claim was lost");
 
-    await unclaimAttachments(turn.claimToken, tx);
+    await attachments.unclaimAttachments(turn.claimToken, tx);
 
     return assistantMessage.id;
   });

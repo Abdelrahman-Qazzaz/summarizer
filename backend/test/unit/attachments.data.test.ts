@@ -47,14 +47,12 @@ vi.mock("../../shared/data/storageLedger.data", () => ({
   },
 }));
 
-import {
-  createAttachment,
-  deleteOwnedUnlinkedUnreservedAttachment,
-  deleteOwnedUnlinkedUnreservedAttachments,
-} from "../../shared/data/attachments.data";
+import { attachments } from "../../shared/data/attachments.data";
 import { Attachments, ChatMessageAttachmentLinks } from "../../shared/db";
 
-type AttachmentExecutor = NonNullable<Parameters<typeof createAttachment>[1]>;
+type AttachmentExecutor = NonNullable<
+  Parameters<typeof attachments.createAttachment>[1]
+>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -91,7 +89,7 @@ describe("attachments", () => {
       signedUrlExpiresAt: new Date("2026-09-06T00:00:00.000Z"),
     };
 
-    await createAttachment(attachment);
+    await attachments.createAttachment(attachment);
 
     expect(mockInsert).toHaveBeenCalledWith(Attachments);
     expect(mockValues).toHaveBeenCalledWith(attachment);
@@ -114,7 +112,7 @@ describe("attachments", () => {
       sizeBytes: 256,
     };
 
-    await createAttachment(attachment, transactionExecutor);
+    await attachments.createAttachment(attachment, transactionExecutor);
 
     expect(transactionInsert).toHaveBeenCalledWith(Attachments);
     expect(transactionValues).toHaveBeenCalledWith(attachment);
@@ -127,7 +125,7 @@ describe("attachments", () => {
     ]);
 
     await expect(
-      deleteOwnedUnlinkedUnreservedAttachment({
+      attachments.deleteOwnedUnlinkedUnreservedAttachment({
         userId: "user-1",
         attachmentId: "image-attachment-1",
         kind: "image",
@@ -165,7 +163,7 @@ describe("attachments", () => {
     } as unknown as AttachmentExecutor;
 
     await expect(
-      deleteOwnedUnlinkedUnreservedAttachments(
+      attachments.deleteOwnedUnlinkedUnreservedAttachments(
         {
           userId: "user-1",
           attachmentIds: ["image-attachment-1"],

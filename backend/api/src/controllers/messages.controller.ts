@@ -35,10 +35,7 @@ import {
   type StoredTranscriptAttachment,
 } from "../../../shared/data/transcripts.data";
 import type { MessageAttachmentInput } from "../schema/messages.schema";
-import {
-  claimAttachments,
-  unclaimAttachments,
-} from "../../../shared/data/attachments.data";
+import { attachments } from "../../../shared/data/attachments.data";
 
 const log = logger.child({ controller: "messages" });
 
@@ -496,7 +493,7 @@ function streamAndPersistMessageTurn(
     } finally {
       // A failed read does not cancel acquisition; settle it before releasing anything.
       await Promise.allSettled(claimPromises);
-      await unclaimAttachments(claimToken).catch(() => {});
+      await attachments.unclaimAttachments(claimToken).catch(() => {});
       await unclaimConversationSafely(
         messageInput.userId,
         messageInput.conversationId,
@@ -518,7 +515,7 @@ function createClaimData(messageInput: MessageRequest) {
       messageInput.expectedLastMessageId,
       claimToken,
     ),
-    claimAttachments(
+    attachments.claimAttachments(
       messageInput.userId,
       messageInput.attachmentIds,
       claimToken,

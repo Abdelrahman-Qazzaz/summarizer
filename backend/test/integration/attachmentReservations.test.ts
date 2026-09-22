@@ -52,11 +52,7 @@ import {
   db,
   users,
 } from "../../shared/db";
-import {
-  deleteOwnedUnlinkedUnreservedAttachments,
-  unclaimAttachments,
-  claimAttachments,
-} from "../../shared/data/attachments.data";
+import { attachments } from "../../shared/data/attachments.data";
 import { deleteOwnedUnlinkedUnreservedImageAttachment } from "../../shared/data/images.data";
 import { persistChatTurn } from "../../shared/data/messages.data";
 
@@ -142,10 +138,18 @@ describe.skipIf(!testState.databaseUrl)(
 
     it("reserves all requested attachments or none, with ownership checks", async () => {
       expect(
-        await claimAttachments(userId, [imageUploadId, "missing"], claimToken),
+        await attachments.claimAttachments(
+          userId,
+          [imageUploadId, "missing"],
+          claimToken,
+        ),
       ).toBe(false);
       expect(
-        await claimAttachments("another-user", [imageUploadId], claimToken),
+        await attachments.claimAttachments(
+          "another-user",
+          [imageUploadId],
+          claimToken,
+        ),
       ).toBe(false);
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
     });
@@ -153,7 +157,7 @@ describe.skipIf(!testState.databaseUrl)(
     it("deduplicates IDs and retains the reservation expiry", async () => {
       const startedAt = Date.now();
       expect(
-        await claimAttachments(
+        await attachments.claimAttachments(
           userId,
           [imageUploadId, imageUploadId],
           claimToken,
@@ -170,12 +174,12 @@ describe.skipIf(!testState.databaseUrl)(
     it("allows concurrent reservations with reversed input order", async () => {
       expect(
         await Promise.all([
-          claimAttachments(
+          attachments.claimAttachments(
             userId,
             [imageUploadId, audioUploadId],
             randomUUID(),
           ),
-          claimAttachments(
+          attachments.claimAttachments(
             userId,
             [audioUploadId, imageUploadId],
             randomUUID(),
@@ -189,7 +193,7 @@ describe.skipIf(!testState.databaseUrl)(
 
     it("protects images and transcripts until the completed turn links them", async () => {
       expect(
-        await claimAttachments(
+        await attachments.claimAttachments(
           userId,
           [imageUploadId, audioUploadId],
           claimToken,
@@ -198,7 +202,7 @@ describe.skipIf(!testState.databaseUrl)(
       await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFromBucket).not.toHaveBeenCalled();
       expect(
-        await deleteOwnedUnlinkedUnreservedAttachments({
+        await attachments.deleteOwnedUnlinkedUnreservedAttachments({
           userId,
           attachmentIds: [audioUploadId],
           kind: "audio",
@@ -225,12 +229,16 @@ describe.skipIf(!testState.databaseUrl)(
 
     it("releases only the failed turn's reservation when attachments are shared", async () => {
       const otherClaimToken = randomUUID();
-      await claimAttachments(userId, [imageUploadId], claimToken);
-      await claimAttachments(userId, [imageUploadId], otherClaimToken);
-      await unclaimAttachments(claimToken);
+      await attachments.claimAttachments(userId, [imageUploadId], claimToken);
+      await attachments.claimAttachments(
+        userId,
+        [imageUploadId],
+        otherClaimToken,
+      );
+      await attachments.unclaimAttachments(claimToken);
       await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFromBucket).not.toHaveBeenCalled();
-      await unclaimAttachments(otherClaimToken);
+      await attachments.unclaimAttachments(otherClaimToken);
       await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
         { kind: "image", uploadId: imageUploadId },
@@ -238,7 +246,7 @@ describe.skipIf(!testState.databaseUrl)(
     });
 
     it("keeps reservations when persistence rolls back", async () => {
-      await claimAttachments(userId, [imageUploadId], claimToken);
+      await attachments.claimAttachments(userId, [imageUploadId], claimToken);
       await db
         .update(Conversations)
         .set({ activeTurnClaimToken: randomUUID() });
@@ -260,7 +268,7 @@ describe.skipIf(!testState.databaseUrl)(
       expect(await db.select().from(AttachmentTurnReservations)).toHaveLength(
         1,
       );
-      await unclaimAttachments(claimToken);
+      await attachments.unclaimAttachments(claimToken);
       await deleteOwnedUnlinkedUnreservedImageAttachment(userId, imageUploadId);
       expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
         { kind: "image", uploadId: imageUploadId },
@@ -268,7 +276,7 @@ describe.skipIf(!testState.databaseUrl)(
     });
 
     it("protects an expired reservation while its conversation claim still exists", async () => {
-      await claimAttachments(userId, [imageUploadId], claimToken);
+      await attachments.claimAttachments(userId, [imageUploadId], claimToken);
       await db
         .update(AttachmentTurnReservations)
         .set({ expiresAt: new Date(0) });
@@ -311,7 +319,11 @@ describe.skipIf(!testState.databaseUrl)(
         imageUploadId,
       );
       await storageStarted.promise;
-      const reservation = claimAttachments(userId, [imageUploadId], claimToken);
+      const reservation = attachments.claimAttachments(
+        userId,
+        [imageUploadId],
+        claimToken,
+      );
       try {
         await waitForBlockedQuery();
       } finally {

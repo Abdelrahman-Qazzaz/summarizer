@@ -11,12 +11,7 @@ import {
 import { IMAGE_URL_TTL_SECONDS, createSignedUrls } from "../bucket";
 import type { UploadId } from "../types";
 import { deleteObjects } from "../uploads";
-import {
-  createAttachment,
-  deleteOwnedUnlinkedUnreservedAttachment,
-  deleteOwnedUnlinkedUnreservedAttachments,
-  userOwnsAttachments,
-} from "./attachments.data";
+import { attachments } from "./attachments.data";
 
 /**
  * What resolving an image needs: the signature cache to decide whether to
@@ -75,7 +70,7 @@ export async function createImageAttachment(
   },
   executor: Executor = db,
 ) {
-  await createAttachment(
+  await attachments.createAttachment(
     {
       attachmentId: input.imageUploadId,
       kind: "image",
@@ -117,7 +112,7 @@ async function findImageAttachments(
     .from(Attachments)
     .where(
       and(
-        userOwnsAttachments({
+        attachments.userOwnsAttachments({
           userId,
           attachmentIds: imageUploadIds,
           kind: "image",
@@ -271,7 +266,7 @@ export async function resolveMessageImages(
     )
     .where(
       and(
-        userOwnsAttachments({ userId, kind: "image" }),
+        attachments.userOwnsAttachments({ userId, kind: "image" }),
         inArray(ChatMessageAttachmentLinks.messageId, [...messageIds]),
       ),
     )
@@ -306,7 +301,9 @@ async function findLinkedImageAttachmentIdsWhere(
       Attachments,
       eq(Attachments.attachmentId, ChatMessageAttachmentLinks.attachmentId),
     )
-    .where(and(userOwnsAttachments({ userId, kind: "image" }), filter));
+    .where(
+      and(attachments.userOwnsAttachments({ userId, kind: "image" }), filter),
+    );
 
   return rows.map((row) => row.imageUploadId);
 }
@@ -333,14 +330,15 @@ export async function deleteOwnedUnlinkedUnreservedImageAttachment(
   imageUploadId: string,
 ) {
   await db.transaction(async (transaction) => {
-    const deletedAttachmentId = await deleteOwnedUnlinkedUnreservedAttachment(
-      {
-        userId,
-        attachmentId: imageUploadId,
-        kind: "image",
-      },
-      transaction,
-    );
+    const deletedAttachmentId =
+      await attachments.deleteOwnedUnlinkedUnreservedAttachment(
+        {
+          userId,
+          attachmentId: imageUploadId,
+          kind: "image",
+        },
+        transaction,
+      );
     if (!deletedAttachmentId) return;
 
     // Hold the deletion lock through storage cleanup; rollback keeps failed
@@ -355,7 +353,7 @@ export async function deleteOwnedUnlinkedUnreservedImageAttachments(
   candidateAttachmentIds: readonly string[],
   executor: Executor = db,
 ) {
-  return deleteOwnedUnlinkedUnreservedAttachments(
+  return attachments.deleteOwnedUnlinkedUnreservedAttachments(
     {
       userId,
       attachmentIds: candidateAttachmentIds,

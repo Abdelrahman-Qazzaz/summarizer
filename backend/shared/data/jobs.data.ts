@@ -14,10 +14,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { Attachments, AudioTranscriptionJobs, db, type Executor } from "../db";
 import type { jobStatusEnum } from "../db";
 import type { UploadId } from "../types";
-import {
-  createAttachment,
-  deleteOwnedUnlinkedUnreservedAttachment,
-} from "./attachments.data";
+import { attachments } from "./attachments.data";
 import { storageLedger } from "./storageLedger.data";
 
 /**
@@ -186,7 +183,7 @@ export async function createAudioJob(
   } = job;
 
   await executor.transaction(async (tx) => {
-    await createAttachment(
+    await attachments.createAttachment(
       {
         attachmentId: audioUploadId,
         kind: "audio",
@@ -252,10 +249,11 @@ export async function deleteAudioJob(userId: string, audioUploadId: string) {
       .from(AudioTranscriptionJobs)
       .where(eq(AudioTranscriptionJobs.audioUploadId, audioUploadId));
 
-    const deletedAudioUploadId = await deleteOwnedUnlinkedUnreservedAttachment(
-      { userId, attachmentId: audioUploadId, kind: "audio" },
-      tx,
-    );
+    const deletedAudioUploadId =
+      await attachments.deleteOwnedUnlinkedUnreservedAttachment(
+        { userId, attachmentId: audioUploadId, kind: "audio" },
+        tx,
+      );
     if (!deletedAudioUploadId) return null;
 
     const captionUploadId = job?.captionUploadId ?? null;

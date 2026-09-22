@@ -52,7 +52,7 @@ import {
   users,
   type Executor,
 } from "../../shared/db";
-import { deleteOwnedUnlinkedUnreservedAttachments } from "../../shared/data/attachments.data";
+import { attachments } from "../../shared/data/attachments.data";
 import {
   clearCaptionUploadId,
   createAudioJob,
@@ -458,11 +458,12 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     it("marks deleted attachments, and only those", async () => {
       const [a, b] = [await addImage(), await addImage()];
 
-      const deleted = await deleteOwnedUnlinkedUnreservedAttachments({
-        userId,
-        attachmentIds: [a, randomUUID()],
-        kind: "image",
-      });
+      const deleted =
+        await attachments.deleteOwnedUnlinkedUnreservedAttachments({
+          userId,
+          attachmentIds: [a, randomUUID()],
+          kind: "image",
+        });
 
       expect(deleted).toEqual([a]);
       expect(await statusOf(a)).toBe("deleted");
@@ -472,7 +473,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     it("marks nothing when another user's attachment isn't deleted", async () => {
       const a = await addImage();
 
-      await deleteOwnedUnlinkedUnreservedAttachments({
+      await attachments.deleteOwnedUnlinkedUnreservedAttachments({
         userId: "someone-else",
         attachmentIds: [a],
         kind: "image",

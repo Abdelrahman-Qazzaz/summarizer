@@ -11,10 +11,7 @@ import {
   pingDb,
   users,
 } from "../shared/db";
-import {
-  claimAttachments,
-  unclaimAttachments,
-} from "../shared/data/attachments.data";
+import { attachments } from "../shared/data/attachments.data";
 import { CLAIM_LEASE_MS } from "../shared/data/conversations.data";
 import { msSince } from "../shared/preparationMetrics";
 
@@ -61,7 +58,13 @@ try {
       const claimToken = randomUUID();
       await measure(operation, async () => {
         if (operation === "single statement") {
-          assert(await claimAttachments(userId, attachmentIds, claimToken));
+          assert(
+            await attachments.claimAttachments(
+              userId,
+              attachmentIds,
+              claimToken,
+            ),
+          );
           return;
         }
         await db.transaction(async (transaction) => {
@@ -91,7 +94,7 @@ try {
         .from(AttachmentTurnReservations)
         .where(eq(AttachmentTurnReservations.claimToken, claimToken));
       assert.equal(rows.length, 2);
-      await unclaimAttachments(claimToken);
+      await attachments.unclaimAttachments(claimToken);
     }
   }
   const summaries = [...new Set(samples.map((sample) => sample.operation))].map(
