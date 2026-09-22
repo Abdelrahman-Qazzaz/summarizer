@@ -49,12 +49,17 @@ vi.mock("../../shared/ai/ai_chat_client", () => ({
   generateTitle: mockGenerateTitle,
 }));
 
-vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
-  ...(await importActual<
-    typeof import("../../shared/data/transcripts.data")
-  >()),
-  saveCompletedTranscript: mockSaveCompletedTranscript,
-}));
+vi.mock("../../shared/data/transcripts.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/transcripts.data")>();
+  return {
+    ...actual,
+    transcripts: {
+      ...actual.transcripts,
+      saveCompletedTranscript: mockSaveCompletedTranscript,
+    },
+  };
+});
 
 // Mock the Deepgram SDK called by transcribeAI().
 vi.mock("@deepgram/sdk", () => ({

@@ -94,14 +94,19 @@ vi.mock("../../shared/data/images.data", async (importActual) => ({
   resolveImageAttachmentUrls: mockResolveImageAttachmentUrls,
 }));
 
-vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
-  ...(await importActual<
-    typeof import("../../shared/data/transcripts.data")
-  >()),
-  findMessageTranscriptAttachments: mockFindMessageTranscriptAttachments,
-  findTranscripts: mockFindTranscripts,
-  linkTranscriptionsToMessage: vi.fn(),
-}));
+vi.mock("../../shared/data/transcripts.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/transcripts.data")>();
+  return {
+    ...actual,
+    transcripts: {
+      ...actual.transcripts,
+      findMessageTranscriptAttachments: mockFindMessageTranscriptAttachments,
+      findTranscripts: mockFindTranscripts,
+      linkTranscriptionsToMessage: vi.fn(),
+    },
+  };
+});
 
 // Controllers release deleted objects through the upload module.
 vi.mock("../../shared/uploads", () => ({

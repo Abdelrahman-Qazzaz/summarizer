@@ -5,7 +5,7 @@ import {
 import { createSignedUrl, getTextFromBucket } from "../shared/bucket";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { jobs } from "../shared/data/jobs.data";
-import { saveCompletedTranscript } from "../shared/data/transcripts.data";
+import { transcripts } from "../shared/data/transcripts.data";
 import { logger, messageOf } from "../shared/logger";
 import {
   mq,
@@ -42,7 +42,7 @@ async function runTranscriptionJob(
       length: transcript.length,
     });
 
-    const saved = await saveCompletedTranscript(
+    const saved = await transcripts.saveCompletedTranscript(
       audioUploadId,
       transcript,
       claimToken,

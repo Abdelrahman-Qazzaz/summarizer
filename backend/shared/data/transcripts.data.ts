@@ -36,7 +36,7 @@ async function insertTranscript(
  * crash can't leave a job stuck `processing` with a transcript already written
  * (or a completed job with none).
  */
-export async function saveCompletedTranscript(
+async function saveCompletedTranscript(
   audioUploadId: UploadId,
   content: string,
   claimToken: string,
@@ -51,7 +51,7 @@ export async function saveCompletedTranscript(
 }
 
 /** Bodies for a set of turns at once, keyed by audioUploadId — the batched context read. */
-export async function findTranscripts(
+async function findTranscripts(
   userId: string,
   audioUploadIds: readonly string[],
 ): Promise<Map<string, string>> {
@@ -85,7 +85,7 @@ export type StoredTranscriptAttachment = {
 };
 
 /** Ordered transcription attachments grouped by chat message. */
-export async function findMessageTranscriptAttachments(
+async function findMessageTranscriptAttachments(
   userId: string,
   messageIds: readonly string[],
 ): Promise<Map<string, StoredTranscriptAttachment[]>> {
@@ -141,3 +141,9 @@ export async function findMessageTranscriptAttachments(
 
   return transcriptionsByMessageId;
 }
+
+export const transcripts = {
+  saveCompletedTranscript,
+  findTranscripts,
+  findMessageTranscriptAttachments,
+};

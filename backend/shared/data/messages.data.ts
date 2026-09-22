@@ -16,7 +16,7 @@ import { conversations } from "./conversations.data";
 import { messageAttachmentLinks } from "./messageAttachmentLinks.data";
 import { attachments } from "./attachments.data";
 import {
-  findMessageTranscriptAttachments,
+  transcripts,
   type StoredTranscriptAttachment,
 } from "./transcripts.data";
 
@@ -364,7 +364,7 @@ async function hydrateContextMessages(
         asc(ChatMessageAttachmentLinks.messageId),
         asc(ChatMessageAttachmentLinks.position),
       ),
-    findMessageTranscriptAttachments(userId, messageIds),
+    transcripts.findMessageTranscriptAttachments(userId, messageIds),
   ]);
 
   const imagesByMessageId = new Map<string, ContextMessage["images"]>();

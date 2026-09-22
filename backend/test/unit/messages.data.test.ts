@@ -54,7 +54,9 @@ vi.mock("../../shared/data/conversations.data", () => ({
 
 vi.mock("../../shared/data/transcripts.data", () => ({
   linkTranscriptionsToMessage: mockLinkTranscriptions,
-  findMessageTranscriptAttachments: vi.fn(),
+  transcripts: {
+    findMessageTranscriptAttachments: vi.fn(),
+  },
 }));
 
 import { deleteOwnedMessage } from "../../shared/data/messages.data";

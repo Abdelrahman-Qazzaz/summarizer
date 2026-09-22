@@ -33,12 +33,17 @@ vi.mock("../../shared/data/jobs.data", async (importActual) => {
   };
 });
 
-vi.mock("../../shared/data/transcripts.data", async (importActual) => ({
-  ...(await importActual<
-    typeof import("../../shared/data/transcripts.data")
-  >()),
-  findTranscripts: mockFindTranscripts,
-}));
+vi.mock("../../shared/data/transcripts.data", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../shared/data/transcripts.data")>();
+  return {
+    ...actual,
+    transcripts: {
+      ...actual.transcripts,
+      findTranscripts: mockFindTranscripts,
+    },
+  };
+});
 
 vi.mock("../../shared/ai/ai_transcribe_client", () => ({
   DEFAULT_TRANSCRIBE_MODEL: "nova-3",

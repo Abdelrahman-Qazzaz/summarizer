@@ -36,14 +36,13 @@ vi.mock("../../shared/data/jobs.data", () => ({
   },
 }));
 
-import {
-  findTranscripts,
-  saveCompletedTranscript,
-} from "../../shared/data/transcripts.data";
+import { transcripts } from "../../shared/data/transcripts.data";
 
 describe("findTranscripts", () => {
   it("returns without querying when no uploads were requested", async () => {
-    await expect(findTranscripts("user-1", [])).resolves.toEqual(new Map());
+    await expect(transcripts.findTranscripts("user-1", [])).resolves.toEqual(
+      new Map(),
+    );
     expect(mockSelect).not.toHaveBeenCalled();
   });
 });
@@ -59,7 +58,7 @@ describe("saveCompletedTranscript", () => {
   it("does not write a transcript when the worker lost its claim", async () => {
     mockCompleteAudioJob.mockResolvedValueOnce(false);
 
-    const saved = await saveCompletedTranscript(
+    const saved = await transcripts.saveCompletedTranscript(
       audioUploadId,
       "stale transcript",
       claimToken,
@@ -77,7 +76,7 @@ describe("saveCompletedTranscript", () => {
   it("writes the transcript after claiming the terminal transition", async () => {
     mockCompleteAudioJob.mockResolvedValueOnce(true);
 
-    const saved = await saveCompletedTranscript(
+    const saved = await transcripts.saveCompletedTranscript(
       audioUploadId,
       "current transcript",
       claimToken,

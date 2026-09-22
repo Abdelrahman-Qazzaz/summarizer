@@ -30,8 +30,7 @@ import {
 } from "../../../shared/data/images.data";
 import { deleteObjects } from "../../../shared/uploads";
 import {
-  findMessageTranscriptAttachments,
-  findTranscripts,
+  transcripts,
   type StoredTranscriptAttachment,
 } from "../../../shared/data/transcripts.data";
 import type { MessageAttachmentInput } from "../schema/messages.schema";
@@ -181,7 +180,7 @@ export async function handleListMessages(c: Context) {
   const messageIds = userMessageIds(rows);
   const [imagesByMessageId, transcriptsByMessageId] = await Promise.all([
     resolveMessageImages(userId, messageIds),
-    findMessageTranscriptAttachments(userId, messageIds),
+    transcripts.findMessageTranscriptAttachments(userId, messageIds),
   ]);
 
   return c.json({
@@ -310,7 +309,10 @@ async function prepareMessageTurn(
   ] = await Promise.all([
     ...claimPromises,
     resolveImages(messageInput.userId, messageInput.imageUploadIds),
-    findTranscripts(messageInput.userId, messageInput.audioUploadIds),
+    transcripts.findTranscripts(
+      messageInput.userId,
+      messageInput.audioUploadIds,
+    ),
     findCreateMessageHistory({
       userId: messageInput.userId,
       conversationId: messageInput.conversationId,

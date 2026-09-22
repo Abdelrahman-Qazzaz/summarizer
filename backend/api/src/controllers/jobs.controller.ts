@@ -4,7 +4,7 @@ import { jobCursorSchema, type JobStatus } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
 import { deleteObjects } from "../../../shared/uploads";
 import { jobs } from "../../../shared/data/jobs.data";
-import { findTranscripts } from "../../../shared/data/transcripts.data";
+import { transcripts } from "../../../shared/data/transcripts.data";
 import { tryCatch } from "../../../shared/try-catch";
 import { logger } from "../../../shared/logger";
 
@@ -19,7 +19,7 @@ export async function handleGetTranscribeJob(c: Context) {
   // A transcript-read failure degrades to null rather than failing the job view.
   const [audioJob, transcriptResult] = await Promise.all([
     jobs.findAudioJob(userId, audioUploadId),
-    tryCatch(findTranscripts(userId, [audioUploadId])),
+    tryCatch(transcripts.findTranscripts(userId, [audioUploadId])),
   ]);
 
   if (!audioJob) return c.json({ message: "Job not found" }, 404);
