@@ -73,7 +73,7 @@ import {
   recordConfirmedObjects,
   recordPendingUpload,
 } from "../../shared/data/storageLedger.data";
-import { withAdvisoryLock } from "../../shared/data/advisoryLock.data";
+import { advisoryLock } from "../../shared/data/advisoryLock.data";
 
 const userId = "ledger-owner";
 const HOUR_MS = 60 * 60 * 1000;
@@ -692,7 +692,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       let release!: () => void;
       let started!: () => void;
       const running = new Promise<void>((resolve) => (started = resolve));
-      const first = withAdvisoryLock(
+      const first = advisoryLock.withAdvisoryLock(
         "test-lock",
         () =>
           new Promise<string>((resolve) => {
@@ -703,18 +703,18 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       await running;
 
       expect(
-        await withAdvisoryLock("test-lock", async () => "second"),
+        await advisoryLock.withAdvisoryLock("test-lock", async () => "second"),
       ).toBeUndefined();
       // A different name is a different lock.
-      expect(await withAdvisoryLock("other-lock", async () => "other")).toBe(
-        "other",
-      );
+      expect(
+        await advisoryLock.withAdvisoryLock("other-lock", async () => "other"),
+      ).toBe("other");
 
       release();
       expect(await first).toBe("first");
-      expect(await withAdvisoryLock("test-lock", async () => "third")).toBe(
-        "third",
-      );
+      expect(
+        await advisoryLock.withAdvisoryLock("test-lock", async () => "third"),
+      ).toBe("third");
     });
   });
 });

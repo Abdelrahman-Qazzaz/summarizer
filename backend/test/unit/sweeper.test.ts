@@ -8,7 +8,9 @@ const { mockWithAdvisoryLock, mockFindLedgerEntries, mockDeleteObjects } =
   }));
 
 vi.mock("../../shared/data/advisoryLock.data", () => ({
-  withAdvisoryLock: mockWithAdvisoryLock,
+  advisoryLock: {
+    withAdvisoryLock: mockWithAdvisoryLock,
+  },
 }));
 vi.mock("../../shared/data/storageLedger.data", () => ({
   findLedgerEntries: mockFindLedgerEntries,
