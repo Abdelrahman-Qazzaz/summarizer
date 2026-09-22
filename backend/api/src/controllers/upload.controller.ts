@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import { jobs } from "../../../shared/data/jobs.data";
+import { data } from "../../../shared/data";
 import {
   publishOrFail,
   queueAudioTranscription,
@@ -101,7 +101,7 @@ export async function handleYoutubeUpload(c: Context) {
   // Created queued with placeholder metadata. The fetcher tries a reserved
   // caption object first when requested, otherwise it writes audio under
   // `audioUploadId` and sends the appropriate worker delivery.
-  await jobs.createYoutubeAudioJob({
+  await data.jobs.createYoutubeAudioJob({
     audioUploadId,
     captionUploadId,
     userId,

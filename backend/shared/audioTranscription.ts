@@ -1,4 +1,4 @@
-import { jobs } from "./data/jobs.data";
+import { data } from "./data";
 import { mq } from "./message-queue/messageQueue";
 import type { UploadId } from "./types";
 import { confirmCheckedUpload } from "./uploads";
@@ -26,7 +26,7 @@ export async function queueAudioTranscription(job: {
     job.userId,
     { kind: "audio", uploadId: job.audioUploadId },
     (executor) =>
-      jobs.createAudioJob({ ...job, captionUploadId: null }, executor),
+      data.jobs.createAudioJob({ ...job, captionUploadId: null }, executor),
   );
   if (!confirmed) return false;
 
@@ -48,7 +48,7 @@ export async function publishOrFail(
   try {
     await publish();
   } catch (error) {
-    await jobs.failAudioJobById(
+    await data.jobs.failAudioJobById(
       audioUploadId,
       "Could not be queued for processing",
     );

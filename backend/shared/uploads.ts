@@ -6,7 +6,7 @@ import {
   type UploadableObject,
 } from "./bucket";
 import type { Executor } from "./db";
-import { storageLedger } from "./data/storageLedger.data";
+import { data } from "./data";
 
 /**
  * How long after its URL is handed out an upload can still be confirmed. At
@@ -21,7 +21,7 @@ export const UPLOAD_CONFIRM_WINDOW_MS = 2 * 60 * 60 * 1000;
  */
 export async function startUpload(userId: string, object: UploadableObject) {
   const [, signedUrl] = await Promise.all([
-    storageLedger.recordPendingUpload({ userId, ...object }),
+    data.storageLedger.recordPendingUpload({ userId, ...object }),
     createUploadUrl(userId, object),
   ]);
 
@@ -34,7 +34,7 @@ export async function startUpload(userId: string, object: UploadableObject) {
  * it once it's past its grace.
  */
 export async function checkUpload(userId: string, object: UploadableObject) {
-  const entry = await storageLedger.findLedgerEntry({ userId, ...object });
+  const entry = await data.storageLedger.findLedgerEntry({ userId, ...object });
 
   if (entry?.status === "confirmed") {
     return { ok: false, reason: "already-confirmed" } as const;
@@ -59,7 +59,7 @@ export async function confirmCheckedUpload(
   object: UploadableObject,
   write: (executor: Executor) => Promise<unknown>,
 ) {
-  return storageLedger.confirmUpload(
+  return data.storageLedger.confirmUpload(
     { userId, ...object },
     UPLOAD_CONFIRM_WINDOW_MS,
     write,
@@ -78,5 +78,5 @@ export async function deleteObjects(
   if (objects.length === 0) return;
 
   await deleteFromBucket(userId, objects);
-  await storageLedger.forgetObjects(userId, objects, executor);
+  await data.storageLedger.forgetObjects(userId, objects, executor);
 }

@@ -3,8 +3,7 @@ import { CTX_KEYS } from "../../../shared/keys";
 import { jobCursorSchema, type JobStatus } from "../schema/jobs.schema";
 import { encodeCursor, decodeCursor } from "../utils/cursor";
 import { deleteObjects } from "../../../shared/uploads";
-import { jobs } from "../../../shared/data/jobs.data";
-import { transcripts } from "../../../shared/data/transcripts.data";
+import { data } from "../../../shared/data";
 import { tryCatch } from "../../../shared/try-catch";
 import { logger } from "../../../shared/logger";
 
@@ -18,8 +17,8 @@ export async function handleGetTranscribeJob(c: Context) {
   // without a separate status check.
   // A transcript-read failure degrades to null rather than failing the job view.
   const [audioJob, transcriptResult] = await Promise.all([
-    jobs.findAudioJob(userId, audioUploadId),
-    tryCatch(transcripts.findTranscripts(userId, [audioUploadId])),
+    data.jobs.findAudioJob(userId, audioUploadId),
+    tryCatch(data.transcripts.findTranscripts(userId, [audioUploadId])),
   ]);
 
   if (!audioJob) return c.json({ message: "Job not found" }, 404);
@@ -55,7 +54,7 @@ export async function getUserJobs(c: Context) {
   // A malformed/forged cursor decodes to null → fall back to the first page.
   const cursor = rawCursor ? decodeCursor(rawCursor, jobCursorSchema) : null;
 
-  const rows = await jobs.findUserJobsPage({
+  const rows = await data.jobs.findUserJobsPage({
     userId,
     status,
     searchQuery,
@@ -82,10 +81,10 @@ export async function handleDeleteTranscribeJob(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const audioUploadId = c.get(CTX_KEYS.audioUploadId);
 
-  const job = await jobs.findAudioJob(userId, audioUploadId);
+  const job = await data.jobs.findAudioJob(userId, audioUploadId);
   if (!job) return c.json({ message: "Job Deleted" }, 200);
 
-  const deleted = await jobs.deleteAudioJob(userId, audioUploadId);
+  const deleted = await data.jobs.deleteAudioJob(userId, audioUploadId);
   if (!deleted) {
     return c.json(
       { message: "Source is linked to a message or reserved for a response" },

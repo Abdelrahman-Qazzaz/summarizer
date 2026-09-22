@@ -6,7 +6,7 @@ import {
   confirmCheckedUpload,
   startUpload,
 } from "../../../shared/uploads";
-import { images } from "../../../shared/data/images.data";
+import { data } from "../../../shared/data";
 import { CTX_KEYS } from "../../../shared/keys";
 import { ALREADY_CONFIRMED, uploadRejection } from "../utils/uploadRejection";
 import type { UploadId } from "../../../shared/types";
@@ -61,7 +61,7 @@ export async function handleImageConfirm(c: Context) {
 
   const signedUrl = await createSignedUrl(userId, image);
   const confirmed = await confirmCheckedUpload(userId, image, (executor) =>
-    images.createImageAttachment(
+    data.images.createImageAttachment(
       {
         userId,
         imageUploadId,
@@ -96,7 +96,7 @@ export async function handleGetImage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const imageUploadId = c.get(CTX_KEYS.imageUploadId);
 
-  const [image] = await images.resolveImages(userId, [imageUploadId]);
+  const [image] = await data.images.resolveImages(userId, [imageUploadId]);
 
   if (!image) return c.json({ message: "Image not found" }, 404);
 
@@ -107,7 +107,7 @@ export async function handleGetImage(c: Context) {
 export async function handleDeleteImage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const imageUploadId = c.get(CTX_KEYS.imageUploadId);
-  await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+  await data.images.deleteOwnedUnlinkedUnreservedImageAttachment(
     userId,
     imageUploadId,
   );

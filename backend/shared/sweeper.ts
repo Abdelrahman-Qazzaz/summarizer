@@ -1,5 +1,4 @@
-import { advisoryLock } from "./data/advisoryLock.data";
-import { storageLedger } from "./data/storageLedger.data";
+import { data } from "./data";
 import { logger } from "./logger";
 import { UPLOAD_CONFIRM_WINDOW_MS, deleteObjects } from "./uploads";
 
@@ -28,8 +27,8 @@ const LOCK_NAME = "storage-sweep";
  * scheduleSweeper below.
  */
 export async function sweepUnusedObjects() {
-  return advisoryLock.withAdvisoryLock(LOCK_NAME, async () => {
-    const objects = await storageLedger.findLedgerEntries({
+  return data.advisoryLock.withAdvisoryLock(LOCK_NAME, async () => {
+    const objects = await data.storageLedger.findLedgerEntries({
       statuses: ["pending", "deleted"],
       createdBefore: new Date(Date.now() - GRACE_MS),
       limit: BATCH_SIZE,

@@ -4,7 +4,7 @@ import { getApiEnv } from "../shared/env";
 import { startSocketServer } from "./src/sockets/socketManager";
 
 import { mq } from "../shared/message-queue/messageQueue";
-import { jobs } from "../shared/data/jobs.data";
+import { data } from "../shared/data";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { logger } from "../shared/logger";
 import { onShutdown } from "../shared/shutdown";
@@ -32,7 +32,7 @@ const cancelConsumers = await Promise.all([
   mq.consume(
     mq.queues.YT_FETCH_FAILED,
     async ({ audioUploadId, userId, error }) => {
-      await jobs.failAudioJobById(
+      await data.jobs.failAudioJobById(
         audioUploadId,
         error ?? "Failed to fetch YouTube audio",
       );

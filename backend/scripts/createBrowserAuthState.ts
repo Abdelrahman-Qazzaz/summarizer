@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { users } from "../shared/data/users.data";
+import { data } from "../shared/data";
 import { createSessionToken } from "../api/src/auth/sessionToken";
 import { COOKIE_KEYS } from "../shared/keys";
 
@@ -11,7 +11,7 @@ const outputPath = resolve(
   "../../output/playwright/auth-state.json",
 );
 
-await users.ensureUser(userId);
+await data.users.ensureUser(userId);
 const token = await createSessionToken({ userId, expiresAtEpochSeconds });
 const storageState = {
   cookies: [

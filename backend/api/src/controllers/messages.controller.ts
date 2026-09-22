@@ -6,10 +6,12 @@ import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { SSEEventQueue } from "../utils/sse";
 import {
-  messages,
+  data,
   type CreateMessageHistory,
   type MessageRow,
-} from "../../../shared/data/messages.data";
+  type ResolvedImage,
+  type StoredTranscriptAttachment,
+} from "../../../shared/data";
 import { CTX_KEYS } from "../../../shared/keys";
 import {
   buildUserTurn,
@@ -19,15 +21,8 @@ import {
 } from "../../../shared/ai/ai_chat_client";
 import type { ChatTurn } from "../../../shared/ai/ai_chat_client";
 import { logger, messageOf } from "../../../shared/logger";
-import { conversations } from "../../../shared/data/conversations.data";
-import { images, type ResolvedImage } from "../../../shared/data/images.data";
 import { deleteObjects } from "../../../shared/uploads";
-import {
-  transcripts,
-  type StoredTranscriptAttachment,
-} from "../../../shared/data/transcripts.data";
 import type { MessageAttachmentInput } from "../schema/messages.schema";
-import { attachments } from "../../../shared/data/attachments.data";
 
 const log = logger.child({ controller: "messages" });
 
@@ -163,8 +158,8 @@ export async function handleListMessages(c: Context) {
   // Ownership check and the rows themselves are independent reads; the rows
   // are simply discarded on the 404 path.
   const [ownedConversation, rows] = await Promise.all([
-    conversations.findOwnedConversation(userId, conversationId),
-    messages.findConversationMessages(conversationId),
+    data.conversations.findOwnedConversation(userId, conversationId),
+    data.messages.findConversationMessages(conversationId),
   ]);
 
   if (!ownedConversation)
@@ -172,8 +167,8 @@ export async function handleListMessages(c: Context) {
 
   const messageIds = userMessageIds(rows);
   const [imagesByMessageId, transcriptsByMessageId] = await Promise.all([
-    images.resolveMessageImages(userId, messageIds),
-    transcripts.findMessageTranscriptAttachments(userId, messageIds),
+    data.images.resolveMessageImages(userId, messageIds),
+    data.transcripts.findMessageTranscriptAttachments(userId, messageIds),
   ]);
 
   return c.json({
@@ -194,7 +189,7 @@ async function unclaimConversationSafely(
   claimToken: string,
 ) {
   try {
-    await conversations.unclaimConversationTurn(
+    await data.conversations.unclaimConversationTurn(
       userId,
       conversationId,
       claimToken,
@@ -301,12 +296,12 @@ async function prepareMessageTurn(
     history,
   ] = await Promise.all([
     ...claimPromises,
-    images.resolveImages(messageInput.userId, messageInput.imageUploadIds),
-    transcripts.findTranscripts(
+    data.images.resolveImages(messageInput.userId, messageInput.imageUploadIds),
+    data.transcripts.findTranscripts(
       messageInput.userId,
       messageInput.audioUploadIds,
     ),
-    messages.findCreateMessageHistory({
+    data.messages.findCreateMessageHistory({
       userId: messageInput.userId,
       conversationId: messageInput.conversationId,
       newMessageContentCharCount: messageInput.content.length,
@@ -320,7 +315,7 @@ async function prepareMessageTurn(
   ]);
 
   if (!acquiredClaimToken) {
-    const ownedConversation = await conversations.findOwnedConversation(
+    const ownedConversation = await data.conversations.findOwnedConversation(
       messageInput.userId,
       messageInput.conversationId,
     );
@@ -385,7 +380,7 @@ async function deleteMessageTail(
   claimToken: string,
   messageId: string,
 ) {
-  const rewound = await messages.deleteOwnedMessage(
+  const rewound = await data.messages.deleteOwnedMessage(
     messageInput.userId,
     messageInput.conversationId,
     messageId,
@@ -461,7 +456,7 @@ function streamAndPersistMessageTurn(
         newMessageContextCharCount,
         ...history.map((message) => message.contextCharCount),
       ]);
-      const lastMessageId = await messages.persistChatTurn({
+      const lastMessageId = await data.messages.persistChatTurn({
         userId: messageInput.userId,
         conversationId: messageInput.conversationId,
         content: messageInput.content,
@@ -488,7 +483,7 @@ function streamAndPersistMessageTurn(
     } finally {
       // A failed read does not cancel acquisition; settle it before releasing anything.
       await Promise.allSettled(claimPromises);
-      await attachments.unclaimAttachments(claimToken).catch(() => {});
+      await data.attachments.unclaimAttachments(claimToken).catch(() => {});
       await unclaimConversationSafely(
         messageInput.userId,
         messageInput.conversationId,
@@ -504,13 +499,13 @@ function streamAndPersistMessageTurn(
 function createClaimData(messageInput: MessageRequest) {
   const claimToken = randomUUID();
   const claimPromises = [
-    conversations.claimConversationTurn(
+    data.conversations.claimConversationTurn(
       messageInput.userId,
       messageInput.conversationId,
       messageInput.expectedLastMessageId,
       claimToken,
     ),
-    attachments.claimAttachments(
+    data.attachments.claimAttachments(
       messageInput.userId,
       messageInput.attachmentIds,
       claimToken,
@@ -571,7 +566,7 @@ export async function handleDeleteMessage(c: Context) {
   const conversationId = c.get(CTX_KEYS.conversationId);
   const messageId = c.get(CTX_KEYS.messageId);
 
-  const result = await messages.deleteOwnedMessage(
+  const result = await data.messages.deleteOwnedMessage(
     userId,
     conversationId,
     messageId,

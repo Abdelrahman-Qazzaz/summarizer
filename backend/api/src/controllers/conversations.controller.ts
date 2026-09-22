@@ -1,11 +1,7 @@
 import type { Context } from "hono";
 import { CTX_KEYS } from "../../../shared/keys";
 import { deleteObjects } from "../../../shared/uploads";
-import { images } from "../../../shared/data/images.data";
-import {
-  conversations,
-  type ConversationRow,
-} from "../../../shared/data/conversations.data";
+import { data, type ConversationRow } from "../../../shared/data";
 
 function toConversationJson(row: ConversationRow) {
   return {
@@ -20,7 +16,7 @@ function toConversationJson(row: ConversationRow) {
 export async function handleListConversations(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
 
-  const rows = await conversations.findUserConversations(userId);
+  const rows = await data.conversations.findUserConversations(userId);
 
   return c.json({ conversations: rows.map(toConversationJson) });
 }
@@ -30,7 +26,10 @@ export async function handleGetConversation(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const conversationId = c.get(CTX_KEYS.conversationId);
 
-  const row = await conversations.findOwnedConversation(userId, conversationId);
+  const row = await data.conversations.findOwnedConversation(
+    userId,
+    conversationId,
+  );
 
   if (!row) return c.json({ message: "Conversation not found" }, 404);
   return c.json(toConversationJson(row));
@@ -41,7 +40,7 @@ export async function handleCreateConversation(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const title: string | undefined = c.get(CTX_KEYS.conversationTitle);
 
-  const row = await conversations.createConversation(userId, title);
+  const row = await data.conversations.createConversation(userId, title);
 
   return c.json(toConversationJson(row), 201);
 }
@@ -52,7 +51,7 @@ export async function handlePatchConversation(c: Context) {
   const conversationId = c.get(CTX_KEYS.conversationId);
   const title: string = c.get(CTX_KEYS.conversationTitle);
 
-  const row = await conversations.renameConversation(
+  const row = await data.conversations.renameConversation(
     userId,
     conversationId,
     title,
@@ -69,18 +68,18 @@ export async function handleDeleteConversation(c: Context) {
 
   // Keep the candidates before their message links cascade away. Uploads still
   // referenced by another conversation are filtered out after the delete.
-  const imageUploadIds = await images.findConversationImageAttachmentIds(
+  const imageUploadIds = await data.images.findConversationImageAttachmentIds(
     userId,
     conversationId,
   );
 
-  const row = await conversations.deleteOwnedConversation(
+  const row = await data.conversations.deleteOwnedConversation(
     userId,
     conversationId,
   );
 
   if (!row) {
-    const ownedConversation = await conversations.findOwnedConversation(
+    const ownedConversation = await data.conversations.findOwnedConversation(
       userId,
       conversationId,
     );
@@ -90,7 +89,7 @@ export async function handleDeleteConversation(c: Context) {
   }
 
   const deletedImageAttachmentIds =
-    await images.deleteOwnedUnlinkedUnreservedImageAttachments(
+    await data.images.deleteOwnedUnlinkedUnreservedImageAttachments(
       userId,
       imageUploadIds,
     );
