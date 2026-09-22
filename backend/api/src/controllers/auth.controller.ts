@@ -11,7 +11,7 @@ import { createSessionToken, verifySessionToken } from "../auth/sessionToken";
 import { clearSessionToken, setSessionToken } from "../cookies/session";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../shared/keys";
-import { ensureUser } from "../../../shared/data/users.data";
+import { users } from "../../../shared/data/users.data";
 import { logger } from "../../../shared/logger";
 
 const log = logger.child({ controller: "auth" });
@@ -58,7 +58,7 @@ export async function handleCallback(c: Context) {
   // Upserting the user row and signing the session token are independent;
   // both must still succeed before the cookie is issued.
   const [, token] = await Promise.all([
-    ensureUser(userId),
+    users.ensureUser(userId),
     createSessionToken({
       userId,
       sessionId,
