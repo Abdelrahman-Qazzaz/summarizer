@@ -44,7 +44,7 @@ vi.mock("../../shared/storage/bucket", () => ({
 vi.mock("../../shared/storage/sign", () => ({
   IMAGE_URL_TTL_SECONDS: 604800,
   sign: {
-    createSignedUrls: vi.fn(),
+    urls: vi.fn(),
   },
 }));
 

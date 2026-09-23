@@ -22,7 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("createSignedUrl", () => {
+describe("url", () => {
   beforeEach(() => {
     storage.createSignedUrl.mockResolvedValue({
       data: { signedUrl: "https://signed" },
@@ -31,7 +31,7 @@ describe("createSignedUrl", () => {
   });
 
   it("signs audio for an hour", async () => {
-    await sign.createSignedUrl(USER, audio);
+    await sign.url(USER, audio);
 
     expect(storage.createSignedUrl).toHaveBeenCalledWith(
       "user_01/audios/a1",
@@ -40,7 +40,7 @@ describe("createSignedUrl", () => {
   });
 
   it("signs an image for a week", async () => {
-    await sign.createSignedUrl(USER, image);
+    await sign.url(USER, image);
 
     expect(storage.createSignedUrl).toHaveBeenCalledWith(
       "user_01/images/i1",
@@ -49,14 +49,14 @@ describe("createSignedUrl", () => {
   });
 });
 
-describe("createSignedUrls", () => {
+describe("urls", () => {
   it("signs each kind in its own request with its own TTL, across owners", async () => {
     storage.createSignedUrls.mockImplementation(async (paths: string[]) => ({
       data: paths.map((path) => ({ path, signedUrl: `https://${path}` })),
       error: null,
     }));
 
-    const urls = await sign.createSignedUrls([
+    const urls = await sign.urls([
       { userId: "user_01", ...image },
       { userId: "user_01", ...audio },
       { userId: "user_02", kind: "image", uploadId: "i2" },
@@ -86,13 +86,13 @@ describe("createSignedUrls", () => {
       error: null,
     });
 
-    const urls = await sign.createSignedUrls([{ userId: "user_01", ...image }]);
+    const urls = await sign.urls([{ userId: "user_01", ...image }]);
 
     expect(urls.size).toBe(0);
   });
 
   it("makes no request for an empty list", async () => {
-    expect(await sign.createSignedUrls([])).toEqual(new Map());
+    expect(await sign.urls([])).toEqual(new Map());
     expect(storage.createSignedUrls).not.toHaveBeenCalled();
   });
 
@@ -104,7 +104,7 @@ describe("createSignedUrls", () => {
     );
 
     await expect(
-      sign.createSignedUrls([
+      sign.urls([
         { userId: "user_01", ...image },
         { userId: "user_01", ...audio },
       ]),

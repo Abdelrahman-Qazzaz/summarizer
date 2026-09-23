@@ -80,7 +80,7 @@ export async function handleTranscribeJob(
         return bucket.getText(job.userId, job.captionUploadId);
       }
 
-      const audioUrl = await sign.createSignedUrl(job.userId, {
+      const audioUrl = await sign.url(job.userId, {
         kind: "audio",
         uploadId: audioUploadId,
       });

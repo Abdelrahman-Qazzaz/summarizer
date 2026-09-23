@@ -152,7 +152,7 @@ async function resolveImageAttachmentUrls(
         "bucket.createSignedUrls",
         undefined,
         () =>
-          sign.createSignedUrls(
+          sign.urls(
             needsSigning.map((row) => ({
               userId,
               kind: "image",

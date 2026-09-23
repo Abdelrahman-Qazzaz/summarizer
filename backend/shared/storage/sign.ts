@@ -64,6 +64,6 @@ async function signGroup(
  * changes nothing in the bucket.
  */
 export const sign = {
-  createSignedUrl,
-  createSignedUrls,
+  url: createSignedUrl,
+  urls: createSignedUrls,
 };

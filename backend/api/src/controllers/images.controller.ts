@@ -60,7 +60,7 @@ export async function handleImageConfirm(c: Context) {
     return c.json(body, status);
   }
 
-  const signedUrl = await sign.createSignedUrl(userId, image);
+  const signedUrl = await sign.url(userId, image);
   const confirmed = await confirmCheckedUpload(userId, image, (executor) =>
     data.images.createImageAttachment(
       {

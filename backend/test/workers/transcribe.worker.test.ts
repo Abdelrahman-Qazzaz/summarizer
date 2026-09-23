@@ -44,7 +44,7 @@ vi.mock("../../shared/storage/bucket", () => ({
 
 vi.mock("../../shared/storage/sign", () => ({
   sign: {
-    createSignedUrl: mockCreateSignedUrl,
+    url: mockCreateSignedUrl,
   },
 }));
 
