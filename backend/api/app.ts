@@ -9,7 +9,7 @@ import { authRouter } from "./src/routes/auth.router";
 import { modelsRouter } from "./src/routes/models.router";
 import { conversationsRouter } from "./src/routes/conversations.router";
 
-import { BUCKET, MAX_AUDIO_BYTES } from "../shared/bucket";
+import { BUCKET, MAX_AUDIO_BYTES } from "../shared/storage/bucket";
 import { verifyApiServices } from "./startup";
 import { QUEUES } from "../shared/message-queue/messageQueue";
 

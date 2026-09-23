@@ -19,7 +19,7 @@ const testState = vi.hoisted(() => ({
   deleteFromBucket: vi.fn(),
 }));
 
-vi.mock("../../shared/bucket", () => ({
+vi.mock("../../shared/storage/bucket", () => ({
   IMAGE_URL_TTL_SECONDS: 604800,
   bucket: {
     createSignedUrls: vi.fn(),

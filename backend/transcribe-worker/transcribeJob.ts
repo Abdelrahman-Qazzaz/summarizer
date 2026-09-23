@@ -2,7 +2,7 @@ import {
   DEFAULT_TRANSCRIBE_MODEL,
   transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
-import { bucket } from "../shared/bucket";
+import { bucket } from "../shared/storage/bucket";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { data } from "../shared/data";
 import { logger, messageOf } from "../shared/logger";

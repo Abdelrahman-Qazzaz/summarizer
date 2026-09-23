@@ -5,7 +5,7 @@ import {
   type Executor,
   type storageLedgerStatusEnum,
 } from "../db";
-import type { StoredObject } from "../bucket";
+import type { StoredObject } from "../storage/bucket";
 
 type LedgerEntry = StoredObject & { userId: string };
 

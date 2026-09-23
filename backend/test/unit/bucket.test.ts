@@ -13,7 +13,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ storage: { from: () => storage } }),
 }));
 
-import { bucket, MAX_AUDIO_BYTES } from "../../shared/bucket";
+import { bucket, MAX_AUDIO_BYTES } from "../../shared/storage/bucket";
 
 const USER = "user_01";
 const IMAGE_CAP = 10 * 1024 * 1024;

@@ -49,7 +49,7 @@ vi.mock("../../shared/data/storageLedger.data", () => ({
   },
 }));
 
-vi.mock("../../shared/bucket", () => ({
+vi.mock("../../shared/storage/bucket", () => ({
   // Literals: vi.mock factories run before this module's own bindings exist.
   BUCKET: "Audio & Text files",
   MAX_AUDIO_BYTES: 100 * 1024 * 1024,

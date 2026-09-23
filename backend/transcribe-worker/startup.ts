@@ -1,5 +1,5 @@
 import { pingTranscribeAI } from "../shared/ai/ai_transcribe_client";
-import { bucket } from "../shared/bucket";
+import { bucket } from "../shared/storage/bucket";
 import { pingDb } from "../shared/db";
 import { pingMQ } from "../shared/message-queue/messageQueue";
 import { verifyServices } from "../shared/preflight";

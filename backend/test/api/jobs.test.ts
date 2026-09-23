@@ -69,7 +69,7 @@ vi.mock("../../shared/uploads", () => ({
   deleteObjects: mockDeleteObjects,
 }));
 
-vi.mock("../../shared/bucket", () => ({
+vi.mock("../../shared/storage/bucket", () => ({
   IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
   bucket: {
     createSignedUrls: vi.fn(),

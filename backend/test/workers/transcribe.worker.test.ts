@@ -36,7 +36,7 @@ function deepgramResponse(transcript: string) {
   };
 }
 
-vi.mock("../../shared/bucket", () => ({
+vi.mock("../../shared/storage/bucket", () => ({
   bucket: {
     createSignedUrl: mockCreateSignedUrl,
     getText: mockGetText,

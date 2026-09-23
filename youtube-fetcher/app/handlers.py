@@ -240,6 +240,6 @@ def _fetch_and_upload(audio_upload_id: str, url: str, user_id: str) -> None:
         )
         log.info("Downloaded %s: %d bytes, %s", audio_upload_id, size, content_type)
         # upload_audio builds the "<userId>/audios/<storageObjectId>" key (same
-        # convention as direct uploads, backend/shared/bucket.ts objectPath),
+        # convention as direct uploads, backend/shared/storage/bucket.ts objectPath),
         # so the transcribe worker finds it and ownership stays structural.
         bucket.upload_audio(user_id, audio_upload_id, str(audio), content_type)

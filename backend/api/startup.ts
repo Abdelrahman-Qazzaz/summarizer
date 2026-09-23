@@ -1,7 +1,7 @@
 import { verifyServices } from "../shared/preflight";
 import { pingMQ } from "../shared/message-queue/messageQueue";
 import { pingDb } from "../shared/db";
-import { bucket } from "../shared/bucket";
+import { bucket } from "../shared/storage/bucket";
 import { pingRedis } from "../shared/cache/redis";
 import { pingChatAI } from "../shared/ai/ai_chat_client";
 import { pingWorkos } from "./src/auth/auth";

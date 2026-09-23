@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import { bucket } from "../../../shared/bucket";
+import { bucket } from "../../../shared/storage/bucket";
 import {
   checkUpload,
   confirmCheckedUpload,

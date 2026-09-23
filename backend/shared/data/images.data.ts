@@ -8,7 +8,7 @@ import {
   db,
   type Executor,
 } from "../db";
-import { bucket, IMAGE_URL_TTL_SECONDS } from "../bucket";
+import { bucket, IMAGE_URL_TTL_SECONDS } from "../storage/bucket";
 import type { UploadId } from "../types";
 import { attachments } from "./attachments.data";
 

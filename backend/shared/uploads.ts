@@ -1,4 +1,8 @@
-import { bucket, type StoredObject, type UploadableObject } from "./bucket";
+import {
+  bucket,
+  type StoredObject,
+  type UploadableObject,
+} from "./storage/bucket";
 import type { Executor } from "./db";
 import { data } from "./data";
 

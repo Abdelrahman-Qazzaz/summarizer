@@ -12,7 +12,7 @@ def upload_file(monkeypatch):
 
 
 def test_object_path_matches_the_backend_layout():
-    # backend/shared/bucket.ts objectPath builds the same key; the transcribe
+    # backend/shared/storage/bucket.ts objectPath builds the same key; the transcribe
     # worker reads youtube audio and caption text back from exactly here.
     assert bucket._object_path("usr", "audios", "a1") == "usr/audios/a1"
 
