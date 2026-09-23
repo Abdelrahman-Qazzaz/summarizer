@@ -8,7 +8,7 @@ import {
   db,
   type Executor,
 } from "../db";
-import { bucket, IMAGE_URL_TTL_SECONDS } from "../storage/bucket";
+import { IMAGE_URL_TTL_SECONDS, sign } from "../storage/sign";
 import type { UploadId } from "../types";
 import { attachments } from "./attachments.data";
 
@@ -152,7 +152,7 @@ async function resolveImageAttachmentUrls(
         "bucket.createSignedUrls",
         undefined,
         () =>
-          bucket.createSignedUrls(
+          sign.createSignedUrls(
             needsSigning.map((row) => ({
               userId,
               kind: "image",
