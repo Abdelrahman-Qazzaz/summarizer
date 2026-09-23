@@ -10,7 +10,6 @@ import {
 } from "../db";
 import { bucket, IMAGE_URL_TTL_SECONDS } from "../bucket";
 import type { UploadId } from "../types";
-import { deleteObjects } from "../uploads";
 import { attachments } from "./attachments.data";
 
 /**
@@ -325,26 +324,19 @@ async function findConversationImageAttachmentIds(
   );
 }
 
+/**
+ * Deletes the row and marks its object deleted in the ledger, together. The
+ * caller removes the object from storage; if that fails, the sweep does.
+ * Null when no owned, unlinked, unreserved image matched.
+ */
 async function deleteOwnedUnlinkedUnreservedImageAttachment(
   userId: string,
   imageUploadId: string,
 ) {
-  await db.transaction(async (transaction) => {
-    const deletedAttachmentId =
-      await attachments.deleteOwnedUnlinkedUnreservedAttachment(
-        {
-          userId,
-          attachmentId: imageUploadId,
-          kind: "image",
-        },
-        transaction,
-      );
-    if (!deletedAttachmentId) return;
-
-    // Hold the deletion lock through storage cleanup; rollback keeps failed
-    // deletes retryable, and takes the ledger's mark with it.
-    const image = [{ kind: "image", uploadId: deletedAttachmentId }] as const;
-    await deleteObjects(userId, image, transaction);
+  return attachments.deleteOwnedUnlinkedUnreservedAttachment({
+    userId,
+    attachmentId: imageUploadId,
+    kind: "image",
   });
 }
 

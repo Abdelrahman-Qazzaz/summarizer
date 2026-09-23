@@ -58,6 +58,7 @@ import { attachments } from "../../shared/data/attachments.data";
 import { jobs } from "../../shared/data/jobs.data";
 import { images } from "../../shared/data/images.data";
 import { sweepUnusedObjects } from "../../shared/sweeper";
+import { deleteObjects } from "../../shared/uploads";
 import { storageLedger } from "../../shared/data/storageLedger.data";
 import { advisoryLock } from "../../shared/data/advisoryLock.data";
 
@@ -567,30 +568,36 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       expect(await statusOf(audioUploadId)).toBe("confirmed");
     });
 
-    it("drops the record once an image's storage delete succeeds", async () => {
+    it("marks a deleted image for removal and drops the record once storage deletes it", async () => {
       const a = await addImage();
 
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(userId, a);
+      expect(
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(userId, a),
+      ).toBe(a);
+      expect(await statusOf(a)).toBe("deleted");
+      expect(await db.select().from(Attachments)).toEqual([]);
+
+      await deleteObjects(userId, [{ kind: "image", uploadId: a }]);
 
       expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
         { kind: "image", uploadId: a },
       ]);
       expect(await statusOf(a)).toBeUndefined();
-      expect(await db.select().from(Attachments)).toEqual([]);
     });
 
-    // That path deletes from storage inside its transaction, so a failure
-    // undoes everything, the mark included, and the image can be retried.
-    it("keeps the image confirmed when its storage delete fails", async () => {
+    // The row is already gone, so a failed storage delete leaves the mark for
+    // the sweep instead of a retry.
+    it("leaves the image marked deleted when its storage delete fails", async () => {
       const a = await addImage();
+      await images.deleteOwnedUnlinkedUnreservedImageAttachment(userId, a);
       testState.deleteFromBucket.mockRejectedValueOnce(new Error("down"));
 
       await expect(
-        images.deleteOwnedUnlinkedUnreservedImageAttachment(userId, a),
+        deleteObjects(userId, [{ kind: "image", uploadId: a }]),
       ).rejects.toThrow("down");
 
-      expect(await statusOf(a)).toBe("confirmed");
-      expect(await db.select().from(Attachments)).toHaveLength(1);
+      expect(await statusOf(a)).toBe("deleted");
+      expect(await db.select().from(Attachments)).toEqual([]);
     });
   });
 

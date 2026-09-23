@@ -4,6 +4,7 @@ import { bucket } from "../../../shared/bucket";
 import {
   checkUpload,
   confirmCheckedUpload,
+  deleteObjects,
   startUpload,
 } from "../../../shared/uploads";
 import { data } from "../../../shared/data";
@@ -107,10 +108,16 @@ export async function handleGetImage(c: Context) {
 export async function handleDeleteImage(c: Context) {
   const userId = c.get(CTX_KEYS.userId);
   const imageUploadId = c.get(CTX_KEYS.imageUploadId);
-  await data.images.deleteOwnedUnlinkedUnreservedImageAttachment(
-    userId,
-    imageUploadId,
-  );
+  const deletedImageUploadId =
+    await data.images.deleteOwnedUnlinkedUnreservedImageAttachment(
+      userId,
+      imageUploadId,
+    );
+  if (deletedImageUploadId) {
+    await deleteObjects(userId, [
+      { kind: "image", uploadId: deletedImageUploadId },
+    ]);
+  }
 
   return c.json({ message: "Image deleted" });
 }

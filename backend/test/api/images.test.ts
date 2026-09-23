@@ -7,6 +7,7 @@ const {
   mockCreateUploadUrl,
   mockInspectUploadedObject,
   mockCreateSignedUrl,
+  mockDeleteFromBucket,
   ledger,
 } = vi.hoisted(() => ({
   mockDeleteOwnedUnlinkedUnreservedImageAttachment: vi.fn(),
@@ -15,6 +16,7 @@ const {
   mockCreateUploadUrl: vi.fn(),
   mockInspectUploadedObject: vi.fn(),
   mockCreateSignedUrl: vi.fn(),
+  mockDeleteFromBucket: vi.fn(),
   ledger: {
     recordPendingUpload: vi.fn(),
     findLedgerEntry: vi.fn(),
@@ -57,7 +59,7 @@ vi.mock("../../shared/bucket", () => ({
     inspectUploadedObject: mockInspectUploadedObject,
     createSignedUrl: mockCreateSignedUrl,
     createSignedUrls: vi.fn(),
-    delete: vi.fn(),
+    delete: mockDeleteFromBucket,
   },
 }));
 
@@ -93,11 +95,15 @@ async function deleteImage(userId = "user_01OWNER") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockDeleteOwnedUnlinkedUnreservedImageAttachment.mockResolvedValue(undefined);
+  mockDeleteOwnedUnlinkedUnreservedImageAttachment.mockResolvedValue(null);
 });
 
 describe("DELETE /upload/image/:imageUploadId", () => {
-  it("deletes an owned, unlinked, unreserved image attachment", async () => {
+  it("deletes an owned, unlinked, unreserved image attachment, then its object", async () => {
+    mockDeleteOwnedUnlinkedUnreservedImageAttachment.mockResolvedValueOnce(
+      imageUploadId,
+    );
+
     const response = await deleteImage();
 
     expect(response.status).toBe(200);
@@ -105,6 +111,20 @@ describe("DELETE /upload/image/:imageUploadId", () => {
     expect(
       mockDeleteOwnedUnlinkedUnreservedImageAttachment,
     ).toHaveBeenCalledWith("user_01OWNER", imageUploadId);
+    const image = { kind: "image", uploadId: imageUploadId };
+    expect(mockDeleteFromBucket).toHaveBeenCalledWith("user_01OWNER", [image]);
+    expect(ledger.forgetObjects).toHaveBeenCalledWith(
+      "user_01OWNER",
+      [image],
+      undefined,
+    );
+  });
+
+  it("leaves storage alone when no image was deleted", async () => {
+    const response = await deleteImage();
+
+    expect(response.status).toBe(200);
+    expect(mockDeleteFromBucket).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid upload id", async () => {

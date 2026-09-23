@@ -16,7 +16,6 @@ const testState = vi.hoisted(() => ({
   databaseUrl: process.env.ATTACHMENT_TEST_DATABASE_URL,
   schemaName: `attachment_test_${Date.now()}`,
   client: null as Sql | null,
-  deleteFromBucket: vi.fn(),
 }));
 
 vi.mock("../../shared/db", async () => {
@@ -42,7 +41,6 @@ vi.mock("../../shared/bucket", () => ({
   IMAGE_URL_TTL_SECONDS: 604800,
   bucket: {
     createSignedUrls: vi.fn(),
-    delete: testState.deleteFromBucket,
   },
 }));
 
@@ -111,7 +109,6 @@ describe.skipIf(!testState.databaseUrl)(
     });
 
     beforeEach(async () => {
-      testState.deleteFromBucket.mockReset().mockResolvedValue(undefined);
       await db.execute(sql`truncate ${users} cascade`);
       await db.insert(users).values({ id: userId });
       await db.insert(Conversations).values({
@@ -201,11 +198,12 @@ describe.skipIf(!testState.databaseUrl)(
           claimToken,
         ),
       ).toBe(true);
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).not.toHaveBeenCalled();
+      expect(
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+          userId,
+          imageUploadId,
+        ),
+      ).toBeNull();
       expect(
         await attachments.deleteOwnedUnlinkedUnreservedAttachments({
           userId,
@@ -228,11 +226,12 @@ describe.skipIf(!testState.databaseUrl)(
         2,
       );
       expect(await db.select().from(AttachmentTurnReservations)).toEqual([]);
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).not.toHaveBeenCalled();
+      expect(
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+          userId,
+          imageUploadId,
+        ),
+      ).toBeNull();
     });
 
     it("releases only the failed turn's reservation when attachments are shared", async () => {
@@ -244,19 +243,19 @@ describe.skipIf(!testState.databaseUrl)(
         otherClaimToken,
       );
       await attachments.unclaimAttachments(claimToken);
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).not.toHaveBeenCalled();
+      expect(
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+          userId,
+          imageUploadId,
+        ),
+      ).toBeNull();
       await attachments.unclaimAttachments(otherClaimToken);
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
-        { kind: "image", uploadId: imageUploadId },
-      ]);
+      expect(
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+          userId,
+          imageUploadId,
+        ),
+      ).toBe(imageUploadId);
     });
 
     it("keeps reservations when persistence rolls back", async () => {
@@ -283,13 +282,12 @@ describe.skipIf(!testState.databaseUrl)(
         1,
       );
       await attachments.unclaimAttachments(claimToken);
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
-        { kind: "image", uploadId: imageUploadId },
-      ]);
+      expect(
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+          userId,
+          imageUploadId,
+        ),
+      ).toBe(imageUploadId);
     });
 
     it("protects an expired reservation while its conversation claim still exists", async () => {
@@ -297,57 +295,34 @@ describe.skipIf(!testState.databaseUrl)(
       await db
         .update(AttachmentTurnReservations)
         .set({ expiresAt: new Date(0) });
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).not.toHaveBeenCalled();
-
-      await db.update(Conversations).set({ activeTurnClaimToken: null });
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).toHaveBeenCalledWith(userId, [
-        { kind: "image", uploadId: imageUploadId },
-      ]);
-    });
-
-    it("rolls back a failed bucket deletion so the attachment can be retried", async () => {
-      testState.deleteFromBucket.mockRejectedValueOnce(
-        new Error("storage unavailable"),
-      );
-      await expect(
-        images.deleteOwnedUnlinkedUnreservedImageAttachment(
+      expect(
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(
           userId,
           imageUploadId,
         ),
-      ).rejects.toThrow("storage unavailable");
+      ).toBeNull();
+
+      await db.update(Conversations).set({ activeTurnClaimToken: null });
       expect(
-        await db
-          .select()
-          .from(Attachments)
-          .where(eq(Attachments.attachmentId, imageUploadId)),
-      ).toHaveLength(1);
-      await images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      expect(testState.deleteFromBucket).toHaveBeenCalledTimes(2);
+        await images.deleteOwnedUnlinkedUnreservedImageAttachment(
+          userId,
+          imageUploadId,
+        ),
+      ).toBe(imageUploadId);
     });
 
     it("waits for an ongoing image deletion and rejects reservation if deletion wins", async () => {
-      const storageStarted = deferred();
-      const finishStorage = deferred();
-      testState.deleteFromBucket.mockImplementationOnce(async () => {
-        storageStarted.resolve();
-        await finishStorage.promise;
+      const deleted = deferred();
+      const finishDeletion = deferred();
+      const deletion = db.transaction(async (transaction) => {
+        await attachments.deleteOwnedUnlinkedUnreservedAttachment(
+          { userId, attachmentId: imageUploadId, kind: "image" },
+          transaction,
+        );
+        deleted.resolve();
+        await finishDeletion.promise;
       });
-      const deletion = images.deleteOwnedUnlinkedUnreservedImageAttachment(
-        userId,
-        imageUploadId,
-      );
-      await storageStarted.promise;
+      await deleted.promise;
       const reservation = attachments.claimAttachments(
         userId,
         [imageUploadId],
@@ -356,7 +331,7 @@ describe.skipIf(!testState.databaseUrl)(
       try {
         await waitForBlockedQuery();
       } finally {
-        finishStorage.resolve();
+        finishDeletion.resolve();
       }
       await deletion;
       expect(await reservation).toBe(false);
@@ -395,8 +370,11 @@ describe.skipIf(!testState.databaseUrl)(
       } finally {
         finishReservation.resolve();
       }
-      await Promise.all([reservation, deletion]);
-      expect(testState.deleteFromBucket).not.toHaveBeenCalled();
+      const [, deletedImageUploadId] = await Promise.all([
+        reservation,
+        deletion,
+      ]);
+      expect(deletedImageUploadId).toBeNull();
       expect(
         await db
           .select()
