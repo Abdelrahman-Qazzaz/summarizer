@@ -70,7 +70,25 @@ export default defineConfig([
   },
   {
     files: ["shared/**/*.data.ts"],
-    rules: { "no-restricted-imports": "off" },
+    plugins: { "@typescript-eslint": tseslint.plugin },
+    rules: {
+      "no-restricted-imports": "off",
+      // A data module may sign URLs, which changes nothing in storage, but
+      // nothing else in storage/. Types are fine: they can't call anything.
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/storage/*", "!**/storage/sign"],
+              allowTypeImports: true,
+              message:
+                "A *.data.ts module may only use storage/sign. Do other storage work in the caller, after the database work.",
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     files: ["**/*.data.ts"],
