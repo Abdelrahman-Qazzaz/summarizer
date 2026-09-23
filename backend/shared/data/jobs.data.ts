@@ -278,12 +278,21 @@ async function deleteAudioJob(userId: string, audioUploadId: string) {
 /**
  * Out-of-band failure reported by youtube-fetcher over the broker. Not
  * user-scoped: the event carries no session, only the id it was given.
+ *
+ * Only an unfinished job can fail this way. A report can arrive after the
+ * job completed — a redelivered fetch that fails the second time — and must
+ * not turn a job with a transcript into a failed one.
  */
 async function failAudioJobById(audioUploadId: string, error: string) {
   await db
     .update(AudioTranscriptionJobs)
     .set({ status: "failed", error })
-    .where(eq(AudioTranscriptionJobs.audioUploadId, audioUploadId));
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
+        inArray(AudioTranscriptionJobs.status, ["queued", "processing"]),
+      ),
+    );
 }
 
 async function findTerminalCaptionUpload(
