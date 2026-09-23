@@ -1,4 +1,5 @@
-import { bucket, IMAGE_URL_TTL_SECONDS } from "./bucket";
+import { bucket } from "./bucket";
+import { IMAGE_URL_TTL_SECONDS } from "./core";
 
 /**
  * The only storage calls a data module may make: signing read URLs, which
