@@ -132,4 +132,53 @@ describe.skipIf(!testState.databaseUrl)("audio jobs in PostgreSQL", () => {
       });
     });
   });
+
+  describe("unclaimAudioJob", () => {
+    it("hands the job back as queued with no claim, for a fresh delivery to claim", async () => {
+      const audioUploadId = await createJob();
+      const claimed = await jobs.claimAudioJob(audioUploadId);
+
+      const unclaimed = await jobs.unclaimAudioJob(
+        audioUploadId,
+        claimed!.claimToken,
+      );
+
+      expect(unclaimed).toBe(true);
+      expect(await readJob(audioUploadId)).toMatchObject({
+        status: "queued",
+        claimToken: null,
+      });
+      // Not a redelivery: only a queued job can be claimed this way.
+      expect(await jobs.claimAudioJob(audioUploadId, false)).not.toBeNull();
+    });
+
+    it("leaves another worker's claim alone", async () => {
+      const audioUploadId = await createJob();
+      const claimed = await jobs.claimAudioJob(audioUploadId);
+
+      const unclaimed = await jobs.unclaimAudioJob(audioUploadId, randomUUID());
+
+      expect(unclaimed).toBe(false);
+      expect(await readJob(audioUploadId)).toMatchObject({
+        status: "processing",
+        claimToken: claimed!.claimToken,
+      });
+    });
+
+    it("leaves a completed job completed", async () => {
+      const audioUploadId = await createJob();
+      const claimed = await jobs.claimAudioJob(audioUploadId);
+      await jobs.completeAudioJob(audioUploadId, claimed!.claimToken);
+
+      const unclaimed = await jobs.unclaimAudioJob(
+        audioUploadId,
+        claimed!.claimToken,
+      );
+
+      expect(unclaimed).toBe(false);
+      expect(await readJob(audioUploadId)).toMatchObject({
+        status: "completed",
+      });
+    });
+  });
 });

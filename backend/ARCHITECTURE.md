@@ -29,7 +29,7 @@ starting half-alive.
 
 ## Message queues
 
-Defined in `shared/message-queue/messageQueue.ts`:
+Defined in `shared/message-queue/queues.ts`:
 
 | Queue                | Producer → Consumer    | Payload                                                                   |
 | -------------------- | ---------------------- | ------------------------------------------------------------------------- |
@@ -40,8 +40,24 @@ Defined in `shared/message-queue/messageQueue.ts`:
 | `yt_fetch_failed`    | youtube-fetcher → api  | `{ audioUploadId, userId, error? }`                                       |
 
 The channel uses `prefetch(1)` **per consumer**, so a single worker process
-handles at most one transcribe job at a time. Handlers are `await`ed before
-`ack`; a thrown handler `nack`s (no requeue).
+handles at most one transcribe job at a time.
+
+Each consumer sets how many attempts a message gets:
+`mq.consume(queue, handler, { attempts })`. A handler fails an attempt by
+throwing, and the next attempt runs 2 seconds later in the same process.
+A message that fails its last attempt, throws a `DeadLetterError`, or isn't
+valid JSON is published to the `dead_letter` queue under its original queue's
+name, with the reason in an `x-failure-reason` header, and then acked.
+Nothing is requeued, and nothing consumes `dead_letter`: replay by hand once
+the cause is fixed.
+
+A worker that fails a job it claimed hands the claim back before its next
+attempt, so that attempt finds the job queued. If it can't hand the claim
+back, the job stays `processing` and the message is dead-lettered; set the
+job back to `queued` with no claim token before replaying it.
+
+A lost RabbitMQ connection or channel exits the process with code 1. Nothing
+reconnects in-process; the platform's restart policy brings it back.
 
 ## End-to-end flow (audio upload)
 
@@ -108,7 +124,8 @@ port to configure:
 - Nothing dials the worker, so it needs no listening socket for traffic.
 - A single shared `.env` can't hand different ports to the N processes built
   from one artifact anyway, so a configurable port wouldn't help.
-- The open RabbitMQ consumer socket keeps the Node event loop alive.
+- The open RabbitMQ consumer socket keeps the Node event loop alive, and
+  losing it exits the process.
 
 Liveness in an orchestrator is therefore a **process / queue-connection**
 concern (restart-on-crash, or an exec/TCP probe), not an HTTP health check.

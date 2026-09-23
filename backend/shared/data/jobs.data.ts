@@ -418,6 +418,27 @@ async function completeAudioJob(
   return Boolean(row);
 }
 
+/**
+ * Hands a claimed job back to the queue, so the retry of its delivery claims
+ * it as any queued job rather than taking over a claim. Only the current
+ * claimant can, and only while the job is processing; false otherwise.
+ */
+async function unclaimAudioJob(audioUploadId: UploadId, claimToken: string) {
+  const [row] = await db
+    .update(AudioTranscriptionJobs)
+    .set({ status: "queued", claimToken: null })
+    .where(
+      and(
+        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
+        eq(AudioTranscriptionJobs.status, "processing"),
+        eq(AudioTranscriptionJobs.claimToken, claimToken),
+      ),
+    )
+    .returning({ audioUploadId: AudioTranscriptionJobs.audioUploadId });
+
+  return Boolean(row);
+}
+
 async function failAudioJob(audioUploadId: UploadId, claimToken: string) {
   await db
     .update(AudioTranscriptionJobs)
@@ -442,5 +463,6 @@ export const jobs = {
   clearCaptionUploadId,
   claimAudioJob,
   completeAudioJob,
+  unclaimAudioJob,
   failAudioJob,
 };

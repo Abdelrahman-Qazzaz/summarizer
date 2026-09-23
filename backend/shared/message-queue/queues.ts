@@ -9,7 +9,6 @@ export const QUEUES = {
 } as const;
 
 export type Queue = (typeof QUEUES)[keyof typeof QUEUES];
-export type DeliveryMetadata = { redelivered: boolean };
 export type QueuePayloads = {
   [QUEUES.TRANSCRIBE]: {
     audioUploadId: UploadId;

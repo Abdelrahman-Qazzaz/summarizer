@@ -1,7 +1,4 @@
-import {
-  mq,
-  type DeliveryMetadata,
-} from "../shared/message-queue/messageQueue";
+import { mq } from "../shared/message-queue/messageQueue";
 import { scheduleSweeper } from "../shared/sweeper";
 import { onShutdown } from "../shared/shutdown";
 import { verifyTranscribeWorkerServices } from "./startup";
@@ -9,30 +6,22 @@ import { handleTranscribeJob } from "./transcribeJob";
 
 await verifyTranscribeWorkerServices();
 
-const inFlightJobs = new Set<Promise<void>>();
+/**
+ * Every attempt at an audio job can be a billed Deepgram call (which retries
+ * once on its own), so a failed job gets one more try, not several.
+ */
+const TRANSCRIBE_ATTEMPTS = 2;
 
-async function runJob(
-  input: Parameters<typeof handleTranscribeJob>[0],
-  delivery: DeliveryMetadata,
-) {
-  const job = Promise.resolve(handleTranscribeJob(input, delivery));
-  inFlightJobs.add(job);
-
-  try {
-    await job;
-  } finally {
-    inFlightJobs.delete(job);
-  }
-}
-
-const cancelConsumers = await Promise.all([
-  mq.consume(mq.queues.TRANSCRIBE, (payload, delivery) =>
-    runJob({ ...payload, useCaptionUpload: false }, delivery),
-  ),
-  mq.consume(mq.queues.CAPTION_TRANSCRIPT, (payload, delivery) =>
-    runJob({ ...payload, useCaptionUpload: true }, delivery),
-  ),
-]);
+await mq.consume(
+  mq.queues.TRANSCRIBE,
+  (payload, delivery) => handleTranscribeJob(payload, delivery, "audio"),
+  { attempts: TRANSCRIBE_ATTEMPTS },
+);
+await mq.consume(
+  mq.queues.CAPTION_TRANSCRIPT,
+  (payload, delivery) => handleTranscribeJob(payload, delivery, "captions"),
+  { attempts: TRANSCRIBE_ATTEMPTS },
+);
 
 // Every worker schedules it; the sweep's own lock keeps them from overlapping.
 const stopSweeper = scheduleSweeper();
@@ -48,8 +37,7 @@ const stopSweeper = scheduleSweeper();
  */
 onShutdown(
   async () => {
-    await Promise.all(cancelConsumers.map((cancel) => cancel()));
-    await Promise.all([...inFlightJobs, stopSweeper()]);
+    await Promise.all([mq.stopConsuming(), stopSweeper()]);
     await mq.close();
   },
   { graceMs: 30_000 },
