@@ -30,6 +30,11 @@ const dbClientRestriction = {
       message:
         "Import { data } from shared/data and call data.<table>.<operation>(), so the call reads as a database operation.",
     },
+    {
+      group: ["**/storage/core"],
+      message:
+        "storage/core is internal to storage/. Import bucket or sign instead.",
+    },
   ],
 };
 
