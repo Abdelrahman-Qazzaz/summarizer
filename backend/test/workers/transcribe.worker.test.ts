@@ -38,8 +38,13 @@ function deepgramResponse(transcript: string) {
 
 vi.mock("../../shared/storage/bucket", () => ({
   bucket: {
-    createSignedUrl: mockCreateSignedUrl,
     getText: mockGetText,
+  },
+}));
+
+vi.mock("../../shared/storage/sign", () => ({
+  sign: {
+    createSignedUrl: mockCreateSignedUrl,
   },
 }));
 

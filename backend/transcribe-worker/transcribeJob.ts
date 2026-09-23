@@ -3,6 +3,7 @@ import {
   transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
 import { bucket } from "../shared/storage/bucket";
+import { sign } from "../shared/storage/sign";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { data } from "../shared/data";
 import { logger, messageOf } from "../shared/logger";
@@ -79,7 +80,7 @@ export async function handleTranscribeJob(
         return bucket.getText(job.userId, job.captionUploadId);
       }
 
-      const audioUrl = await bucket.createSignedUrl(job.userId, {
+      const audioUrl = await sign.createSignedUrl(job.userId, {
         kind: "audio",
         uploadId: audioUploadId,
       });

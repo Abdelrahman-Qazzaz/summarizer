@@ -96,10 +96,15 @@ vi.mock("../../shared/storage/bucket", () => ({
   // import evaluation, before this module's own bindings initialize.
   BUCKET: "Audio & Text files",
   MAX_AUDIO_BYTES: 100 * 1024 * 1024,
-  IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
   bucket: {
     createUploadUrl: mockCreateUploadUrl,
     inspectUploadedObject: mockInspectUploadedObject,
+  },
+}));
+
+vi.mock("../../shared/storage/sign", () => ({
+  IMAGE_URL_TTL_SECONDS: 7 * 24 * 60 * 60,
+  sign: {
     createSignedUrl: vi.fn(),
     createSignedUrls: vi.fn(),
   },

@@ -38,8 +38,12 @@ vi.mock("../../shared/db", async () => {
 });
 
 vi.mock("../../shared/storage/bucket", () => ({
+  bucket: {},
+}));
+
+vi.mock("../../shared/storage/sign", () => ({
   IMAGE_URL_TTL_SECONDS: 604800,
-  bucket: {
+  sign: {
     createSignedUrls: vi.fn(),
   },
 }));
