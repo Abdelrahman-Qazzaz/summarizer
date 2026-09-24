@@ -25,8 +25,7 @@ export async function queueAudioTranscription(job: {
   const confirmed = await confirmCheckedUpload(
     job.userId,
     { kind: "audio", uploadId: job.audioUploadId },
-    (executor) =>
-      data.jobs.createAudioJob({ ...job, captionUploadId: null }, executor),
+    (executor) => data.jobs.createAudioJob(job, executor),
   );
   if (!confirmed) return false;
 

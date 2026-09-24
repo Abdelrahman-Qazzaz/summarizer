@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   transcribeAI: vi.fn(),
   signUrl: vi.fn(),
   publish: vi.fn(),
-  cleanupTerminalCaptionUpload: vi.fn(),
 }));
 
 vi.mock("../../shared/data", () => ({
@@ -31,10 +30,6 @@ vi.mock("../../shared/ai/ai_transcribe_client", () => ({
 }));
 
 vi.mock("../../shared/storage/sign", () => ({ sign: { url: mocks.signUrl } }));
-
-vi.mock("../../shared/captionUploads", () => ({
-  cleanupTerminalCaptionUpload: mocks.cleanupTerminalCaptionUpload,
-}));
 
 vi.mock("../../shared/message-queue/messageQueue", async (importActual) => ({
   ...(await importActual<
@@ -58,7 +53,6 @@ describe("handleTranscribeJob", () => {
     vi.clearAllMocks();
     mocks.claimAudioJob.mockResolvedValue({
       audioUploadId,
-      captionUploadId: null,
       transcriptModelId: null,
       userId: "user_01",
       claimToken,
@@ -67,7 +61,6 @@ describe("handleTranscribeJob", () => {
     mocks.transcribeAI.mockRejectedValue(new Error("Deepgram unavailable"));
     mocks.unclaimAudioJob.mockResolvedValue(true);
     mocks.failAudioJob.mockResolvedValue(undefined);
-    mocks.cleanupTerminalCaptionUpload.mockResolvedValue(false);
   });
 
   describe("storing a transcript", () => {

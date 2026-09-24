@@ -21,7 +21,6 @@ export type QueuePayloads = {
 
   [QUEUES.YT_FETCH]: {
     audioUploadId: UploadId;
-    captionUploadId: UploadId | null;
     userId: string;
     url: string;
     useCaptionsIfAvailable: boolean;

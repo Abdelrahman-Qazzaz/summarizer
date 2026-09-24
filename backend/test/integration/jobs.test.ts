@@ -46,7 +46,6 @@ async function createJob() {
   const audioUploadId = randomUUID();
   await jobs.createAudioJob({
     audioUploadId,
-    captionUploadId: null,
     userId,
     source: "youtube",
     fileName: "YouTube audio",

@@ -94,16 +94,12 @@ export async function handleYoutubeUpload(c: Context) {
   const useCaptionsIfAvailable = c.get(CTX_KEYS.useCaptionsIfAvailable);
 
   const audioUploadId: UploadId = randomUUID();
-  const captionUploadId: UploadId | null = useCaptionsIfAvailable
-    ? randomUUID()
-    : null;
 
-  // Created queued with placeholder metadata. The fetcher tries a reserved
-  // caption object first when requested, otherwise it writes audio under
-  // `audioUploadId` and sends the appropriate worker delivery.
+  // Created queued with placeholder metadata. When asked to, the fetcher tries
+  // the video's captions first and sends them to the worker; otherwise it
+  // writes audio under `audioUploadId` for the worker to transcribe.
   await data.jobs.createYoutubeAudioJob({
     audioUploadId,
-    captionUploadId,
     userId,
     source: "youtube",
     youtubeSourceUrl: url,
@@ -118,7 +114,6 @@ export async function handleYoutubeUpload(c: Context) {
   await publishOrFail(audioUploadId, () =>
     mq.publish(mq.queues.YT_FETCH, {
       audioUploadId,
-      captionUploadId,
       url,
       userId,
       useCaptionsIfAvailable,

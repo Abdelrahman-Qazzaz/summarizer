@@ -3,9 +3,8 @@ import {
   transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
 import { sign } from "../shared/storage/sign";
-import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { data } from "../shared/data";
-import { logger, messageOf } from "../shared/logger";
+import { logger } from "../shared/logger";
 import {
   DeadLetterError,
   mq,
@@ -120,14 +119,5 @@ export async function handleTranscribeJob(
     // Nothing claimed: the consumer tries again or dead-letters it.
     if (!claimToken) throw error;
     await settleFailedJob(audioUploadId, claimToken, lastAttempt, error);
-  } finally {
-    try {
-      await cleanupTerminalCaptionUpload(audioUploadId);
-    } catch (error) {
-      log.warn("Failed to clean up caption upload", {
-        audioUploadId,
-        error: messageOf(error),
-      });
-    }
   }
 }
