@@ -35,5 +35,7 @@ export type QueuePayloads = {
 
   [QUEUES.CAPTION_TRANSCRIPT]: {
     audioUploadId: UploadId;
+    /** The video's captions, used as the transcript instead of its audio. */
+    transcript: string;
   };
 };

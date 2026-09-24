@@ -79,35 +79,28 @@ def _fetch_with_retries(audio_upload_id: str, url: str, user_id: str) -> None:
             time.sleep(backoff)
 
 
-def _create_caption_upload(caption_upload_id: str, url: str, user_id: str) -> bool:
+def _fetch_captions(url: str) -> str | None:
+    """The video's first caption track as plain text, or None when it has none
+    worth using. The text travels in the caption_transcript message itself:
+    even a many-hour video's captions are a few hundred KB."""
     video_id = YoutubeIE.extract_id(url)
 
     try:
         transcripts = YouTubeTranscriptApi().list(video_id)
         selected_transcript = next(iter(transcripts), None)
         if selected_transcript is None:
-            return False
+            return None
         fetched_transcript = selected_transcript.fetch()
     except CouldNotRetrieveTranscript as error:
         log.info("No usable captions for %s: %s", video_id, error)
-        return False
+        return None
 
     transcript_text = " ".join(
         snippet.text.strip() for snippet in fetched_transcript if snippet.text.strip()
     )
     if not transcript_text:
         log.info("Caption track for %s was empty", video_id)
-        return False
-
-    with tempfile.TemporaryDirectory() as tmp:
-        transcript_path = Path(tmp) / "captions.txt"
-        transcript_path.write_text(transcript_text, encoding="utf-8")
-        bucket.upload_text(
-            user_id,
-            caption_upload_id,
-            str(transcript_path),
-            "text/plain; charset=utf-8",
-        )
+        return None
 
     log.info(
         "Fetched %s captions for %s: %d characters",
@@ -115,7 +108,7 @@ def _create_caption_upload(caption_upload_id: str, url: str, user_id: str) -> bo
         video_id,
         len(transcript_text),
     )
-    return True
+    return transcript_text
 
 
 def handle_yt_fetch(event: dict) -> None:
@@ -124,16 +117,12 @@ def handle_yt_fetch(event: dict) -> None:
         url: str = event["url"]
         user_id: str = event["userId"]
         use_captions_if_available = event["useCaptionsIfAvailable"]
-        caption_upload_id: str | None = event["captionUploadId"]
 
-        if (
-            use_captions_if_available
-            and caption_upload_id
-            and _create_caption_upload(caption_upload_id, url, user_id)
-        ):
+        transcript = _fetch_captions(url) if use_captions_if_available else None
+        if transcript:
             mq.publish_threadsafe(
                 contract.queues.CAPTION_TRANSCRIPT,
-                {"audioUploadId": audio_upload_id},
+                {"audioUploadId": audio_upload_id, "transcript": transcript},
             )
             return
 

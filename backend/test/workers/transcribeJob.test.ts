@@ -30,9 +30,6 @@ vi.mock("../../shared/ai/ai_transcribe_client", () => ({
   transcribeAI: mocks.transcribeAI,
 }));
 
-vi.mock("../../shared/storage/bucket", () => ({
-  bucket: { getText: vi.fn() },
-}));
 vi.mock("../../shared/storage/sign", () => ({ sign: { url: mocks.signUrl } }));
 
 vi.mock("../../shared/captionUploads", () => ({
@@ -56,7 +53,7 @@ const audioInput = { audioUploadId } as const;
 const firstAttempt = { attempt: 1, lastAttempt: false, redelivered: false };
 const lastAttempt = { attempt: 2, lastAttempt: true, redelivered: false };
 
-describe("handleTranscribeJob failures", () => {
+describe("handleTranscribeJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.claimAudioJob.mockResolvedValue({
@@ -73,10 +70,102 @@ describe("handleTranscribeJob failures", () => {
     mocks.cleanupTerminalCaptionUpload.mockResolvedValue(false);
   });
 
+  describe("storing a transcript", () => {
+    beforeEach(() => {
+      mocks.transcribeAI.mockResolvedValue("the audio, transcribed");
+      mocks.saveCompletedTranscript.mockResolvedValue(true);
+      mocks.publish.mockResolvedValue(undefined);
+    });
+
+    it("stores the captions the message carries, without transcribing audio", async () => {
+      await handleTranscribeJob(
+        { audioUploadId, transcript: "the captions" },
+        firstAttempt,
+      );
+
+      expect(mocks.signUrl).not.toHaveBeenCalled();
+      expect(mocks.transcribeAI).not.toHaveBeenCalled();
+      expect(mocks.saveCompletedTranscript).toHaveBeenCalledWith(
+        audioUploadId,
+        "the captions",
+        claimToken,
+      );
+    });
+
+    it("transcribes the audio when the message carries no captions", async () => {
+      await handleTranscribeJob(audioInput, firstAttempt);
+
+      expect(mocks.signUrl).toHaveBeenCalledWith("user_01", {
+        kind: "audio",
+        uploadId: audioUploadId,
+      });
+      expect(mocks.transcribeAI).toHaveBeenCalledWith(
+        "nova-3-general",
+        "https://signed.example/audio",
+      );
+      expect(mocks.saveCompletedTranscript).toHaveBeenCalledWith(
+        audioUploadId,
+        "the audio, transcribed",
+        claimToken,
+      );
+    });
+
+    it("announces the finished job to the API", async () => {
+      await handleTranscribeJob(audioInput, firstAttempt);
+
+      expect(mocks.publish).toHaveBeenCalledWith("transcribe_done", {
+        audioUploadId,
+        userId: "user_01",
+      });
+    });
+
+    it("does nothing when there is no queued job to claim", async () => {
+      mocks.claimAudioJob.mockResolvedValue(null);
+
+      await handleTranscribeJob(audioInput, firstAttempt);
+
+      expect(mocks.transcribeAI).not.toHaveBeenCalled();
+      expect(mocks.saveCompletedTranscript).not.toHaveBeenCalled();
+      expect(mocks.publish).not.toHaveBeenCalled();
+    });
+
+    it("announces nothing after losing its claim to another worker", async () => {
+      mocks.saveCompletedTranscript.mockResolvedValue(false);
+
+      await handleTranscribeJob(audioInput, firstAttempt);
+
+      expect(mocks.publish).not.toHaveBeenCalled();
+    });
+
+    it("may reclaim a processing job only when the broker redelivered it", async () => {
+      await handleTranscribeJob(audioInput, firstAttempt);
+      await handleTranscribeJob(audioInput, {
+        ...firstAttempt,
+        redelivered: true,
+      });
+
+      expect(mocks.claimAudioJob.mock.calls).toEqual([
+        [audioUploadId, false],
+        [audioUploadId, true],
+      ]);
+    });
+  });
+
   describe("before the last attempt", () => {
+    it("treats an empty transcript as a failure", async () => {
+      mocks.transcribeAI.mockResolvedValue("   ");
+
+      await expect(
+        handleTranscribeJob(audioInput, firstAttempt),
+      ).rejects.toThrow("Transcription produced no text");
+
+      expect(mocks.saveCompletedTranscript).not.toHaveBeenCalled();
+      expect(mocks.unclaimAudioJob).toHaveBeenCalled();
+    });
+
     it("unclaims the job and rethrows, so the next attempt can claim it", async () => {
       await expect(
-        handleTranscribeJob(audioInput, firstAttempt, "audio"),
+        handleTranscribeJob(audioInput, firstAttempt),
       ).rejects.toThrow("Deepgram unavailable");
 
       expect(mocks.unclaimAudioJob).toHaveBeenCalledWith(
@@ -90,11 +179,9 @@ describe("handleTranscribeJob failures", () => {
       const unclaimError = new Error("database unavailable");
       mocks.unclaimAudioJob.mockRejectedValue(unclaimError);
 
-      const failure = await handleTranscribeJob(
-        audioInput,
-        firstAttempt,
-        "audio",
-      ).catch((error: unknown) => error);
+      const failure = await handleTranscribeJob(audioInput, firstAttempt).catch(
+        (error: unknown) => error,
+      );
 
       expect(failure).toBeInstanceOf(DeadLetterError);
       expect((failure as DeadLetterError).cause).toBe(unclaimError);
@@ -105,7 +192,7 @@ describe("handleTranscribeJob failures", () => {
       mocks.unclaimAudioJob.mockResolvedValue(false);
 
       await expect(
-        handleTranscribeJob(audioInput, firstAttempt, "audio"),
+        handleTranscribeJob(audioInput, firstAttempt),
       ).resolves.toBeUndefined();
     });
 
@@ -113,7 +200,7 @@ describe("handleTranscribeJob failures", () => {
       mocks.claimAudioJob.mockRejectedValue(new Error("database unavailable"));
 
       await expect(
-        handleTranscribeJob(audioInput, firstAttempt, "audio"),
+        handleTranscribeJob(audioInput, firstAttempt),
       ).rejects.toThrow("database unavailable");
 
       expect(mocks.unclaimAudioJob).not.toHaveBeenCalled();
@@ -128,7 +215,7 @@ describe("handleTranscribeJob failures", () => {
       mocks.unclaimAudioJob.mockResolvedValue(false);
 
       await expect(
-        handleTranscribeJob(audioInput, firstAttempt, "audio"),
+        handleTranscribeJob(audioInput, firstAttempt),
       ).resolves.toBeUndefined();
     });
   });
@@ -136,7 +223,7 @@ describe("handleTranscribeJob failures", () => {
   describe("on the last attempt", () => {
     it("fails the job for good and finishes the message", async () => {
       await expect(
-        handleTranscribeJob(audioInput, lastAttempt, "audio"),
+        handleTranscribeJob(audioInput, lastAttempt),
       ).resolves.toBeUndefined();
 
       expect(mocks.failAudioJob).toHaveBeenCalledWith(
@@ -150,7 +237,7 @@ describe("handleTranscribeJob failures", () => {
       mocks.failAudioJob.mockRejectedValue(new Error("database unavailable"));
 
       await expect(
-        handleTranscribeJob(audioInput, lastAttempt, "audio"),
+        handleTranscribeJob(audioInput, lastAttempt),
       ).rejects.toThrow("database unavailable");
     });
   });

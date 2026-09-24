@@ -12,16 +12,12 @@ await verifyTranscribeWorkerServices();
  */
 const TRANSCRIBE_ATTEMPTS = 2;
 
-await mq.consume(
-  mq.queues.TRANSCRIBE,
-  (payload, delivery) => handleTranscribeJob(payload, delivery, "audio"),
-  { attempts: TRANSCRIBE_ATTEMPTS },
-);
-await mq.consume(
-  mq.queues.CAPTION_TRANSCRIPT,
-  (payload, delivery) => handleTranscribeJob(payload, delivery, "captions"),
-  { attempts: TRANSCRIBE_ATTEMPTS },
-);
+await mq.consume(mq.queues.TRANSCRIBE, handleTranscribeJob, {
+  attempts: TRANSCRIBE_ATTEMPTS,
+});
+await mq.consume(mq.queues.CAPTION_TRANSCRIPT, handleTranscribeJob, {
+  attempts: TRANSCRIBE_ATTEMPTS,
+});
 
 // Every worker schedules it; the sweep's own lock keeps them from overlapping.
 const stopSweeper = scheduleSweeper();

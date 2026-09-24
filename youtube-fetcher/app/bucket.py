@@ -34,11 +34,6 @@ def upload_audio(
     return _upload_file(user_id, "audios", audio_upload_id, local_path, content_type)
 
 
-def upload_text(user_id: str, text_upload_id: str, local_path: str, content_type: str):
-    """Store text, such as a caption track, where the transcribe worker reads it from."""
-    return _upload_file(user_id, "texts", text_upload_id, local_path, content_type)
-
-
 def _upload_file(
     user_id: str,
     kind: str,

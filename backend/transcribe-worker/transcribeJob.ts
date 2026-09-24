@@ -2,7 +2,6 @@ import {
   DEFAULT_TRANSCRIBE_MODEL,
   transcribeAI,
 } from "../shared/ai/ai_transcribe_client";
-import { bucket } from "../shared/storage/bucket";
 import { sign } from "../shared/storage/sign";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
 import { data } from "../shared/data";
@@ -16,22 +15,12 @@ import type { UploadId } from "../shared/types";
 
 const log = logger.child({ component: "transcribe-worker" });
 
-/** What a job is transcribed from: its audio, or the caption text the fetcher stored. */
-type TranscriptSource = "audio" | "captions";
-
 type ClaimedJob = NonNullable<
   Awaited<ReturnType<typeof data.jobs.claimAudioJob>>
 >;
 
-/** The job's text: the caption track the fetcher stored, or its audio transcribed. */
-async function readTranscript(job: ClaimedJob, source: TranscriptSource) {
-  if (source === "captions") {
-    if (!job.captionUploadId) {
-      throw new Error("Caption upload is missing from the transcription job");
-    }
-    return bucket.getText(job.userId, job.captionUploadId);
-  }
-
+/** The job's audio, transcribed. */
+async function transcribeAudio(job: ClaimedJob) {
   const audioUrl = await sign.url(job.userId, {
     kind: "audio",
     uploadId: job.audioUploadId,
@@ -79,10 +68,19 @@ async function settleFailedJob(
   throw error;
 }
 
+/**
+ * Stores a job's transcript: the video's captions when the message carries
+ * them (caption_transcript), otherwise its audio transcribed (transcribe).
+ */
 export async function handleTranscribeJob(
-  { audioUploadId }: { audioUploadId: UploadId },
+  {
+    audioUploadId,
+    transcript: captions,
+  }: {
+    audioUploadId: UploadId;
+    transcript?: string;
+  },
   { attempt, lastAttempt, redelivered }: DeliveryMetadata,
-  source: TranscriptSource,
 ) {
   let claimToken: string | null = null;
 
@@ -91,7 +89,7 @@ export async function handleTranscribeJob(
     if (!job) return;
     claimToken = job.claimToken;
 
-    const transcript = await readTranscript(job, source);
+    const transcript = captions ?? (await transcribeAudio(job));
     if (!transcript.trim()) throw new Error("Transcription produced no text");
 
     log.debug("Transcription produced", {
