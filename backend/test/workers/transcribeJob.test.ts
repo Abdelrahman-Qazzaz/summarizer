@@ -150,7 +150,7 @@ describe("handleTranscribeJob", () => {
 
       await expect(
         handleTranscribeJob(audioInput, firstAttempt),
-      ).rejects.toThrow("Transcription produced no text");
+      ).rejects.toThrow("No speech found in the audio");
 
       expect(mocks.saveCompletedTranscript).not.toHaveBeenCalled();
       expect(mocks.unclaimAndResetAudioJob).toHaveBeenCalled();
@@ -219,11 +219,31 @@ describe("handleTranscribeJob", () => {
         handleTranscribeJob(audioInput, lastAttempt),
       ).resolves.toBeUndefined();
 
+      expect(mocks.unclaimAndResetAudioJob).not.toHaveBeenCalled();
+    });
+
+    // The reason is shown next to the file's name, so it can't be the raw
+    // error ("Deepgram unavailable").
+    it("records a general reason for the user", async () => {
+      await handleTranscribeJob(audioInput, lastAttempt);
+
       expect(mocks.failAudioJob).toHaveBeenCalledWith(
         audioUploadId,
         claimToken,
+        "Could not be transcribed",
       );
-      expect(mocks.unclaimAndResetAudioJob).not.toHaveBeenCalled();
+    });
+
+    it("says so when the audio had no speech in it", async () => {
+      mocks.transcribeAI.mockResolvedValue("   ");
+
+      await handleTranscribeJob(audioInput, lastAttempt);
+
+      expect(mocks.failAudioJob).toHaveBeenCalledWith(
+        audioUploadId,
+        claimToken,
+        "No speech found in the audio",
+      );
     });
 
     it("leaves the message to be dead-lettered when failing the job fails", async () => {

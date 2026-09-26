@@ -14,6 +14,25 @@ import type { UploadId } from "../shared/types";
 
 const log = logger.child({ component: "transcribe-worker" });
 
+/** The audio was transcribed, but there was nothing in it to transcribe. */
+class NoSpeechError extends Error {
+  constructor() {
+    super("No speech found in the audio");
+    this.name = "NoSpeechError";
+  }
+}
+
+/**
+ * What a job that failed for good tells the user. Their screen shows it next
+ * to the file's name, so anything but an empty transcript gets a general
+ * message; the actual error is in the logs.
+ */
+function failureMessage(error: unknown) {
+  return error instanceof NoSpeechError
+    ? error.message
+    : "Could not be transcribed";
+}
+
 type ClaimedJob = NonNullable<
   Awaited<ReturnType<typeof data.jobs.claimAudioJob>>
 >;
@@ -48,7 +67,11 @@ async function settleFailedJob(
   error: unknown,
 ) {
   if (lastAttempt) {
-    await data.jobs.failAudioJob(audioUploadId, claimToken);
+    await data.jobs.failAudioJob(
+      audioUploadId,
+      claimToken,
+      failureMessage(error),
+    );
     return;
   }
 
@@ -92,7 +115,7 @@ export async function handleTranscribeJob(
     claimToken = job.claimToken;
 
     const transcript = captions ?? (await transcribeAudio(job));
-    if (!transcript.trim()) throw new Error("Transcription produced no text");
+    if (!transcript.trim()) throw new NoSpeechError();
 
     log.debug("Transcription produced", {
       audioUploadId,

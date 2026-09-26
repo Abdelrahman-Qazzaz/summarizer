@@ -354,10 +354,15 @@ async function unclaimAndResetAudioJob(
   return Boolean(row);
 }
 
-async function failAudioJob(audioUploadId: UploadId, claimToken: string) {
+/** `error` is shown to the user, so it says what happened, not how. */
+async function failAudioJob(
+  audioUploadId: UploadId,
+  claimToken: string,
+  error: string,
+) {
   await db
     .update(AudioTranscriptionJobs)
-    .set({ status: "failed" })
+    .set({ status: "failed", error })
     .where(
       and(
         eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),

@@ -183,4 +183,38 @@ describe.skipIf(!testState.databaseUrl)("audio jobs in PostgreSQL", () => {
       });
     });
   });
+
+  describe("failAudioJob", () => {
+    it("fails the job it holds, with the reason for the user", async () => {
+      const audioUploadId = await createJob();
+      const claimed = await jobs.claimAudioJob(audioUploadId);
+
+      await jobs.failAudioJob(
+        audioUploadId,
+        claimed!.claimToken,
+        "Could not be transcribed",
+      );
+
+      expect(await readJob(audioUploadId)).toMatchObject({
+        status: "failed",
+        error: "Could not be transcribed",
+      });
+    });
+
+    it("leaves another worker's claim alone", async () => {
+      const audioUploadId = await createJob();
+      await jobs.claimAudioJob(audioUploadId);
+
+      await jobs.failAudioJob(
+        audioUploadId,
+        randomUUID(),
+        "Could not be transcribed",
+      );
+
+      expect(await readJob(audioUploadId)).toMatchObject({
+        status: "processing",
+        error: null,
+      });
+    });
+  });
 });
