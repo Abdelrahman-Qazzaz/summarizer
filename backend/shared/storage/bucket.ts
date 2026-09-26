@@ -74,8 +74,8 @@ function tokenLifetimeMs(token: string) {
   return (exp - iat) * 1000;
 }
 
-/** Storage reports a missing object as a 400 whose body carries "404". */
-function isMissingObject(error: unknown) {
+/** Storage reports a missing object or bucket as a 400 whose body carries "404". */
+function isNotFound(error: unknown) {
   const { status, statusCode } = error as {
     status?: number;
     statusCode?: string;
@@ -94,8 +94,7 @@ async function inspectUploadedObject(userId: string, object: UploadableObject) {
   const { data, error } = await storage().info(objectPath(userId, object));
 
   if (error) {
-    if (isMissingObject(error))
-      return { ok: false, reason: "missing" } as const;
+    if (isNotFound(error)) return { ok: false, reason: "missing" } as const;
     throw error;
   }
 
