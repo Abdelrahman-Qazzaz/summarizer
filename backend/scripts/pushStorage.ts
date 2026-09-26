@@ -30,6 +30,7 @@ if (!live) {
   console.log(`Created bucket "${BUCKET}":`, BUCKET_SETTINGS);
 } else if (isDeepStrictEqual(comparable(live), comparable(BUCKET_SETTINGS))) {
   console.log(`Bucket "${BUCKET}" already matches the schema`);
+  console.log("  compared:", BUCKET_SETTINGS);
 } else {
   await bucket.updateSettings(BUCKET_SETTINGS);
   console.log(`Updated bucket "${BUCKET}"`);

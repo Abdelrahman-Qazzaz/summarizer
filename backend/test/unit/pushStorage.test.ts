@@ -53,5 +53,6 @@ describe("storage:push", () => {
 
     expect(bucket.create).not.toHaveBeenCalled();
     expect(bucket.updateSettings).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith("  compared:", BUCKET_SETTINGS);
   });
 });
