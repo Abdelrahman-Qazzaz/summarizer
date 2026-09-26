@@ -68,3 +68,23 @@ export type UploadableKind = {
 
 export type StoredObject = { kind: StoredObjectKind; uploadId: string };
 export type UploadableObject = { kind: UploadableKind; uploadId: string };
+
+const uploadRules = Object.values(KINDS).flatMap((kind) =>
+  "upload" in kind ? [kind.upload] : [],
+);
+
+/**
+ * What the bucket itself enforces on every upload, before anything reaches
+ * the confirm step, including uploads through a signed URL, which can't carry
+ * limits of their own. Derived from KINDS so the two can't disagree:
+ * the largest kind's size limit, and each uploadable kind's content types.
+ * One bucket holds every kind, so an image is only held to the audio limit
+ * here; the confirm step still applies each kind's own.
+ *
+ * `npm run storage:push` makes the live bucket match this.
+ */
+export const BUCKET_SETTINGS = {
+  public: false,
+  fileSizeLimit: Math.max(...uploadRules.map((rule) => rule.maxBytes)),
+  allowedMimeTypes: uploadRules.map((rule) => `${rule.contentTypePrefix}*`),
+};
