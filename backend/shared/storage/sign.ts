@@ -1,11 +1,10 @@
+import { objectPath, storage } from "./core";
 import {
   IMAGE_URL_TTL_SECONDS,
   KINDS,
-  objectPath,
-  storage,
   type UploadableKind,
   type UploadableObject,
-} from "./core";
+} from "./schema";
 
 export { IMAGE_URL_TTL_SECONDS };
 

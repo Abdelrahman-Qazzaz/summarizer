@@ -1,16 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { objectPath, storage, supabase } from "./core";
 import {
   BUCKET,
   KINDS,
-  objectPath,
-  storage,
-  supabase,
   type UploadableObject,
   type StoredObject,
-} from "./core";
+} from "./schema";
 
-export { BUCKET, MAX_AUDIO_BYTES } from "./core";
-export type { StoredObject, UploadableObject } from "./core";
+export { BUCKET, MAX_AUDIO_BYTES } from "./schema";
+export type { StoredObject, UploadableObject } from "./schema";
 
 /** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
 async function ping(): Promise<void> {

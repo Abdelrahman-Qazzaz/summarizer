@@ -1,0 +1,70 @@
+/**
+ * What the bucket holds, declared in one place the way shared/db/schema.ts
+ * declares the tables: the bucket's name, and for each kind of object its
+ * folder and, for the kinds clients upload, their limits.
+ */
+
+// Exported so the API can publish it on /contract — the youtube-fetcher reads
+// the bucket name from there instead of hardcoding it. Non-sensitive config,
+// same as the queue names.
+export const BUCKET = "Audio & Text files";
+
+// Cap on audio files entering the bucket. Served on /contract so the
+// youtube-fetcher enforces the same limit the API applies to direct uploads.
+export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
+
+// Cap on images entering the bucket (chat attachments / standalone uploads).
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
+
+/**
+ * How long an image URL is signed for. Long-lived because it's minted once at
+ * upload and cached on the row — the model provider only needs seconds, but a
+ * conversation reopened next week should not have to re-sign to render.
+ */
+export const IMAGE_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * How long an audio URL handed to the transcription provider stays valid. Long
+ * enough to outlive a multi-hour file's transcription job and short enough that
+ * the link is useless by the time the job row is history.
+ */
+const AUDIO_URL_TTL_SECONDS = 60 * 60;
+
+/**
+ * Everything that differs between kinds of stored object. Only images and
+ * audio are uploaded by clients and signed for reading, so only they carry the
+ * rules for that. Text is caption tracks the youtube-fetcher used to store
+ * here; nothing writes it any more, and it stays a kind only so the sweeper can
+ * remove what is left.
+ */
+export const KINDS = {
+  image: {
+    folder: "images",
+    upload: {
+      contentTypePrefix: "image/",
+      maxBytes: MAX_IMAGE_BYTES,
+      readUrlTtlSeconds: IMAGE_URL_TTL_SECONDS,
+    },
+  },
+  audio: {
+    folder: "audios",
+    upload: {
+      contentTypePrefix: "audio/",
+      maxBytes: MAX_AUDIO_BYTES,
+      readUrlTtlSeconds: AUDIO_URL_TTL_SECONDS,
+    },
+  },
+  text: { folder: "texts" },
+} as const;
+
+export type StoredObjectKind = keyof typeof KINDS;
+
+/** The kinds a client uploads directly and that can be signed for reading. */
+export type UploadableKind = {
+  [K in StoredObjectKind]: (typeof KINDS)[K] extends { upload: object }
+    ? K
+    : never;
+}[StoredObjectKind];
+
+export type StoredObject = { kind: StoredObjectKind; uploadId: string };
+export type UploadableObject = { kind: UploadableKind; uploadId: string };
