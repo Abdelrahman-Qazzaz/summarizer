@@ -7,11 +7,18 @@ const storage = vi.hoisted(() => ({
   download: vi.fn(),
 }));
 
+const buckets = vi.hoisted(() => ({
+  getBucket: vi.fn(),
+  createBucket: vi.fn(),
+  updateBucket: vi.fn(),
+}));
+
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ storage: { from: () => storage } }),
+  createClient: () => ({ storage: { from: () => storage, ...buckets } }),
 }));
 
 import { bucket, MAX_AUDIO_BYTES } from "../../shared/storage/bucket";
+import { BUCKET, BUCKET_SETTINGS } from "../../shared/storage/schema";
 
 const USER = "user_01";
 const IMAGE_CAP = 10 * 1024 * 1024;
@@ -216,5 +223,61 @@ describe("inspectUploadedObject", () => {
     expect(await bucket.inspectUploadedObject(USER, object)).toMatchObject({
       ok: true,
     });
+  });
+});
+
+describe("bucket settings", () => {
+  it("reads the live settings, with an unenforced limit as null", async () => {
+    buckets.getBucket.mockResolvedValue({
+      data: { public: false, file_size_limit: 1024 },
+      error: null,
+    });
+
+    expect(await bucket.readSettings()).toEqual({
+      public: false,
+      fileSizeLimit: 1024,
+      allowedMimeTypes: null,
+    });
+    expect(buckets.getBucket).toHaveBeenCalledWith(BUCKET);
+  });
+
+  it("reads a missing bucket as null", async () => {
+    buckets.getBucket.mockResolvedValue({
+      data: null,
+      error: { status: 400, statusCode: "404", message: "Bucket not found" },
+    });
+
+    expect(await bucket.readSettings()).toBeNull();
+  });
+
+  it("throws any other read failure", async () => {
+    buckets.getBucket.mockResolvedValue({
+      data: null,
+      error: new Error("unreachable"),
+    });
+
+    await expect(bucket.readSettings()).rejects.toThrow("unreachable");
+  });
+
+  it("creates and updates the bucket with the settings given", async () => {
+    buckets.createBucket.mockResolvedValue({ data: {}, error: null });
+    buckets.updateBucket.mockResolvedValue({ data: {}, error: null });
+
+    await bucket.create(BUCKET_SETTINGS);
+    await bucket.updateSettings(BUCKET_SETTINGS);
+
+    expect(buckets.createBucket).toHaveBeenCalledWith(BUCKET, BUCKET_SETTINGS);
+    expect(buckets.updateBucket).toHaveBeenCalledWith(BUCKET, BUCKET_SETTINGS);
+  });
+
+  it("throws when Supabase refuses a change", async () => {
+    buckets.updateBucket.mockResolvedValue({
+      data: null,
+      error: new Error("forbidden"),
+    });
+
+    await expect(bucket.updateSettings(BUCKET_SETTINGS)).rejects.toThrow(
+      "forbidden",
+    );
   });
 });

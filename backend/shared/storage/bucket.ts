@@ -3,6 +3,7 @@ import { objectPath, storage, supabase } from "./core";
 import {
   BUCKET,
   KINDS,
+  type BUCKET_SETTINGS,
   type UploadableObject,
   type StoredObject,
 } from "./schema";
@@ -16,14 +17,50 @@ async function ping(): Promise<void> {
   if (error) throw error;
 }
 
+type BucketSettings = typeof BUCKET_SETTINGS;
+
+/**
+ * The bucket's settings as Supabase has them, or null when there's no bucket.
+ * A limit Supabase doesn't enforce reads as null.
+ */
+async function readSettings(): Promise<{
+  public: boolean;
+  fileSizeLimit: number | null;
+  allowedMimeTypes: string[] | null;
+} | null> {
+  const { data, error } = await supabase.storage.getBucket(BUCKET);
+  if (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+  return {
+    public: data.public,
+    fileSizeLimit: data.file_size_limit ?? null,
+    allowedMimeTypes: data.allowed_mime_types ?? null,
+  };
+}
+
+/** Creates the bucket with these settings. */
+async function create(settings: BucketSettings): Promise<void> {
+  const { error } = await supabase.storage.createBucket(BUCKET, settings);
+  if (error) throw error;
+}
+
+/** Changes the existing bucket's settings to these. */
+async function updateSettings(settings: BucketSettings): Promise<void> {
+  const { error } = await supabase.storage.updateBucket(BUCKET, settings);
+  if (error) throw error;
+}
+
 /**
  * A one-shot URL the browser can PUT a file to, so the bytes go straight from
  * the device to storage instead of through this process. The token is bound
  * to this exact key, so the client can neither choose its own path nor reuse
  * the URL for a second object.
  *
- * Nothing here limits what actually lands: size and content type are the
- * client's to set until the object exists. inspectUploadedObject reads both.
+ * The URL itself can't limit what lands: size and content type are the
+ * client's to set. The bucket's own BUCKET_SETTINGS cap both for every kind,
+ * and inspectUploadedObject checks each kind's own limits at confirm.
  */
 async function createUploadUrl(userId: string, object: UploadableObject) {
   const { data, error } = await storage().createSignedUploadUrl(
@@ -129,6 +166,9 @@ async function deleteObjects(userId: string, objects: readonly StoredObject[]) {
 
 export const bucket = {
   ping,
+  readSettings,
+  create,
+  updateSettings,
   createUploadUrl,
   verifyUploadUrlLifetime,
   inspectUploadedObject,
