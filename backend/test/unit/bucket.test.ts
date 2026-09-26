@@ -281,3 +281,38 @@ describe("bucket settings", () => {
     );
   });
 });
+
+describe("verifySettings", () => {
+  const live = (settings: object) =>
+    buckets.getBucket.mockResolvedValue({ data: settings, error: null });
+
+  it("passes when the live bucket is what the schema declares", async () => {
+    live({
+      public: false,
+      file_size_limit: BUCKET_SETTINGS.fileSizeLimit,
+      allowed_mime_types: [...BUCKET_SETTINGS.allowedMimeTypes].reverse(),
+    });
+
+    await expect(bucket.verifySettings()).resolves.toBeUndefined();
+  });
+
+  it("fails when a limit was loosened, and says how to fix it", async () => {
+    live({
+      public: false,
+      allowed_mime_types: BUCKET_SETTINGS.allowedMimeTypes,
+    });
+
+    await expect(bucket.verifySettings()).rejects.toThrow(
+      /not the storage schema's .*; run npm run storage:push/,
+    );
+  });
+
+  it("fails when there is no bucket", async () => {
+    buckets.getBucket.mockResolvedValue({
+      data: null,
+      error: { status: 400, statusCode: "404", message: "Bucket not found" },
+    });
+
+    await expect(bucket.verifySettings()).rejects.toThrow("does not exist");
+  });
+});

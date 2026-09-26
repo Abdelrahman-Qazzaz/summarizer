@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { objectPath, storage, supabase } from "./core";
 import {
   BUCKET,
+  BUCKET_SETTINGS,
   KINDS,
-  type BUCKET_SETTINGS,
+  matchesBucketSettings,
   type LiveBucketSettings,
   type UploadableObject,
   type StoredObject,
@@ -35,6 +36,27 @@ async function readSettings(): Promise<LiveBucketSettings | null> {
     fileSizeLimit: data.file_size_limit ?? null,
     allowedMimeTypes: data.allowed_mime_types ?? null,
   };
+}
+
+/**
+ * Startup check: fails when the live bucket isn't what the storage schema
+ * declares, for instance because a limit was loosened in the dashboard. The
+ * confirm step would still reject what the bucket lets through, but only
+ * after the bytes had landed. `npm run storage:push` puts the settings back.
+ */
+async function verifySettings(): Promise<void> {
+  const live = await readSettings();
+  if (!live) {
+    throw new Error(
+      `Bucket "${BUCKET}" does not exist; run npm run storage:push`,
+    );
+  }
+  if (!matchesBucketSettings(live)) {
+    throw new Error(
+      `Bucket "${BUCKET}" is ${JSON.stringify(live)}, not the storage schema's ` +
+        `${JSON.stringify(BUCKET_SETTINGS)}; run npm run storage:push`,
+    );
+  }
 }
 
 /** Creates the bucket with these settings. */
@@ -164,6 +186,7 @@ async function deleteObjects(userId: string, objects: readonly StoredObject[]) {
 export const bucket = {
   ping,
   readSettings,
+  verifySettings,
   create,
   updateSettings,
   createUploadUrl,

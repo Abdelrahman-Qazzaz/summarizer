@@ -16,6 +16,11 @@ export function verifyApiServices(): Promise<void> {
     { name: "RabbitMQ", check: pingMQ },
     { name: "Postgres", check: pingDb },
     { name: "Supabase Storage", check: bucket.ping },
+    // Also only the API's concern: the limits guard the uploads it hands out.
+    {
+      name: "Supabase Storage bucket settings",
+      check: bucket.verifySettings,
+    },
     // Only the API hands out upload URLs, so only it needs their lifetime to
     // fit inside the window an upload can be confirmed in.
     {
