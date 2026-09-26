@@ -12,7 +12,6 @@ export const tableStubs = {
 
   AudioTranscriptionJobs: {
     audioUploadId: "audio_upload_id",
-    captionUploadId: "caption_upload_id",
     source: "source",
     status: "status",
     error: "error",

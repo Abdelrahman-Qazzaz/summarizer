@@ -10,7 +10,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
-import type { UploadId } from "../types";
 
 export const jobStatusEnum = pgEnum("job_status", [
   "queued",
@@ -87,10 +86,6 @@ export const AudioTranscriptionJobs = pgTable("audio_transcription_jobs", {
     .references(() => Attachments.attachmentId, {
       onDelete: "cascade",
     }),
-  // Unused: caption text now travels in the caption_transcript message instead
-  // of a stored object. Kept until no deployed code still selects it; drop it
-  // in a later migration.
-  captionUploadId: text("caption_upload_id").$type<UploadId>(),
   source: text("source").notNull(), // 'video' | 'audio' | 'youtube'
   // Origin URL for 'youtube' jobs; null for direct uploads. Stored for history
   // display and to enable transcript caching by video id later.
