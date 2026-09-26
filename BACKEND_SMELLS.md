@@ -1,10 +1,10 @@
 # Backend code smells
 
-Scope: `backend/` on `main` at 029e2de. None of these are bugs today. They make the code harder to read or change safely. Bugs are in BACKEND_BUGS.md.
+Scope: `backend/` on `main`. Written at 029e2de and rechecked at 371e3d2, which the line numbers refer to. None of these are bugs today. They make the code harder to read or change safely. Bugs are in BACKEND_BUGS.md.
 
 ## Dead or test-only code
 
-- **`findRecentMessagesWithContext`, `hydrateContextMessages` and `ContextMessage`** (`shared/data/messages.data.ts:80`, `:334`, `:392`). Nothing calls them; `findCreateMessageHistory` replaced them. The index comment in `shared/db/schema.ts:185` and a test comment in `test/api/messages.test.ts:203` still name the old function.
+- **`findRecentMessagesWithContext`, `hydrateContextMessages` and `ContextMessage`** (`shared/data/messages.data.ts:80`, `:334`, `:392`). Nothing calls them; `findCreateMessageHistory` replaced them. The index comment in `shared/db/schema.ts:181` and a test comment in `test/api/messages.test.ts:208` still name the old function.
 - **Preparation metrics never run in production.** Only tests call `withPreparationMetrics`, so every `measurePreparation` in `shared/data/images.data.ts:135` just calls `run()`. Its extra arguments, including the `persistUrlsPromiseAllId` UUID minted on each call, make the image signing code harder to read and do nothing.
 - **Commented-out line** in `api/src/sockets/socketManager.ts:34`.
 
@@ -17,9 +17,9 @@ Scope: `backend/` on `main` at 029e2de. None of these are bugs today. They make 
 
 ## Misplaced or stale comments
 
-- The doc comment for `POST /conversations/:id/messages` sits above `mergeTranscriptsIntoContent` rather than `handleCreateMessage` (`api/src/controllers/messages.controller.ts:248`).
-- The "Bounds on what one turn can cost" comment is separated from its constants by a blank line (`messages.controller.ts:29`).
-- An orphaned doc comment ("Scoped by conversation as well as owner…") is stacked above the real one for `deleteOwnedMessage` (`shared/data/messages.data.ts:434`).
+- The doc comment for `POST /conversations/:id/messages` sits above `mergeTranscriptsIntoContent` rather than `handleCreateMessage` (`api/src/controllers/messages.controller.ts:249`).
+- The "Bounds on what one turn can cost" comment is separated from its constants by a blank line (`messages.controller.ts:30`).
+- An orphaned doc comment ("Scoped by conversation as well as owner…") is stacked above the real one for `deleteOwnedMessage` (`shared/data/messages.data.ts:435`).
 - The comment above `findChatModel` describes `validateChatModelOutput` (`shared/ai/ai_chat_client.ts:207`).
 - Two open TODOs head `messages.controller.ts`, one of them "refactor and fix patching&deletion handlers".
 
@@ -44,5 +44,5 @@ Scope: `backend/` on `main` at 029e2de. None of these are bugs today. They make 
 - `getRiderctUrl` is misspelled (`api/src/auth/auth.ts:20`). So is "rhobust" in `ai_chat_client.ts`.
 - `DELETE /upload/image/:id` spends the image *read* budget (`api/src/routes/images.router.ts:52`).
 - File and identifier casing is mixed: `ai_chat_client.ts`, `ai_client` and `try-catch.ts` sit next to camelCase everywhere else, and the column is `YT_sourceUrl`.
-- `AudioTranscriptionJobs.source` is free `text`, with the allowed values listed only in a comment (`shared/db/schema.ts:93`). The other status-like columns are `pgEnum`s.
+- `AudioTranscriptionJobs.source` is free `text`, with the allowed values listed only in a comment (`shared/db/schema.ts:89`). The other status-like columns are `pgEnum`s.
 - `mergeTranscriptsIntoContent` casts `get(...) as string` (`messages.controller.ts:268`). This relies on an earlier size check that sits in a different function.
