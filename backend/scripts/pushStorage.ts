@@ -3,32 +3,19 @@
  * creates it when it's missing, otherwise updates it to the declared settings.
  * The storage counterpart of `npm run db`, which does the same for the tables.
  */
-import { isDeepStrictEqual } from "node:util";
 import { bucket } from "../shared/storage/bucket";
-import { BUCKET, BUCKET_SETTINGS } from "../shared/storage/schema";
-
-type Settings = {
-  public: boolean;
-  fileSizeLimit: number | null;
-  allowedMimeTypes: string[] | null;
-};
-
-/** Settings as compared: the order content types are listed in doesn't matter. */
-function comparable(settings: Settings) {
-  return {
-    ...settings,
-    allowedMimeTypes: settings.allowedMimeTypes
-      ? [...settings.allowedMimeTypes].sort()
-      : null,
-  };
-}
+import {
+  BUCKET,
+  BUCKET_SETTINGS,
+  matchesBucketSettings,
+} from "../shared/storage/schema";
 
 const live = await bucket.readSettings();
 
 if (!live) {
   await bucket.create(BUCKET_SETTINGS);
   console.log(`Created bucket "${BUCKET}":`, BUCKET_SETTINGS);
-} else if (isDeepStrictEqual(comparable(live), comparable(BUCKET_SETTINGS))) {
+} else if (matchesBucketSettings(live)) {
   console.log(`Bucket "${BUCKET}" already matches the schema`);
   console.log("  compared:", BUCKET_SETTINGS);
 } else {

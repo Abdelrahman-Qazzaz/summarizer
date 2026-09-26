@@ -4,6 +4,7 @@ import {
   BUCKET,
   KINDS,
   type BUCKET_SETTINGS,
+  type LiveBucketSettings,
   type UploadableObject,
   type StoredObject,
 } from "./schema";
@@ -23,11 +24,7 @@ type BucketSettings = typeof BUCKET_SETTINGS;
  * The bucket's settings as Supabase has them, or null when there's no bucket.
  * A limit Supabase doesn't enforce reads as null.
  */
-async function readSettings(): Promise<{
-  public: boolean;
-  fileSizeLimit: number | null;
-  allowedMimeTypes: string[] | null;
-} | null> {
+async function readSettings(): Promise<LiveBucketSettings | null> {
   const { data, error } = await supabase.storage.getBucket(BUCKET);
   if (error) {
     if (isNotFound(error)) return null;

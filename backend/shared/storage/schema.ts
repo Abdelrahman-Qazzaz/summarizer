@@ -4,6 +4,8 @@
  * folder and, for the kinds clients upload, their limits.
  */
 
+import { isDeepStrictEqual } from "node:util";
+
 // Exported so the API can publish it on /contract — the youtube-fetcher reads
 // the bucket name from there instead of hardcoding it. Non-sensitive config,
 // same as the queue names.
@@ -91,3 +93,27 @@ export const BUCKET_SETTINGS = {
   fileSizeLimit: Math.max(...uploadRules.map((rule) => rule.maxBytes)),
   allowedMimeTypes: uploadRules.map((rule) => `${rule.contentTypePrefix}*`),
 };
+
+/** A bucket's settings as Supabase reports them; an unenforced limit is null. */
+export type LiveBucketSettings = {
+  public: boolean;
+  fileSizeLimit: number | null;
+  allowedMimeTypes: string[] | null;
+};
+
+/**
+ * Whether a bucket's live settings are BUCKET_SETTINGS. The order its content
+ * types are listed in doesn't matter.
+ */
+export function matchesBucketSettings(live: LiveBucketSettings) {
+  const sorted = (types: readonly string[] | null) =>
+    types ? [...types].sort() : null;
+  return (
+    live.public === BUCKET_SETTINGS.public &&
+    live.fileSizeLimit === BUCKET_SETTINGS.fileSizeLimit &&
+    isDeepStrictEqual(
+      sorted(live.allowedMimeTypes),
+      sorted(BUCKET_SETTINGS.allowedMimeTypes),
+    )
+  );
+}
