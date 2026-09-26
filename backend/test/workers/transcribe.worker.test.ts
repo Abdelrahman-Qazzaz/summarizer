@@ -114,10 +114,8 @@ const claimedJob = {
   status: "queued",
 };
 
-const audioInput = {
-  audioUploadId,
-  useCaptionUpload: false,
-} as const;
+const audioInput = { audioUploadId } as const;
+const firstDelivery = { attempt: 1, lastAttempt: false, redelivered: false };
 
 describe("handleTranscribeJob", () => {
   beforeEach(() => {
@@ -133,7 +131,7 @@ describe("handleTranscribeJob", () => {
   });
 
   it("transcribes audio, stores the transcript, and announces completion", async () => {
-    await handleTranscribeJob(audioInput);
+    await handleTranscribeJob(audioInput, firstDelivery, "audio");
 
     expect(mockCreateSignedUrl).toHaveBeenCalledWith("user_01", {
       kind: "audio",
@@ -158,10 +156,7 @@ describe("handleTranscribeJob", () => {
   it("stores an existing caption transcript without transcribing audio", async () => {
     setupUpdateChain([{ ...claimedJob, captionUploadId }]);
 
-    await handleTranscribeJob({
-      audioUploadId,
-      useCaptionUpload: true,
-    });
+    await handleTranscribeJob({ audioUploadId }, firstDelivery, "captions");
 
     expect(mockGetText).toHaveBeenCalledWith("user_01", captionUploadId);
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
@@ -184,7 +179,7 @@ describe("handleTranscribeJob", () => {
 
   it("fails when a caption delivery has no persisted caption upload", async () => {
     await expect(
-      handleTranscribeJob({ audioUploadId, useCaptionUpload: true }),
+      handleTranscribeJob({ audioUploadId }, firstDelivery, "captions"),
     ).rejects.toThrow("Caption upload is missing");
 
     expect(mockGetText).not.toHaveBeenCalled();
@@ -196,7 +191,7 @@ describe("handleTranscribeJob", () => {
 
   it("no-ops when no queued job is claimed", async () => {
     setupUpdateChain([]);
-    await handleTranscribeJob(audioInput);
+    await handleTranscribeJob(audioInput, firstDelivery, "audio");
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
     expect(mockTranscribeUrl).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
@@ -205,13 +200,17 @@ describe("handleTranscribeJob", () => {
   it("does not announce a result after the worker loses its claim", async () => {
     mockSaveCompletedTranscript.mockResolvedValueOnce(false);
 
-    await handleTranscribeJob(audioInput);
+    await handleTranscribeJob(audioInput, firstDelivery, "audio");
 
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
   it("processes a broker-redelivered job under a fresh claim token", async () => {
-    await handleTranscribeJob(audioInput, { redelivered: true });
+    await handleTranscribeJob(
+      audioInput,
+      { attempt: 1, lastAttempt: true, redelivered: true },
+      "audio",
+    );
 
     expect(mockSet).toHaveBeenNthCalledWith(1, {
       status: "processing",
@@ -229,7 +228,7 @@ describe("handleTranscribeJob", () => {
   it("uses the filename when title generation fails", async () => {
     mockGenerateTitle.mockRejectedValueOnce(new Error("title model failed"));
 
-    await handleTranscribeJob(audioInput);
+    await handleTranscribeJob(audioInput, firstDelivery, "audio");
 
     expect(mockSaveCompletedTranscript).toHaveBeenCalledWith(
       "user_01",
@@ -242,18 +241,18 @@ describe("handleTranscribeJob", () => {
 
   it("rejects an empty transcript", async () => {
     mockTranscribeUrl.mockResolvedValueOnce(deepgramResponse("   "));
-    await expect(handleTranscribeJob(audioInput)).rejects.toThrow(
-      "Transcription produced no text",
-    );
+    await expect(
+      handleTranscribeJob(audioInput, firstDelivery, "audio"),
+    ).rejects.toThrow("Transcription produced no text");
     expect(mockSaveCompletedTranscript).not.toHaveBeenCalled();
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
 
   it("marks the job failed and rethrows when transcription fails", async () => {
     mockTranscribeUrl.mockRejectedValueOnce(new Error("transcription failed"));
-    await expect(handleTranscribeJob(audioInput)).rejects.toThrow(
-      "transcription failed",
-    );
+    await expect(
+      handleTranscribeJob(audioInput, firstDelivery, "audio"),
+    ).rejects.toThrow("transcription failed");
     expect(mockUpdate).toHaveBeenCalledTimes(2); // claim + fail
     expect(mockSendEvent).not.toHaveBeenCalled();
   });
