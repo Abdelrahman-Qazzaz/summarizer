@@ -6,7 +6,7 @@ import { startSocketServer } from "./src/sockets/socketManager";
 import { mq } from "../shared/message-queue/messageQueue";
 import { data } from "../shared/data";
 import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
-import { logger } from "../shared/logger";
+import { logger, messageOf } from "../shared/logger";
 import { onShutdown } from "../shared/shutdown";
 
 import { serve } from "@hono/node-server";
@@ -23,34 +23,34 @@ const log = logger.child({ component: "api-queue" });
 const server = serve({ fetch: app.fetch, port });
 export const io = startSocketServer(server);
 
-const cancelConsumers = await Promise.all([
-  mq.consume(mq.queues.TRANSCRIBE_DONE, ({ audioUploadId, userId }) => {
+await mq.consume(
+  mq.queues.TRANSCRIBE_DONE,
+  ({ audioUploadId, userId }) => {
     io.to(userId).emit("jobUpdated", { audioUploadId });
-  }),
-  // youtube-fetcher couldn't download/upload the audio: mark the job failed and
-  // notify the user. The row was created by POST /upload/youtube.
-  mq.consume(
-    mq.queues.YT_FETCH_FAILED,
-    async ({ audioUploadId, userId, error }) => {
-      await data.jobs.failAudioJobById(
+  },
+  { attempts: 1 },
+);
+// youtube-fetcher couldn't download/upload the audio: mark the job failed and
+// notify the user. The row was created by POST /upload/youtube.
+await mq.consume(
+  mq.queues.YT_FETCH_FAILED,
+  async ({ audioUploadId, userId, error }) => {
+    await data.jobs.failAudioJobById(
+      audioUploadId,
+      error ?? "Failed to fetch YouTube audio",
+    );
+    try {
+      await cleanupTerminalCaptionUpload(audioUploadId);
+    } catch (cleanupError) {
+      log.warn("Failed to clean up caption upload", {
         audioUploadId,
-        error ?? "Failed to fetch YouTube audio",
-      );
-      try {
-        await cleanupTerminalCaptionUpload(audioUploadId);
-      } catch (cleanupError) {
-        log.warn("Failed to clean up caption upload", {
-          audioUploadId,
-          error:
-            cleanupError instanceof Error
-              ? cleanupError.message
-              : String(cleanupError),
-        });
-      }
-      io.to(userId).emit("jobUpdated", { audioUploadId });
-    },
-  ),
-]);
+        error: messageOf(cleanupError),
+      });
+    }
+    io.to(userId).emit("jobUpdated", { audioUploadId });
+  },
+  { attempts: 2 },
+);
 
 /**
  * Stop taking work, then let go of the connections.
@@ -62,7 +62,7 @@ const cancelConsumers = await Promise.all([
  * locking it.
  */
 onShutdown(async () => {
-  await Promise.all(cancelConsumers.map((cancel) => cancel()));
+  await mq.stopConsuming();
   // io owns its HTTP server, so closing it closes both.
   // The second close is a belt-and-braces no-op and must not reject on
   // "server is not running".
