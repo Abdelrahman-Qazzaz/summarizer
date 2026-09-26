@@ -46,7 +46,9 @@ export function storage() {
 /**
  * Everything that differs between kinds of stored object. Only images and
  * audio are uploaded by clients and signed for reading, so only they carry the
- * rules for that; text is written by the youtube-fetcher and only read back.
+ * rules for that. Text is caption tracks the youtube-fetcher used to store
+ * here; nothing writes it any more, and it stays a kind only so the sweeper can
+ * remove what is left.
  */
 export const KINDS = {
   image: {

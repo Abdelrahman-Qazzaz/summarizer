@@ -31,13 +31,13 @@ starting half-alive.
 
 Defined in `shared/message-queue/queues.ts`:
 
-| Queue                | Producer → Consumer    | Payload                                                                   |
-| -------------------- | ---------------------- | ------------------------------------------------------------------------- |
-| `transcribe`         | api / fetcher → worker | `{ audioUploadId }`                                                       |
-| `caption_transcript` | fetcher → worker       | `{ audioUploadId }`                                                       |
-| `transcribe_done`    | worker → api           | `{ audioUploadId, userId }`                                               |
-| `yt_fetch`           | api → youtube-fetcher  | `{ audioUploadId, captionUploadId, url, userId, useCaptionsIfAvailable }` |
-| `yt_fetch_failed`    | youtube-fetcher → api  | `{ audioUploadId, userId, error? }`                                       |
+| Queue                | Producer → Consumer    | Payload                                                  |
+| -------------------- | ---------------------- | -------------------------------------------------------- |
+| `transcribe`         | api / fetcher → worker | `{ audioUploadId }`                                      |
+| `caption_transcript` | fetcher → worker       | `{ audioUploadId, transcript }`                          |
+| `transcribe_done`    | worker → api           | `{ audioUploadId, userId }`                              |
+| `yt_fetch`           | api → youtube-fetcher  | `{ audioUploadId, url, userId, useCaptionsIfAvailable }` |
+| `yt_fetch_failed`    | youtube-fetcher → api  | `{ audioUploadId, userId, error? }`                      |
 
 The channel uses `prefetch(1)` **per consumer**, so a single worker process
 handles at most one transcribe job at a time.
@@ -75,11 +75,11 @@ reconnects in-process; the platform's restart policy brings it back.
 ```
 
 A YouTube upload takes the same path one step earlier: the API publishes
-`yt_fetch`. When captions are preferred, the API reserves and persists a
-temporary `captionUploadId`. The Python fetcher tries captions first and skips
-the audio download when it finds them. Otherwise it stores audio under the
-job's `audioUploadId` and publishes `transcribe`. The worker deletes a temporary
-caption object and clears its ID after finishing.
+`yt_fetch`. When captions are preferred, the Python fetcher tries them first:
+if the video has a caption track, it skips the audio download and publishes
+`caption_transcript` with the caption text in the message, which the worker
+stores as the transcript. Otherwise it stores audio under the job's
+`audioUploadId` and publishes `transcribe`.
 
 Completed transcripts are immutable. The API has no rerun route, and a source
 linked to a message or reserved for a response cannot be deleted. Trying another

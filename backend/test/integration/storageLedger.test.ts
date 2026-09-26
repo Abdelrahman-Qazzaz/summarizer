@@ -210,7 +210,6 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
           jobs.createAudioJob(
             {
               audioUploadId: audio.uploadId as never,
-              captionUploadId: null,
               userId,
               source: "audio",
               fileName: "a.webm",
@@ -256,7 +255,6 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
           jobs.createAudioJob(
             {
               audioUploadId: audio.uploadId as never,
-              captionUploadId: null,
               userId,
               // The job row requires a source.
               source: null as never,
@@ -427,11 +425,10 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       return uploadId;
     }
 
-    async function addJob(captionUploadId: string | null) {
+    async function addJob() {
       const audioUploadId = randomUUID();
       await jobs.createAudioJob({
         audioUploadId: audioUploadId as never,
-        captionUploadId: captionUploadId as never,
         userId,
         source: "youtube",
         fileName: "yt",
@@ -441,9 +438,6 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       });
       await storageLedger.recordConfirmedObjects(userId, [
         { kind: "audio", uploadId: audioUploadId },
-        ...(captionUploadId
-          ? [{ kind: "text" as const, uploadId: captionUploadId }]
-          : []),
       ]);
       await db
         .update(AudioTranscriptionJobs)
@@ -490,7 +484,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
     ])(
       "reports whether a %s youtube fetch could still write",
       async (status, fetchMayStillWrite) => {
-        const audioUploadId = await addJob(randomUUID());
+        const audioUploadId = await addJob();
         await db
           .update(AudioTranscriptionJobs)
           .set({ status: status as "queued" })
@@ -509,7 +503,6 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       const audioUploadId = randomUUID();
       await jobs.createAudioJob({
         audioUploadId: audioUploadId as never,
-        captionUploadId: null,
         userId,
         source: "audio",
         fileName: "clip.webm",
@@ -526,50 +519,19 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       });
     });
 
-    it("marks a deleted job's audio and caption text", async () => {
-      const captionUploadId = randomUUID();
-      const audioUploadId = await addJob(captionUploadId);
+    it("marks a deleted job's audio", async () => {
+      const audioUploadId = await addJob();
 
-      expect(await jobs.deleteAudioJob(userId, audioUploadId)).toMatchObject({
-        captionUploadId,
-      });
-      expect(await statusOf(audioUploadId)).toBe("deleted");
-      expect(await statusOf(captionUploadId)).toBe("deleted");
-    });
-
-    it("marks only the audio of a job without caption text", async () => {
-      const audioUploadId = await addJob(null);
-
-      expect(await jobs.deleteAudioJob(userId, audioUploadId)).toMatchObject({
-        captionUploadId: null,
-      });
+      expect(await jobs.deleteAudioJob(userId, audioUploadId)).not.toBeNull();
       expect(await statusOf(audioUploadId)).toBe("deleted");
     });
 
     it("marks nothing for a job that isn't the caller's", async () => {
-      const captionUploadId = randomUUID();
-      const audioUploadId = await addJob(captionUploadId);
+      const audioUploadId = await addJob();
 
       expect(
         await jobs.deleteAudioJob("someone-else", audioUploadId),
       ).toBeNull();
-      expect(await statusOf(audioUploadId)).toBe("confirmed");
-      expect(await statusOf(captionUploadId)).toBe("confirmed");
-    });
-
-    it("marks caption text when a job lets go of it, once", async () => {
-      const captionUploadId = randomUUID();
-      const audioUploadId = await addJob(captionUploadId);
-      const clear = () =>
-        jobs.clearCaptionUploadId(
-          audioUploadId,
-          captionUploadId as never,
-          userId,
-        );
-
-      expect(await clear()).toBe(true);
-      expect(await clear()).toBe(false);
-      expect(await statusOf(captionUploadId)).toBe("deleted");
       expect(await statusOf(audioUploadId)).toBe("confirmed");
     });
 
@@ -607,9 +569,8 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
   });
 
   describe("createYoutubeAudioJob", () => {
-    const youtubeJob = (captionUploadId: string | null) => ({
+    const youtubeJob = () => ({
       audioUploadId: randomUUID() as never,
-      captionUploadId: captionUploadId as never,
       userId,
       source: "youtube",
       youtubeSourceUrl: "https://youtu.be/x",
@@ -619,24 +580,19 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       transcriptModelId: "nova-3",
     });
 
-    it("records the job's audio and reserved caption text as referenced", async () => {
-      const captionUploadId = randomUUID();
-      const job = youtubeJob(captionUploadId);
+    it("records the job's audio as referenced", async () => {
+      const job = youtubeJob();
 
       await jobs.createYoutubeAudioJob(job);
 
-      expect(await ledger()).toEqual(
-        expect.arrayContaining([
-          { uploadId: job.audioUploadId, kind: "audio", status: "confirmed" },
-          { uploadId: captionUploadId, kind: "text", status: "confirmed" },
-        ]),
-      );
-      expect(await ledger()).toHaveLength(2);
+      expect(await ledger()).toEqual([
+        { uploadId: job.audioUploadId, kind: "audio", status: "confirmed" },
+      ]);
       expect(await db.select().from(AudioTranscriptionJobs)).toHaveLength(1);
     });
 
     it("records nothing when the job can't be created", async () => {
-      const job = { ...youtubeJob(null), userId: "no-such-user" };
+      const job = { ...youtubeJob(), userId: "no-such-user" };
 
       await expect(jobs.createYoutubeAudioJob(job)).rejects.toThrow();
 

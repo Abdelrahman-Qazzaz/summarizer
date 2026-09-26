@@ -449,7 +449,6 @@ describe("POST /upload/audio/confirm", () => {
     expect(mockValues).toHaveBeenCalledWith(
       expect.objectContaining({
         audioUploadId: UPLOAD_ID,
-        captionUploadId: null,
         source: "video",
       }),
     );
@@ -577,7 +576,6 @@ describe("POST /upload/youtube", () => {
     // The row persists the origin URL (for history + future transcript caching).
     expect(mockValues).toHaveBeenCalledWith(
       expect.objectContaining({
-        captionUploadId: null,
         source: "youtube",
         YT_sourceUrl: YT_URL,
       }),
@@ -592,7 +590,6 @@ describe("POST /upload/youtube", () => {
     );
     expect(mockSendEvent).toHaveBeenCalledWith("yt_fetch", {
       audioUploadId: body.audioUploadId,
-      captionUploadId: null,
       url: YT_URL,
       userId: "user_01",
       useCaptionsIfAvailable: false,
@@ -637,23 +634,15 @@ describe("POST /upload/youtube", () => {
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { audioUploadId: string };
-    const insertedJob = mockValues.mock.calls
-      .map(([values]) => values as { captionUploadId?: string })
-      .find((values) => "captionUploadId" in values) as {
-      captionUploadId: string;
-    };
-    expect(insertedJob.captionUploadId).toEqual(expect.any(String));
+    // The captions come back in the fetcher's message, so nothing is
+    // reserved for them here.
     expect(ledger.recordConfirmedObjects).toHaveBeenCalledWith(
       "user_01",
-      [
-        { kind: "audio", uploadId: body.audioUploadId },
-        { kind: "text", uploadId: insertedJob.captionUploadId },
-      ],
+      [{ kind: "audio", uploadId: body.audioUploadId }],
       expect.anything(),
     );
     expect(mockSendEvent).toHaveBeenCalledWith("yt_fetch", {
       audioUploadId: body.audioUploadId,
-      captionUploadId: insertedJob.captionUploadId,
       url: YT_URL,
       userId: "user_01",
       useCaptionsIfAvailable: true,

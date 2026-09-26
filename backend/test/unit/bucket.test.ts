@@ -52,18 +52,6 @@ describe("delete", () => {
   });
 });
 
-describe("getText", () => {
-  it("reads from texts/", async () => {
-    storage.download.mockResolvedValue({
-      data: new Blob(["caption text"]),
-      error: null,
-    });
-
-    expect(await bucket.getText(USER, "t1")).toBe("caption text");
-    expect(storage.download).toHaveBeenCalledWith("user_01/texts/t1");
-  });
-});
-
 /** A token shaped like the one Supabase puts in an upload URL. */
 function uploadToken(claims: object) {
   const part = (value: object) =>

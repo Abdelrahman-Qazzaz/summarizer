@@ -1,15 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  and,
-  desc,
-  eq,
-  ilike,
-  inArray,
-  isNotNull,
-  lt,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { Attachments, AudioTranscriptionJobs, db, type Executor } from "../db";
 import type { jobStatusEnum } from "../db";
@@ -35,7 +25,6 @@ async function findAudioJob(userId: string, audioUploadId: string) {
   const [row] = await db
     .select({
       audioUploadId: AudioTranscriptionJobs.audioUploadId,
-      captionUploadId: AudioTranscriptionJobs.captionUploadId,
       fileName: Attachments.fileName,
       source: AudioTranscriptionJobs.source,
       youtubeSourceUrl: AudioTranscriptionJobs.YT_sourceUrl,
@@ -159,7 +148,6 @@ async function findUserJobsPage(
 async function createAudioJob(
   job: {
     audioUploadId: UploadId;
-    captionUploadId: UploadId | null;
     userId: string;
     source: AudioJobRow["source"];
     fileName: string;
@@ -172,7 +160,6 @@ async function createAudioJob(
 ) {
   const {
     audioUploadId,
-    captionUploadId,
     userId,
     source,
     fileName,
@@ -196,7 +183,6 @@ async function createAudioJob(
     );
     await tx.insert(AudioTranscriptionJobs).values({
       audioUploadId,
-      captionUploadId,
       source,
       transcriptModelId,
       ...(youtubeSourceUrl !== undefined
@@ -207,11 +193,11 @@ async function createAudioJob(
 }
 
 /**
- * A YouTube job, and the objects the fetcher will write for it recorded as
- * referenced — audio, and the caption text when one is reserved — in the
- * same transaction. They're recorded now rather than when they land, so an
- * object the fetcher writes is never unrecorded; recording one that never
- * arrives costs nothing, since deleting a missing object is a no-op.
+ * A YouTube job, and the audio the fetcher may write for it recorded as
+ * referenced, in the same transaction. It's recorded now rather than when it
+ * lands, so audio the fetcher writes is never unrecorded; recording audio that
+ * never arrives (the video had captions) costs nothing, since deleting a
+ * missing object is a no-op.
  */
 async function createYoutubeAudioJob(
   job: Parameters<typeof createAudioJob>[0],
@@ -220,12 +206,7 @@ async function createYoutubeAudioJob(
     await createAudioJob(job, tx);
     await storageLedger.recordConfirmedObjects(
       job.userId,
-      [
-        { kind: "audio", uploadId: job.audioUploadId },
-        ...(job.captionUploadId
-          ? [{ kind: "text" as const, uploadId: job.captionUploadId }]
-          : []),
-      ],
+      [{ kind: "audio", uploadId: job.audioUploadId }],
       tx,
     );
   });
@@ -233,16 +214,14 @@ async function createYoutubeAudioJob(
 
 /**
  * Deletes a job's audio attachment, and with it the job, unless it's linked to
- * a message or reserved for a response. Marks the audio, and the job's
- * caption text if it still has one, as deleted in the same transaction.
- * Returns null when nothing was deleted, and otherwise says whether its fetch
- * could still write the objects the caller is about to remove.
+ * a message or reserved for a response. Marks the audio as deleted in the same
+ * transaction. Returns null when nothing was deleted, and otherwise says
+ * whether its fetch could still write the audio the caller is about to remove.
  */
 async function deleteAudioJob(userId: string, audioUploadId: string) {
   return db.transaction(async (tx) => {
     const [job] = await tx
       .select({
-        captionUploadId: AudioTranscriptionJobs.captionUploadId,
         source: AudioTranscriptionJobs.source,
         status: AudioTranscriptionJobs.status,
       })
@@ -256,14 +235,6 @@ async function deleteAudioJob(userId: string, audioUploadId: string) {
       );
     if (!deletedAudioUploadId) return null;
 
-    const captionUploadId = job?.captionUploadId ?? null;
-    if (captionUploadId) {
-      await storageLedger.markDeleted(
-        userId,
-        [{ kind: "text", uploadId: captionUploadId }],
-        tx,
-      );
-    }
     // A youtube fetch runs in another process that nothing here can stop, so
     // until the job reaches a terminal status its objects may still land.
     const fetchMayStillWrite =
@@ -271,7 +242,7 @@ async function deleteAudioJob(userId: string, audioUploadId: string) {
       job.status !== "completed" &&
       job.status !== "failed";
 
-    return { captionUploadId, fetchMayStillWrite };
+    return { fetchMayStillWrite };
   });
 }
 
@@ -293,65 +264,6 @@ async function failAudioJobById(audioUploadId: string, error: string) {
         inArray(AudioTranscriptionJobs.status, ["queued", "processing"]),
       ),
     );
-}
-
-async function findTerminalCaptionUpload(
-  audioUploadId: string,
-  userId?: string,
-) {
-  const [row] = await db
-    .select({
-      audioUploadId: AudioTranscriptionJobs.audioUploadId,
-      captionUploadId: AudioTranscriptionJobs.captionUploadId,
-      userId: Attachments.userId,
-    })
-    .from(AudioTranscriptionJobs)
-    .innerJoin(
-      Attachments,
-      eq(Attachments.attachmentId, AudioTranscriptionJobs.audioUploadId),
-    )
-    .where(
-      and(
-        eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
-        userId ? eq(Attachments.userId, userId) : undefined,
-        isNotNull(AudioTranscriptionJobs.captionUploadId),
-        inArray(AudioTranscriptionJobs.status, ["completed", "failed"]),
-      ),
-    )
-    .limit(1);
-
-  return row ?? null;
-}
-
-/**
- * Clears a job's caption id and marks its text deleted, in one transaction.
- * False when the job no longer points at that caption.
- */
-async function clearCaptionUploadId(
-  audioUploadId: string,
-  captionUploadId: UploadId,
-  userId: string,
-) {
-  return db.transaction(async (tx) => {
-    const [cleared] = await tx
-      .update(AudioTranscriptionJobs)
-      .set({ captionUploadId: null })
-      .where(
-        and(
-          eq(AudioTranscriptionJobs.audioUploadId, audioUploadId),
-          eq(AudioTranscriptionJobs.captionUploadId, captionUploadId),
-        ),
-      )
-      .returning({ audioUploadId: AudioTranscriptionJobs.audioUploadId });
-    if (!cleared) return false;
-
-    await storageLedger.markDeleted(
-      userId,
-      [{ kind: "text", uploadId: captionUploadId }],
-      tx,
-    );
-    return true;
-  });
 }
 
 /* ------------------------------------------------------------ worker writes */
@@ -462,8 +374,6 @@ export const jobs = {
   createYoutubeAudioJob,
   deleteAudioJob,
   failAudioJobById,
-  findTerminalCaptionUpload,
-  clearCaptionUploadId,
   claimAudioJob,
   completeAudioJob,
   unclaimAndResetAudioJob,

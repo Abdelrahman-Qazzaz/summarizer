@@ -94,16 +94,11 @@ export async function handleDeleteTranscribeJob(c: Context) {
 
   // Deleting an unfinished youtube job doesn't stop its fetch: the fetcher is
   // another process taking work off a queue. Removing the objects now would
-  // drop their ledger records before the fetch writes them, leaving files
-  // nothing knows about. Their records stay marked deleted instead, and the
+  // drop its ledger record before the fetch writes the audio, leaving a file
+  // nothing knows about. The record stays marked deleted instead, and the
   // sweep removes whatever landed once the fetch is long over.
   if (!deleted.fetchMayStillWrite) {
-    await deleteObjects(userId, [
-      { kind: "audio", uploadId: audioUploadId },
-      ...(deleted.captionUploadId
-        ? [{ kind: "text" as const, uploadId: deleted.captionUploadId }]
-        : []),
-    ]);
+    await deleteObjects(userId, [{ kind: "audio", uploadId: audioUploadId }]);
   }
   return c.json({ message: "Job Deleted" }, 200);
 }

@@ -21,7 +21,6 @@ export type QueuePayloads = {
 
   [QUEUES.YT_FETCH]: {
     audioUploadId: UploadId;
-    captionUploadId: UploadId | null;
     userId: string;
     url: string;
     useCaptionsIfAvailable: boolean;
@@ -35,5 +34,7 @@ export type QueuePayloads = {
 
   [QUEUES.CAPTION_TRANSCRIPT]: {
     audioUploadId: UploadId;
+    /** The video's captions, used as the transcript instead of its audio. */
+    transcript: string;
   };
 };

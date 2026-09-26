@@ -115,16 +115,6 @@ async function inspectUploadedObject(userId: string, object: UploadableObject) {
   return { ok: true, sizeBytes, contentType } as const;
 }
 
-/** Stored text, such as the caption track the youtube-fetcher saves in place of audio. */
-async function getText(userId: string, uploadId: string) {
-  const { data, error } = await storage().download(
-    objectPath(userId, { kind: "text", uploadId }),
-  );
-
-  if (error) throw error;
-  return data.text();
-}
-
 /**
  * Removes one owner's objects, of any mix of kinds, in a single request.
  * No-ops on an empty list.
@@ -145,6 +135,5 @@ export const bucket = {
   createUploadUrl,
   verifyUploadUrlLifetime,
   inspectUploadedObject,
-  getText,
   delete: deleteObjects,
 };

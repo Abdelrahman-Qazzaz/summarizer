@@ -5,8 +5,6 @@ import { startSocketServer } from "./src/sockets/socketManager";
 
 import { mq } from "../shared/message-queue/messageQueue";
 import { data } from "../shared/data";
-import { cleanupTerminalCaptionUpload } from "../shared/captionUploads";
-import { logger, messageOf } from "../shared/logger";
 import { onShutdown } from "../shared/shutdown";
 
 import { serve } from "@hono/node-server";
@@ -16,7 +14,6 @@ import { createApp } from "./app";
 // down (incl. RabbitMQ, which it also connects), the API never starts.
 const app = await createApp();
 export const port = env.PORT;
-const log = logger.child({ component: "api-queue" });
 
 // Listening starts here; the socket server then uses this same server,
 // so the API and the websocket share one port.
@@ -39,14 +36,6 @@ await mq.consume(
       audioUploadId,
       error ?? "Failed to fetch YouTube audio",
     );
-    try {
-      await cleanupTerminalCaptionUpload(audioUploadId);
-    } catch (cleanupError) {
-      log.warn("Failed to clean up caption upload", {
-        audioUploadId,
-        error: messageOf(cleanupError),
-      });
-    }
     io.to(userId).emit("jobUpdated", { audioUploadId });
   },
   { attempts: 2 },
