@@ -20,11 +20,11 @@ Check: log `remote.address` in production. If it is one address, key on the clie
 
 The session cookie is an HS256 JWT valid for 7 days. `verifySessionToken` checks only the signature, `exp` and claim types. Logout clears the cookie and revokes the WorkOS session, but nothing on the API side checks that session again. A copied cookie keeps working for the rest of its 7 days after logout, both for HTTP and for the Socket.IO handshake.
 
-### 3. Upload size is checked only after the bytes land
+### 3. An image can be 50 MB until the confirm step rejects it
 
-`backend/shared/storage/bucket.ts:31`, `backend/shared/sweeper.ts:12`
+`backend/shared/storage/schema.ts:89`, `backend/shared/sweeper.ts:12`
 
-`createSignedUploadUrl` puts no size or type limit on the URL. The 100 MB audio and 10 MB image caps are checked at confirm time, and a rejected object stays in the bucket until the sweep, which runs hourly for anything older than 3 hours. With 30 upload URLs per user per 15 minutes, one account can keep a lot of storage filled. The only hard cap is a bucket-level `file_size_limit` in Supabase, and nothing in the repo sets or checks one.
+The bucket refuses any upload over 50 MB, or of a type other than `image/*` or `audio/*` (`BUCKET_SETTINGS`, applied with `npm run storage:push`). One bucket holds both kinds, so its size limit is audio's: an image can land at up to 50 MB when images stop at 10 MB. The confirm step rejects it, and it stays in the bucket until the sweep, which runs hourly for anything older than 3 hours. With 30 upload URLs per user per 15 minutes, one account could keep about 1.5 GB parked there. Separate image and audio buckets would give each kind its own limit.
 
 ### 4. The number of transcript attachments is still unlimited
 
@@ -34,14 +34,8 @@ The session cookie is an HS256 JWT valid for 7 days. `verifySessionToken` checks
 
 ## Low
 
-### 5. Worker failures record no reason
+### 5. A lost `transcribe_done` leaves the user's screen out of date
 
-`backend/shared/data/jobs.data.ts:357`
+`backend/transcribe-worker/transcribeJob.ts:158`
 
-`failAudioJob` sets `status` but not `error`, so a Deepgram failure or an empty transcript shows up as `failed` with `error: null`. The API-side failure paths do write a message.
-
-### 6. A lost `transcribe_done` publish is logged as a failed transcription
-
-`backend/transcribe-worker/transcribeJob.ts:112`
-
-If the publish after `saveCompletedTranscript` throws, the catch logs "Transcription job failed", even though the job is already `completed`. `settleFailedJob` then finds no claim to hand back, or no job to fail, so the message is acked and nothing retries the publish. The user's socket never hears about the job, so the UI waits until something refetches it.
+If publishing `transcribe_done` fails after the transcript is saved, `announceCompletion` logs it and the message is done; nothing publishes it again. While its socket stays connected, the client only refetches a job when it receives that event, so the source keeps showing "transcribing" until a reload or a socket reconnect. A lost publish without the connection dropping (which exits the process) should be rare.
