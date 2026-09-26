@@ -108,6 +108,7 @@ export async function handleTranscribeJob(
   { attempt, lastAttempt, redelivered }: DeliveryMetadata,
 ) {
   let claimToken: string | null = null;
+  let userId: string;
 
   try {
     const job = await data.jobs.claimAudioJob(audioUploadId, redelivered);
@@ -131,11 +132,7 @@ export async function handleTranscribeJob(
       log.debug("Discarded result from superseded claim", { audioUploadId });
       return;
     }
-
-    await mq.publish(mq.queues.TRANSCRIBE_DONE, {
-      audioUploadId,
-      userId: job.userId,
-    });
+    userId = job.userId;
   } catch (error) {
     log.error("Transcription job failed", error, {
       audioUploadId,
@@ -145,5 +142,25 @@ export async function handleTranscribeJob(
     // Nothing claimed: the consumer tries again or dead-letters it.
     if (!claimToken) throw error;
     await settleFailedJob(audioUploadId, claimToken, lastAttempt, error);
+    return;
+  }
+
+  await announceCompletion(audioUploadId, userId);
+}
+
+/**
+ * Tells the API the job is done, so the user's screen updates. The transcript
+ * is already saved, so a failed publish isn't a failed transcription, and
+ * trying the message again wouldn't announce it: there's no queued job left
+ * to claim. The client sees the result the next time it refetches the job,
+ * on a reload or when its socket reconnects.
+ */
+async function announceCompletion(audioUploadId: UploadId, userId: string) {
+  try {
+    await mq.publish(mq.queues.TRANSCRIBE_DONE, { audioUploadId, userId });
+  } catch (error) {
+    log.error("Could not announce a completed transcription", error, {
+      audioUploadId,
+    });
   }
 }

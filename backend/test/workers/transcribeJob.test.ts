@@ -200,16 +200,18 @@ describe("handleTranscribeJob", () => {
       expect(mocks.failAudioJob).not.toHaveBeenCalled();
     });
 
+    // The transcript is saved by then: a lost announcement is not a failed job.
     it("finishes the message when only the completion notice fails", async () => {
       mocks.transcribeAI.mockResolvedValue("a transcript");
       mocks.saveCompletedTranscript.mockResolvedValue(true);
       mocks.publish.mockRejectedValue(new Error("broker unavailable"));
-      // The job is completed, so there is no processing claim to hand back.
-      mocks.unclaimAndResetAudioJob.mockResolvedValue(false);
 
       await expect(
         handleTranscribeJob(audioInput, firstAttempt),
       ).resolves.toBeUndefined();
+
+      expect(mocks.unclaimAndResetAudioJob).not.toHaveBeenCalled();
+      expect(mocks.failAudioJob).not.toHaveBeenCalled();
     });
   });
 
