@@ -160,6 +160,7 @@ import {
   MAX_CONTEXT_CHARS,
   MAX_RESPONSE_TOKENS,
 } from "../../api/src/controllers/messages.controller";
+import { MAX_TRANSCRIPTS } from "../../api/src/schema/messages.schema";
 import { authedHeaders, sessionCookieHeader } from "../helpers/session";
 import { type CreateMessageHistory } from "../../shared/data/messages.data";
 
@@ -1195,6 +1196,43 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(turns[0].content.indexOf(firstTranscript)).toBeLessThan(
         turns[0].content.indexOf(secondTranscript),
       );
+    });
+
+    // A guard on the request, before the claim or any context read: the
+    // budget below is what limits the prompt.
+    it("rejects more transcripts than one message may carry, before any database work", async () => {
+      const audioUploadIds = Array.from(
+        { length: MAX_TRANSCRIPTS + 1 },
+        (_, i) => `b50e8400-e29b-41d4-a716-${String(i).padStart(12, "0")}`,
+      );
+
+      const response = await postMessage({
+        messageContent: "Compare all of these",
+        chosenModelId: modelId,
+        audioUploadIds,
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        message: `Too many transcripts: at most ${MAX_TRANSCRIPTS} per message`,
+      });
+      expect(mockClaimConversationTurn).not.toHaveBeenCalled();
+      expect(mockClaimAttachments).not.toHaveBeenCalled();
+      expect(mockFindTranscripts).not.toHaveBeenCalled();
+    });
+
+    it("counts a repeated transcript once", async () => {
+      mockFindTranscripts.mockResolvedValueOnce(
+        new Map([[firstAudioUploadId, firstTranscript]]),
+      );
+
+      const response = await postMessage({
+        messageContent: "Summarise this",
+        chosenModelId: modelId,
+        audioUploadIds: Array(MAX_TRANSCRIPTS + 1).fill(firstAudioUploadId),
+      });
+
+      expect(response.status).toBe(200);
     });
 
     it("returns 404 when any requested transcript is unavailable", async () => {

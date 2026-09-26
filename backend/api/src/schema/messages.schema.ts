@@ -14,6 +14,17 @@ const MAX_MESSAGE_LENGTH = 50_000;
  */
 const MAX_ATTACHMENTS = 6;
 
+/**
+ * Transcripts one turn may carry. This is not what limits the prompt: the
+ * context budget (MAX_CONTEXT_CHARS in messages.controller.ts) does that, once
+ * the database has reported each transcript's size. This only bounds the
+ * request, so its ids never reach the claim and context queries by the
+ * thousand. Transcripts run about 900 characters a minute, so about ten
+ * 10-minute YouTube videos fill the budget: past this many, the budget would
+ * turn the message away anyway.
+ */
+export const MAX_TRANSCRIPTS = 10;
+
 const messageAttachmentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("image"),
@@ -79,6 +90,16 @@ export const messageCreateBodySchema = z
       ctx.addIssue({
         code: "custom",
         message: "Too many attachments",
+        path: [CTX_KEYS.messageAttachmentsIds],
+      });
+    }
+    const transcriptCount = data[CTX_KEYS.messageAttachmentsIds].filter(
+      (attachment) => attachment.type === "transcript",
+    ).length;
+    if (transcriptCount > MAX_TRANSCRIPTS) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Too many transcripts: at most ${MAX_TRANSCRIPTS} per message`,
         path: [CTX_KEYS.messageAttachmentsIds],
       });
     }

@@ -26,15 +26,9 @@ The session cookie is an HS256 JWT valid for 7 days. `verifySessionToken` checks
 
 The bucket refuses any upload over 50 MB, or of a type other than `image/*` or `audio/*` (`BUCKET_SETTINGS`, applied with `npm run storage:push`). One bucket holds both kinds, so its size limit is audio's: an image can land at up to 50 MB when images stop at 10 MB. The confirm step rejects it, and it stays in the bucket until the sweep, which runs hourly for anything older than 3 hours. With 30 upload URLs per user per 15 minutes, one account could keep about 1.5 GB parked there. Separate image and audio buckets would give each kind its own limit.
 
-### 4. The number of transcript attachments is still unlimited
-
-`backend/api/src/schema/messages.schema.ts:75`
-
-`MAX_ATTACHMENTS` counts only images, as PROBLEMS2.md already notes. Thousands of `audioUploadId`s go into `claimAttachments`, `findTranscripts` and `findCreateMessageHistory` as `IN` lists before the character budget rejects the request.
-
 ## Low
 
-### 5. A lost `transcribe_done` leaves the user's screen out of date
+### 4. A lost `transcribe_done` leaves the user's screen out of date
 
 `backend/transcribe-worker/transcribeJob.ts:158`
 
