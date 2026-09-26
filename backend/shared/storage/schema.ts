@@ -11,7 +11,10 @@ export const BUCKET = "Audio & Text files";
 
 // Cap on audio files entering the bucket. Served on /contract so the
 // youtube-fetcher enforces the same limit the API applies to direct uploads.
-export const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100MB
+// Supabase's Free plan caps every upload in the project at 50 MB, and a
+// bucket's limit can't exceed the project's, so this can only go higher with
+// the plan.
+export const MAX_AUDIO_BYTES = 50 * 1024 * 1024; // 50MB
 
 // Cap on images entering the bucket (chat attachments / standalone uploads).
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB

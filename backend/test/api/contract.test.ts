@@ -26,6 +26,6 @@ describe("GET /contract", () => {
     expect(body.queues.TRANSCRIBE).toBe("transcribe");
     expect(body.queues.YT_FETCH_FAILED).toBe("yt_fetch_failed");
     expect(body.bucket).toBe("Audio & Text files");
-    expect(body.maxAudioBytes).toBe(100 * 1024 * 1024);
+    expect(body.maxAudioBytes).toBe(50 * 1024 * 1024);
   });
 });

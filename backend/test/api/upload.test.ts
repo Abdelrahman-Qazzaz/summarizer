@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 
 const {
   mockInsert,
@@ -95,7 +95,7 @@ vi.mock("../../shared/storage/bucket", () => ({
   // Literals (not the top-level consts): vi.mock factories can run during
   // import evaluation, before this module's own bindings initialize.
   BUCKET: "Audio & Text files",
-  MAX_AUDIO_BYTES: 100 * 1024 * 1024,
+  MAX_AUDIO_BYTES: 50 * 1024 * 1024,
   bucket: {
     createUploadUrl: mockCreateUploadUrl,
     inspectUploadedObject: mockInspectUploadedObject,
