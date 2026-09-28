@@ -77,7 +77,7 @@ async function findConversationMessages(conversationId: string) {
 }
 
 /** One history turn with everything the prompt is rebuilt from, grouped. */
-export type ContextMessage = {
+type ContextMessage = {
   id: string;
   role: MessageRow["role"];
   content: string;
