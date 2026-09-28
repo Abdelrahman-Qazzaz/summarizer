@@ -10,15 +10,9 @@ Scope: `backend/` on `main`. Written at 029e2de and rechecked at 371e3d2, which 
 
 The session cookie is an HS256 JWT valid for 7 days. `verifySessionToken` checks only the signature, `exp` and claim types. Logout clears the cookie and revokes the WorkOS session, but nothing on the API side checks that session again. A copied cookie keeps working for the rest of its 7 days after logout, both for HTTP and for the Socket.IO handshake.
 
-### 2. An image can be 50 MB until the confirm step rejects it
-
-`backend/shared/storage/schema.ts:89`, `backend/shared/sweeper.ts:12`
-
-The bucket refuses any upload over 50 MB, or of a type other than `image/*` or `audio/*` (`BUCKET_SETTINGS`, applied with `npm run storage:push`). One bucket holds both kinds, so its size limit is audio's: an image can land at up to 50 MB when images stop at 10 MB. The confirm step rejects it, and it stays in the bucket until the sweep, which runs hourly for anything older than 3 hours. With 30 upload URLs per user per 15 minutes, one account could keep about 1.5 GB parked there. Separate image and audio buckets would give each kind its own limit.
-
 ## Low
 
-### 3. A lost `transcribe_done` leaves the user's screen out of date
+### 2. A lost `transcribe_done` leaves the user's screen out of date
 
 `backend/transcribe-worker/transcribeJob.ts:158`
 
