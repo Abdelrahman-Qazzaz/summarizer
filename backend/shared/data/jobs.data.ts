@@ -49,9 +49,9 @@ async function findAudioJob(userId: string, audioUploadId: string) {
 
 /* --------------------------------------------------------- API job listing */
 
-export type JobCursor = { createdAt: string; audioUploadId: string };
+type JobCursor = { createdAt: string; audioUploadId: string };
 
-export type JobSummary = {
+type JobSummary = {
   audioUploadId: string;
   fileName: string;
   source: string;
