@@ -1,6 +1,6 @@
 import { logger, messageOf } from "./logger";
 
-export type ServiceCheck = {
+type ServiceCheck = {
   /** Human-readable service name, shown in the startup error. */
   name: string;
   /** Lightweight call that rejects if the service is unavailable. */
