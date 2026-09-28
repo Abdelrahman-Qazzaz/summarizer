@@ -33,6 +33,7 @@ function getClientIpKey(c: Context): string {
   const realIp = c.req.header("x-real-ip")?.trim();
   if (realIp && isIP(realIp)) return realIp;
 
+  // TODO: log warning that we're not using x-real-ip.
   try {
     const address = getConnInfo(c).remote.address;
     if (address) return address;
