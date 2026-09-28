@@ -14,7 +14,7 @@ const preparationContext = new AsyncLocalStorage<PreparationContext>();
  * Durations are reported to two decimals throughout: finer than that is noise
  * from the timer itself, and coarser loses the sub-millisecond steps.
  */
-export const roundMs = (ms: number) => Math.round(ms * 100) / 100;
+const roundMs = (ms: number) => Math.round(ms * 100) / 100;
 
 /** Milliseconds since a `performance.now()` mark, rounded the same way. */
 export const msSince = (mark: number) => roundMs(performance.now() - mark);
