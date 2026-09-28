@@ -39,6 +39,8 @@ export async function createApp() {
   // them. Public + unauthenticated on purpose — none of this is sensitive and
   // service callers have no session. Secrets (Supabase key, MQ_URL) are NOT
   // served here — those belong in a secrets manager / platform env.
+
+  // TODO: rename bucket key to audioBucket.
   app.get("/contract", (c) =>
     c.json({
       queues: QUEUES,
