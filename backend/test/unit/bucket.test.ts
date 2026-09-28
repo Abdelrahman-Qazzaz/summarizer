@@ -18,9 +18,9 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 import { bucket, MAX_AUDIO_BYTES } from "../../shared/storage/bucket";
-import { BUCKET, BUCKET_SETTINGS } from "../../shared/storage/schema";
+import { AUDIO_BUCKET, BUCKET_SETTINGS } from "../../shared/storage/schema";
 
-const SETTINGS = BUCKET_SETTINGS[BUCKET];
+const SETTINGS = BUCKET_SETTINGS[AUDIO_BUCKET];
 
 const USER = "user_01";
 const IMAGE_CAP = 10 * 1024 * 1024;
@@ -235,12 +235,12 @@ describe("bucket settings", () => {
       error: null,
     });
 
-    expect(await bucket.readSettings(BUCKET)).toEqual({
+    expect(await bucket.readSettings(AUDIO_BUCKET)).toEqual({
       public: false,
       fileSizeLimit: 1024,
       allowedMimeTypes: null,
     });
-    expect(buckets.getBucket).toHaveBeenCalledWith(BUCKET);
+    expect(buckets.getBucket).toHaveBeenCalledWith(AUDIO_BUCKET);
   });
 
   it("reads a missing bucket as null", async () => {
@@ -249,7 +249,7 @@ describe("bucket settings", () => {
       error: { status: 400, statusCode: "404", message: "Bucket not found" },
     });
 
-    expect(await bucket.readSettings(BUCKET)).toBeNull();
+    expect(await bucket.readSettings(AUDIO_BUCKET)).toBeNull();
   });
 
   it("throws any other read failure", async () => {
@@ -258,18 +258,20 @@ describe("bucket settings", () => {
       error: new Error("unreachable"),
     });
 
-    await expect(bucket.readSettings(BUCKET)).rejects.toThrow("unreachable");
+    await expect(bucket.readSettings(AUDIO_BUCKET)).rejects.toThrow(
+      "unreachable",
+    );
   });
 
   it("creates and updates the bucket with the settings given", async () => {
     buckets.createBucket.mockResolvedValue({ data: {}, error: null });
     buckets.updateBucket.mockResolvedValue({ data: {}, error: null });
 
-    await bucket.create(BUCKET, SETTINGS);
-    await bucket.updateSettings(BUCKET, SETTINGS);
+    await bucket.create(AUDIO_BUCKET, SETTINGS);
+    await bucket.updateSettings(AUDIO_BUCKET, SETTINGS);
 
-    expect(buckets.createBucket).toHaveBeenCalledWith(BUCKET, SETTINGS);
-    expect(buckets.updateBucket).toHaveBeenCalledWith(BUCKET, SETTINGS);
+    expect(buckets.createBucket).toHaveBeenCalledWith(AUDIO_BUCKET, SETTINGS);
+    expect(buckets.updateBucket).toHaveBeenCalledWith(AUDIO_BUCKET, SETTINGS);
   });
 
   it("throws when Supabase refuses a change", async () => {
@@ -278,7 +280,7 @@ describe("bucket settings", () => {
       error: new Error("forbidden"),
     });
 
-    await expect(bucket.updateSettings(BUCKET, SETTINGS)).rejects.toThrow(
+    await expect(bucket.updateSettings(AUDIO_BUCKET, SETTINGS)).rejects.toThrow(
       "forbidden",
     );
   });

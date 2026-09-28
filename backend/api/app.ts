@@ -9,7 +9,7 @@ import { authRouter } from "./src/routes/auth.router";
 import { modelsRouter } from "./src/routes/models.router";
 import { conversationsRouter } from "./src/routes/conversations.router";
 
-import { BUCKET, MAX_AUDIO_BYTES } from "../shared/storage/bucket";
+import { AUDIO_BUCKET, MAX_AUDIO_BYTES } from "../shared/storage/bucket";
 import { verifyApiServices } from "./startup";
 import { QUEUES } from "../shared/message-queue/messageQueue";
 
@@ -42,7 +42,7 @@ export async function createApp() {
   app.get("/contract", (c) =>
     c.json({
       queues: QUEUES,
-      bucket: BUCKET,
+      bucket: AUDIO_BUCKET,
       maxAudioBytes: MAX_AUDIO_BYTES,
     }),
   );

@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  BUCKET,
+  AUDIO_BUCKET,
   BUCKET_SETTINGS,
   MAX_AUDIO_BYTES,
   matchesBucketSettings,
 } from "../../shared/storage/schema";
 
-const SETTINGS = BUCKET_SETTINGS[BUCKET];
+const SETTINGS = BUCKET_SETTINGS[AUDIO_BUCKET];
 
 describe("BUCKET_SETTINGS", () => {
   it("declares every bucket KINDS stores objects in", () => {
-    expect(Object.keys(BUCKET_SETTINGS)).toEqual([BUCKET]);
+    expect(Object.keys(BUCKET_SETTINGS)).toEqual([AUDIO_BUCKET]);
   });
 
   it("caps every upload at the largest kind's limit", () => {

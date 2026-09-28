@@ -94,7 +94,7 @@ vi.mock("../../shared/data/storageLedger.data", () => ({
 vi.mock("../../shared/storage/bucket", () => ({
   // Literals (not the top-level consts): vi.mock factories can run during
   // import evaluation, before this module's own bindings initialize.
-  BUCKET: "Audio & Text files",
+  AUDIO_BUCKET: "Audio & Text files",
   MAX_AUDIO_BYTES: 50 * 1024 * 1024,
   bucket: {
     createUploadUrl: mockCreateUploadUrl,

@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from "node:util";
 // Exported so the API can publish it on /contract — the youtube-fetcher reads
 // the bucket name from there instead of hardcoding it. Non-sensitive config,
 // same as the queue names.
-export const BUCKET = "Audio & Text files";
+export const AUDIO_BUCKET = "Audio & Text files";
 
 // Cap on audio files entering the bucket. Served on /contract so the
 // youtube-fetcher enforces the same limit the API applies to direct uploads.
@@ -44,7 +44,7 @@ const AUDIO_URL_TTL_SECONDS = 60 * 60;
  */
 export const KINDS = {
   image: {
-    bucket: BUCKET,
+    bucket: AUDIO_BUCKET,
     folder: "images",
     upload: {
       contentTypePrefix: "image/",
@@ -53,7 +53,7 @@ export const KINDS = {
     },
   },
   audio: {
-    bucket: BUCKET,
+    bucket: AUDIO_BUCKET,
     folder: "audios",
     upload: {
       contentTypePrefix: "audio/",
@@ -61,7 +61,7 @@ export const KINDS = {
       readUrlTtlSeconds: AUDIO_URL_TTL_SECONDS,
     },
   },
-  text: { bucket: BUCKET, folder: "texts" },
+  text: { bucket: AUDIO_BUCKET, folder: "texts" },
 } as const;
 
 export type StoredObjectKind = keyof typeof KINDS;

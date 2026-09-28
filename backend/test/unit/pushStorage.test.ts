@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BUCKET, BUCKET_SETTINGS } from "../../shared/storage/schema";
+import { AUDIO_BUCKET, BUCKET_SETTINGS } from "../../shared/storage/schema";
 
-const SETTINGS = BUCKET_SETTINGS[BUCKET];
+const SETTINGS = BUCKET_SETTINGS[AUDIO_BUCKET];
 
 const bucket = vi.hoisted(() => ({
   readSettings: vi.fn(),
@@ -28,7 +28,7 @@ describe("storage:push", () => {
 
     await runScript();
 
-    expect(bucket.create).toHaveBeenCalledWith(BUCKET, SETTINGS);
+    expect(bucket.create).toHaveBeenCalledWith(AUDIO_BUCKET, SETTINGS);
     expect(bucket.updateSettings).not.toHaveBeenCalled();
   });
 
@@ -41,7 +41,7 @@ describe("storage:push", () => {
 
     await runScript();
 
-    expect(bucket.updateSettings).toHaveBeenCalledWith(BUCKET, SETTINGS);
+    expect(bucket.updateSettings).toHaveBeenCalledWith(AUDIO_BUCKET, SETTINGS);
     expect(bucket.create).not.toHaveBeenCalled();
   });
 

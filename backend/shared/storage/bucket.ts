@@ -10,7 +10,7 @@ import {
   type StoredObject,
 } from "./schema";
 
-export { BUCKET, MAX_AUDIO_BYTES } from "./schema";
+export { AUDIO_BUCKET, MAX_AUDIO_BYTES } from "./schema";
 export type { StoredObject, UploadableObject } from "./schema";
 
 /** Startup health check: fails if Supabase is unreachable or a bucket is missing. */
