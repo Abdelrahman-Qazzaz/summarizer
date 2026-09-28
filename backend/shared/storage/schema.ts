@@ -76,25 +76,40 @@ export type UploadableKind = {
 export type StoredObject = { kind: StoredObjectKind; uploadId: string };
 export type UploadableObject = { kind: UploadableKind; uploadId: string };
 
-const uploadRules = Object.values(KINDS).flatMap((kind) =>
-  "upload" in kind ? [kind.upload] : [],
-);
+/** A bucket's settings as the storage schema declares them. */
+export type BucketSettings = {
+  public: boolean;
+  fileSizeLimit: number;
+  allowedMimeTypes: string[];
+};
 
 /**
- * What the bucket itself enforces on every upload, before anything reaches
- * the confirm step, including uploads through a signed URL, which can't carry
- * limits of their own. Derived from KINDS so the two can't disagree:
- * the largest kind's size limit, and each uploadable kind's content types.
+ * What a bucket itself enforces on every upload, before anything reaches the
+ * confirm step, including uploads through a signed URL, which can't carry
+ * limits of their own. Derived from the kinds KINDS stores in it, so the two
+ * can't disagree: the largest of their size limits, and their content types.
  * One bucket holds every kind, so an image is only held to the audio limit
  * here; the confirm step still applies each kind's own.
- *
- * `npm run storage:push` makes the live bucket match this.
  */
-export const BUCKET_SETTINGS = {
-  public: false,
-  fileSizeLimit: Math.max(...uploadRules.map((rule) => rule.maxBytes)),
-  allowedMimeTypes: uploadRules.map((rule) => `${rule.contentTypePrefix}*`),
-};
+function settingsFor(bucket: string): BucketSettings {
+  const rules = Object.values(KINDS).flatMap((kind) =>
+    kind.bucket === bucket && "upload" in kind ? [kind.upload] : [],
+  );
+  return {
+    public: false,
+    fileSizeLimit: Math.max(...rules.map((rule) => rule.maxBytes)),
+    allowedMimeTypes: rules.map((rule) => `${rule.contentTypePrefix}*`),
+  };
+}
+
+/**
+ * Every bucket KINDS stores objects in, by name, with its settings.
+ * `npm run storage:push` makes the live buckets match these.
+ */
+export const BUCKET_SETTINGS: Record<string, BucketSettings> =
+  Object.fromEntries(
+    Object.values(KINDS).map((kind) => [kind.bucket, settingsFor(kind.bucket)]),
+  );
 
 /** A bucket's settings as Supabase reports them; an unenforced limit is null. */
 export type LiveBucketSettings = {
@@ -102,9 +117,6 @@ export type LiveBucketSettings = {
   fileSizeLimit: number | null;
   allowedMimeTypes: string[] | null;
 };
-
-/** A bucket's settings as the storage schema declares them. */
-export type BucketSettings = typeof BUCKET_SETTINGS;
 
 /**
  * Whether a bucket's live settings are the declared ones. The order its

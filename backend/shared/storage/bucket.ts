@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { objectPath, storage, supabase } from "./core";
 import {
-  BUCKET,
   BUCKET_SETTINGS,
   KINDS,
   matchesBucketSettings,
@@ -14,10 +13,14 @@ import {
 export { BUCKET, MAX_AUDIO_BYTES } from "./schema";
 export type { StoredObject, UploadableObject } from "./schema";
 
-/** Startup health check: fails if Supabase is unreachable or the bucket is missing. */
+/** Startup health check: fails if Supabase is unreachable or a bucket is missing. */
 async function ping(): Promise<void> {
-  const { error } = await supabase.storage.getBucket(BUCKET);
-  if (error) throw error;
+  await Promise.all(
+    Object.keys(BUCKET_SETTINGS).map(async (name) => {
+      const { error } = await supabase.storage.getBucket(name);
+      if (error) throw error;
+    }),
+  );
 }
 
 /**
@@ -38,22 +41,30 @@ async function readSettings(name: string): Promise<LiveBucketSettings | null> {
 }
 
 /**
- * Startup check: fails when the live bucket isn't what the storage schema
+ * Startup check: fails when a live bucket isn't what the storage schema
  * declares, for instance because a limit was loosened in the dashboard. The
  * confirm step would still reject what the bucket lets through, but only
  * after the bytes had landed. `npm run storage:push` puts the settings back.
  */
 async function verifySettings(): Promise<void> {
-  const live = await readSettings(BUCKET);
+  await Promise.all(
+    Object.entries(BUCKET_SETTINGS).map(([name, declared]) =>
+      verifyBucketSettings(name, declared),
+    ),
+  );
+}
+
+async function verifyBucketSettings(name: string, declared: BucketSettings) {
+  const live = await readSettings(name);
   if (!live) {
     throw new Error(
-      `Bucket "${BUCKET}" does not exist; run npm run storage:push`,
+      `Bucket "${name}" does not exist; run npm run storage:push`,
     );
   }
-  if (!matchesBucketSettings(live, BUCKET_SETTINGS)) {
+  if (!matchesBucketSettings(live, declared)) {
     throw new Error(
-      `Bucket "${BUCKET}" is ${JSON.stringify(live)}, not the storage schema's ` +
-        `${JSON.stringify(BUCKET_SETTINGS)}; run npm run storage:push`,
+      `Bucket "${name}" is ${JSON.stringify(live)}, not the storage schema's ` +
+        `${JSON.stringify(declared)}; run npm run storage:push`,
     );
   }
 }

@@ -20,6 +20,8 @@ vi.mock("@supabase/supabase-js", () => ({
 import { bucket, MAX_AUDIO_BYTES } from "../../shared/storage/bucket";
 import { BUCKET, BUCKET_SETTINGS } from "../../shared/storage/schema";
 
+const SETTINGS = BUCKET_SETTINGS[BUCKET];
+
 const USER = "user_01";
 const IMAGE_CAP = 10 * 1024 * 1024;
 const HOUR = 60 * 60;
@@ -263,11 +265,11 @@ describe("bucket settings", () => {
     buckets.createBucket.mockResolvedValue({ data: {}, error: null });
     buckets.updateBucket.mockResolvedValue({ data: {}, error: null });
 
-    await bucket.create(BUCKET, BUCKET_SETTINGS);
-    await bucket.updateSettings(BUCKET, BUCKET_SETTINGS);
+    await bucket.create(BUCKET, SETTINGS);
+    await bucket.updateSettings(BUCKET, SETTINGS);
 
-    expect(buckets.createBucket).toHaveBeenCalledWith(BUCKET, BUCKET_SETTINGS);
-    expect(buckets.updateBucket).toHaveBeenCalledWith(BUCKET, BUCKET_SETTINGS);
+    expect(buckets.createBucket).toHaveBeenCalledWith(BUCKET, SETTINGS);
+    expect(buckets.updateBucket).toHaveBeenCalledWith(BUCKET, SETTINGS);
   });
 
   it("throws when Supabase refuses a change", async () => {
@@ -276,9 +278,9 @@ describe("bucket settings", () => {
       error: new Error("forbidden"),
     });
 
-    await expect(
-      bucket.updateSettings(BUCKET, BUCKET_SETTINGS),
-    ).rejects.toThrow("forbidden");
+    await expect(bucket.updateSettings(BUCKET, SETTINGS)).rejects.toThrow(
+      "forbidden",
+    );
   });
 });
 
@@ -289,8 +291,8 @@ describe("verifySettings", () => {
   it("passes when the live bucket is what the schema declares", async () => {
     live({
       public: false,
-      file_size_limit: BUCKET_SETTINGS.fileSizeLimit,
-      allowed_mime_types: [...BUCKET_SETTINGS.allowedMimeTypes].reverse(),
+      file_size_limit: SETTINGS.fileSizeLimit,
+      allowed_mime_types: [...SETTINGS.allowedMimeTypes].reverse(),
     });
 
     await expect(bucket.verifySettings()).resolves.toBeUndefined();
@@ -299,7 +301,7 @@ describe("verifySettings", () => {
   it("fails when a limit was loosened, and says how to fix it", async () => {
     live({
       public: false,
-      allowed_mime_types: BUCKET_SETTINGS.allowedMimeTypes,
+      allowed_mime_types: SETTINGS.allowedMimeTypes,
     });
 
     await expect(bucket.verifySettings()).rejects.toThrow(
