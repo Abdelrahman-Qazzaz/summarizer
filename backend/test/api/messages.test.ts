@@ -1221,6 +1221,22 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect(mockFindTranscripts).not.toHaveBeenCalled();
     });
 
+    it("says how many images a message may carry", async () => {
+      const response = await postMessage({
+        messageContent: "Compare these",
+        chosenModelId: modelId,
+        imageUploadIds: Array.from(
+          { length: 7 },
+          (_, i) => `c50e8400-e29b-41d4-a716-${String(i).padStart(12, "0")}`,
+        ),
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        message: "Too many images: at most 6 per message",
+      });
+    });
+
     it("counts a repeated transcript once", async () => {
       mockFindTranscripts.mockResolvedValueOnce(
         new Map([[firstAudioUploadId, firstTranscript]]),

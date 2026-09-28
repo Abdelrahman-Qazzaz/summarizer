@@ -89,7 +89,7 @@ export const messageCreateBodySchema = z
     if (imageCount > MAX_IMAGES) {
       ctx.addIssue({
         code: "custom",
-        message: "Too many attachments",
+        message: `Too many images: at most ${MAX_IMAGES} per message`,
         path: [CTX_KEYS.messageAttachmentsIds],
       });
     }
