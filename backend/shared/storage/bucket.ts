@@ -5,6 +5,7 @@ import {
   BUCKET_SETTINGS,
   KINDS,
   matchesBucketSettings,
+  type BucketSettings,
   type LiveBucketSettings,
   type UploadableObject,
   type StoredObject,
@@ -18,8 +19,6 @@ async function ping(): Promise<void> {
   const { error } = await supabase.storage.getBucket(BUCKET);
   if (error) throw error;
 }
-
-type BucketSettings = typeof BUCKET_SETTINGS;
 
 /**
  * The bucket's settings as Supabase has them, or null when there's no bucket.
@@ -51,7 +50,7 @@ async function verifySettings(): Promise<void> {
       `Bucket "${BUCKET}" does not exist; run npm run storage:push`,
     );
   }
-  if (!matchesBucketSettings(live)) {
+  if (!matchesBucketSettings(live, BUCKET_SETTINGS)) {
     throw new Error(
       `Bucket "${BUCKET}" is ${JSON.stringify(live)}, not the storage schema's ` +
         `${JSON.stringify(BUCKET_SETTINGS)}; run npm run storage:push`,

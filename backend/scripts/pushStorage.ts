@@ -15,7 +15,7 @@ const live = await bucket.readSettings();
 if (!live) {
   await bucket.create(BUCKET_SETTINGS);
   console.log(`Created bucket "${BUCKET}":`, BUCKET_SETTINGS);
-} else if (matchesBucketSettings(live)) {
+} else if (matchesBucketSettings(live, BUCKET_SETTINGS)) {
   console.log(`Bucket "${BUCKET}" already matches the schema`);
   console.log("  compared:", BUCKET_SETTINGS);
 } else {

@@ -22,10 +22,13 @@ describe("BUCKET_SETTINGS", () => {
 describe("matchesBucketSettings", () => {
   it("matches the declared settings, whatever order the types are in", () => {
     expect(
-      matchesBucketSettings({
-        ...BUCKET_SETTINGS,
-        allowedMimeTypes: [...BUCKET_SETTINGS.allowedMimeTypes].reverse(),
-      }),
+      matchesBucketSettings(
+        {
+          ...BUCKET_SETTINGS,
+          allowedMimeTypes: [...BUCKET_SETTINGS.allowedMimeTypes].reverse(),
+        },
+        BUCKET_SETTINGS,
+      ),
     ).toBe(true);
   });
 
@@ -44,8 +47,8 @@ describe("matchesBucketSettings", () => {
     ],
     ["a public bucket", { public: true }],
   ])("doesn't match %s", (_, change) => {
-    expect(matchesBucketSettings({ ...BUCKET_SETTINGS, ...change })).toBe(
-      false,
-    );
+    expect(
+      matchesBucketSettings({ ...BUCKET_SETTINGS, ...change }, BUCKET_SETTINGS),
+    ).toBe(false);
   });
 });

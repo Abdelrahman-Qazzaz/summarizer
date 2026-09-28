@@ -103,19 +103,25 @@ export type LiveBucketSettings = {
   allowedMimeTypes: string[] | null;
 };
 
+/** A bucket's settings as the storage schema declares them. */
+export type BucketSettings = typeof BUCKET_SETTINGS;
+
 /**
- * Whether a bucket's live settings are BUCKET_SETTINGS. The order its content
- * types are listed in doesn't matter.
+ * Whether a bucket's live settings are the declared ones. The order its
+ * content types are listed in doesn't matter.
  */
-export function matchesBucketSettings(live: LiveBucketSettings) {
+export function matchesBucketSettings(
+  live: LiveBucketSettings,
+  declared: BucketSettings,
+) {
   const sorted = (types: readonly string[] | null) =>
     types ? [...types].sort() : null;
   return (
-    live.public === BUCKET_SETTINGS.public &&
-    live.fileSizeLimit === BUCKET_SETTINGS.fileSizeLimit &&
+    live.public === declared.public &&
+    live.fileSizeLimit === declared.fileSizeLimit &&
     isDeepStrictEqual(
       sorted(live.allowedMimeTypes),
-      sorted(BUCKET_SETTINGS.allowedMimeTypes),
+      sorted(declared.allowedMimeTypes),
     )
   );
 }
