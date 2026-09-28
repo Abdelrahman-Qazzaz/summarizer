@@ -13,12 +13,12 @@ import { createApp } from "./app";
 // createApp() runs the fail-fast preflight: if any third-party dependency is
 // down (incl. RabbitMQ, which it also connects), the API never starts.
 const app = await createApp();
-export const port = env.PORT;
+const port = env.PORT;
 
 // Listening starts here; the socket server then uses this same server,
 // so the API and the websocket share one port.
 const server = serve({ fetch: app.fetch, port });
-export const io = startSocketServer(server);
+const io = startSocketServer(server);
 
 await mq.consume(
   mq.queues.TRANSCRIBE_DONE,
