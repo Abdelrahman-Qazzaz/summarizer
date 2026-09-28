@@ -82,7 +82,7 @@ async function updateSettings(settings: BucketSettings): Promise<void> {
  * and inspectUploadedObject checks each kind's own limits at confirm.
  */
 async function createUploadUrl(userId: string, object: UploadableObject) {
-  const { data, error } = await storage().createSignedUploadUrl(
+  const { data, error } = await storage(object.kind).createSignedUploadUrl(
     objectPath(userId, object),
   );
 
@@ -103,8 +103,9 @@ async function createUploadUrl(userId: string, object: UploadableObject) {
  * Minting a URL creates no object, so the probe leaves nothing behind.
  */
 async function verifyUploadUrlLifetime(maxLifetimeMs: number): Promise<void> {
-  const { data, error } = await storage().createSignedUploadUrl(
-    objectPath("preflight", { kind: "image", uploadId: randomUUID() }),
+  const probe = { kind: "image", uploadId: randomUUID() } as const;
+  const { data, error } = await storage(probe.kind).createSignedUploadUrl(
+    objectPath("preflight", probe),
   );
   if (error) throw error;
 
@@ -147,7 +148,9 @@ function isNotFound(error: unknown) {
  */
 async function inspectUploadedObject(userId: string, object: UploadableObject) {
   const { contentTypePrefix, maxBytes } = KINDS[object.kind].upload;
-  const { data, error } = await storage().info(objectPath(userId, object));
+  const { data, error } = await storage(object.kind).info(
+    objectPath(userId, object),
+  );
 
   if (error) {
     if (isNotFound(error)) return { ok: false, reason: "missing" } as const;
@@ -169,13 +172,20 @@ async function inspectUploadedObject(userId: string, object: UploadableObject) {
 }
 
 /**
- * Removes one owner's objects, of any mix of kinds, in a single request.
- * No-ops on an empty list.
+ * Removes one owner's objects, of any mix of kinds: one request per bucket
+ * they're stored in, all in parallel. No-ops on an empty list.
  */
 async function deleteObjects(userId: string, objects: readonly StoredObject[]) {
-  if (objects.length === 0) return [];
+  const byBucket = Map.groupBy(objects, (object) => KINDS[object.kind].bucket);
+  const removed = await Promise.all(
+    [...byBucket.values()].map((group) => removeGroup(userId, group)),
+  );
+  return removed.flat();
+}
 
-  const { data, error } = await storage().remove(
+/** Removes objects that are all stored in the same bucket, in one request. */
+async function removeGroup(userId: string, objects: readonly StoredObject[]) {
+  const { data, error } = await storage(objects[0].kind).remove(
     objects.map((object) => objectPath(userId, object)),
   );
 

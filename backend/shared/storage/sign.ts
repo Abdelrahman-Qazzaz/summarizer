@@ -14,7 +14,7 @@ export { IMAGE_URL_TTL_SECONDS };
  * (which the transcription provider fetches for itself).
  */
 async function createSignedUrl(userId: string, object: UploadableObject) {
-  const { data, error } = await storage().createSignedUrl(
+  const { data, error } = await storage(object.kind).createSignedUrl(
     objectPath(userId, object),
     KINDS[object.kind].upload.readUrlTtlSeconds,
   );
@@ -43,7 +43,7 @@ async function signGroup(
   entries: readonly (UploadableObject & { userId: string })[],
 ) {
   const paths = entries.map((entry) => objectPath(entry.userId, entry));
-  const { data, error } = await storage().createSignedUrls(
+  const { data, error } = await storage(kind).createSignedUrls(
     paths,
     KINDS[kind].upload.readUrlTtlSeconds,
   );

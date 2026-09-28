@@ -4,18 +4,19 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { getBaseEnv } from "../env";
-import { BUCKET, KINDS, type StoredObject } from "./schema";
+import { KINDS, type StoredObject, type StoredObjectKind } from "./schema";
 
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = getBaseEnv();
 export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 /**
  * The single handle every object operation (upload/download/remove/sign) goes
- * through, so `supabase.storage` and the bucket name are named in one place.
- * (ping uses the bucket-management API `getBucket`, not this handle.)
+ * through, so `supabase.storage` is named in one place and each kind's bucket
+ * comes from KINDS. (ping uses the bucket-management API `getBucket`, not this
+ * handle.)
  */
-export function storage() {
-  return supabase.storage.from(BUCKET);
+export function storage(kind: StoredObjectKind) {
+  return supabase.storage.from(KINDS[kind].bucket);
 }
 
 /**

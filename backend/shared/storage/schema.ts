@@ -36,14 +36,15 @@ export const IMAGE_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 const AUDIO_URL_TTL_SECONDS = 60 * 60;
 
 /**
- * Everything that differs between kinds of stored object. Only images and
- * audio are uploaded by clients and signed for reading, so only they carry the
- * rules for that. Text is caption tracks the youtube-fetcher used to store
- * here; nothing writes it any more, and it stays a kind only so the sweeper can
- * remove what is left.
+ * Everything that differs between kinds of stored object: the bucket it's
+ * stored in and its folder there. Only images and audio are uploaded by
+ * clients and signed for reading, so only they carry the rules for that. Text
+ * is caption tracks the youtube-fetcher used to store here; nothing writes it
+ * any more, and it stays a kind only so the sweeper can remove what is left.
  */
 export const KINDS = {
   image: {
+    bucket: BUCKET,
     folder: "images",
     upload: {
       contentTypePrefix: "image/",
@@ -52,6 +53,7 @@ export const KINDS = {
     },
   },
   audio: {
+    bucket: BUCKET,
     folder: "audios",
     upload: {
       contentTypePrefix: "audio/",
@@ -59,7 +61,7 @@ export const KINDS = {
       readUrlTtlSeconds: AUDIO_URL_TTL_SECONDS,
     },
   },
-  text: { folder: "texts" },
+  text: { bucket: BUCKET, folder: "texts" },
 } as const;
 
 export type StoredObjectKind = keyof typeof KINDS;
