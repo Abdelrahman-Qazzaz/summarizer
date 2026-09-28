@@ -1,7 +1,7 @@
 /**
- * What the bucket holds, declared in one place the way shared/db/schema.ts
- * declares the tables: the bucket's name, and for each kind of object its
- * folder and, for the kinds clients upload, their limits.
+ * What the buckets hold, declared in one place the way shared/db/schema.ts
+ * declares the tables: the buckets' names, and for each kind of object its
+ * bucket, its folder there and, for the kinds clients upload, their limits.
  */
 
 import { isDeepStrictEqual } from "node:util";
@@ -10,6 +10,10 @@ import { isDeepStrictEqual } from "node:util";
 // the bucket name from there instead of hardcoding it. Non-sensitive config,
 // same as the queue names.
 export const AUDIO_BUCKET = "Audio & Text files";
+
+// Images have a bucket to themselves, so the bucket can hold them to the
+// image limit rather than the audio one.
+export const IMAGE_BUCKET = "Images";
 
 // Cap on audio files entering the bucket. Served on /contract so the
 // youtube-fetcher enforces the same limit the API applies to direct uploads.
@@ -44,7 +48,7 @@ const AUDIO_URL_TTL_SECONDS = 60 * 60;
  */
 export const KINDS = {
   image: {
-    bucket: AUDIO_BUCKET,
+    bucket: IMAGE_BUCKET,
     folder: "images",
     upload: {
       contentTypePrefix: "image/",
@@ -88,8 +92,8 @@ export type BucketSettings = {
  * confirm step, including uploads through a signed URL, which can't carry
  * limits of their own. Derived from the kinds KINDS stores in it, so the two
  * can't disagree: the largest of their size limits, and their content types.
- * One bucket holds every kind, so an image is only held to the audio limit
- * here; the confirm step still applies each kind's own.
+ * Each kind clients upload has a bucket of its own, so its bucket holds it to
+ * exactly its own limits; the confirm step checks them again.
  */
 function settingsFor(bucket: string): BucketSettings {
   const rules = Object.values(KINDS).flatMap((kind) =>

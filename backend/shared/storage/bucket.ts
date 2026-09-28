@@ -91,8 +91,8 @@ async function updateSettings(
  * the URL for a second object.
  *
  * The URL itself can't limit what lands: size and content type are the
- * client's to set. The bucket's own BUCKET_SETTINGS cap both for every kind,
- * and inspectUploadedObject checks each kind's own limits at confirm.
+ * client's to set. The kind's bucket caps both at the kind's own limits
+ * (BUCKET_SETTINGS), and inspectUploadedObject checks them again at confirm.
  */
 async function createUploadUrl(userId: string, object: UploadableObject) {
   const { data, error } = await storage(object.kind).createSignedUploadUrl(

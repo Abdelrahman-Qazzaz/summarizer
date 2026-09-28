@@ -2,29 +2,44 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIO_BUCKET,
   BUCKET_SETTINGS,
+  IMAGE_BUCKET,
+  KINDS,
   MAX_AUDIO_BYTES,
   matchesBucketSettings,
+  type BucketSettings,
 } from "../../shared/storage/schema";
-
-const SETTINGS = BUCKET_SETTINGS[AUDIO_BUCKET];
 
 describe("BUCKET_SETTINGS", () => {
   it("declares every bucket KINDS stores objects in", () => {
-    expect(Object.keys(BUCKET_SETTINGS)).toEqual([AUDIO_BUCKET]);
+    expect(Object.keys(BUCKET_SETTINGS).sort()).toEqual(
+      [AUDIO_BUCKET, IMAGE_BUCKET].sort(),
+    );
   });
 
-  it("caps every upload at the largest kind's limit", () => {
-    expect(SETTINGS.fileSizeLimit).toBe(MAX_AUDIO_BYTES);
+  // Each bucket holds one uploadable kind, so storage enforces that kind's
+  // own limits rather than the largest kind's.
+  it.each([
+    [IMAGE_BUCKET, KINDS.image.upload.maxBytes, ["image/*"]],
+    [AUDIO_BUCKET, MAX_AUDIO_BYTES, ["audio/*"]],
+  ])("holds %s to its kind's limits", (name, maxBytes, contentTypes) => {
+    expect(BUCKET_SETTINGS[name]).toMatchObject({
+      fileSizeLimit: maxBytes,
+      allowedMimeTypes: contentTypes,
+    });
   });
 
-  it("accepts only the content types of the kinds clients upload", () => {
-    expect(SETTINGS.allowedMimeTypes).toEqual(["image/*", "audio/*"]);
-  });
-
-  it("keeps the bucket private: every read goes through a signed URL", () => {
-    expect(SETTINGS.public).toBe(false);
+  it("keeps every bucket private: every read goes through a signed URL", () => {
+    for (const settings of Object.values(BUCKET_SETTINGS)) {
+      expect(settings.public).toBe(false);
+    }
   });
 });
+
+const SETTINGS: BucketSettings = {
+  public: false,
+  fileSizeLimit: 1024,
+  allowedMimeTypes: ["image/*", "audio/*"],
+};
 
 describe("matchesBucketSettings", () => {
   it("matches the declared settings, whatever order the types are in", () => {

@@ -13,12 +13,19 @@ const buckets = vi.hoisted(() => ({
   updateBucket: vi.fn(),
 }));
 
+/** Opens a bucket by name; every bucket shares the one `storage` mock. */
+const from = vi.hoisted(() => vi.fn());
+
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ storage: { from: () => storage, ...buckets } }),
+  createClient: () => ({ storage: { from, ...buckets } }),
 }));
 
 import { bucket, MAX_AUDIO_BYTES } from "../../shared/storage/bucket";
-import { AUDIO_BUCKET, BUCKET_SETTINGS } from "../../shared/storage/schema";
+import {
+  AUDIO_BUCKET,
+  BUCKET_SETTINGS,
+  IMAGE_BUCKET,
+} from "../../shared/storage/schema";
 
 const SETTINGS = BUCKET_SETTINGS[AUDIO_BUCKET];
 
@@ -31,21 +38,28 @@ const image = { kind: "image", uploadId: "i1" } as const;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  from.mockReturnValue(storage);
   storage.remove.mockResolvedValue({ data: [], error: null });
 });
 
 // Every key is <userId>/<folder>/<id>. youtube-fetcher/app/bucket.py builds the
 // same keys for audio and text, and the worker reads them back from here.
 describe("delete", () => {
-  it("removes a mix of kinds in one request", async () => {
+  it("removes a mix of kinds with one request per bucket", async () => {
+    const removed: Record<string, string[]> = {};
+    from.mockImplementation((name: string) => ({
+      remove: (paths: string[]) => {
+        removed[name] = paths;
+        return Promise.resolve({ data: [], error: null });
+      },
+    }));
+
     await bucket.delete(USER, [audio, { kind: "text", uploadId: "t1" }, image]);
 
-    expect(storage.remove).toHaveBeenCalledTimes(1);
-    expect(storage.remove).toHaveBeenCalledWith([
-      "user_01/audios/a1",
-      "user_01/texts/t1",
-      "user_01/images/i1",
-    ]);
+    expect(removed).toEqual({
+      [AUDIO_BUCKET]: ["user_01/audios/a1", "user_01/texts/t1"],
+      [IMAGE_BUCKET]: ["user_01/images/i1"],
+    });
   });
 
   it("makes no request for an empty list", async () => {
@@ -70,17 +84,21 @@ function uploadToken(claims: object) {
 
 describe("createUploadUrl", () => {
   it.each([
-    [audio, "user_01/audios/a1"],
-    [image, "user_01/images/i1"],
-  ])("binds the URL to the %o key", async (object, path) => {
-    storage.createSignedUploadUrl.mockResolvedValue({
-      data: { signedUrl: "https://upload", token: uploadToken({}) },
-      error: null,
-    });
+    [audio, AUDIO_BUCKET, "user_01/audios/a1"],
+    [image, IMAGE_BUCKET, "user_01/images/i1"],
+  ])(
+    "binds the URL to the %o key in its bucket",
+    async (object, name, path) => {
+      storage.createSignedUploadUrl.mockResolvedValue({
+        data: { signedUrl: "https://upload", token: uploadToken({}) },
+        error: null,
+      });
 
-    expect(await bucket.createUploadUrl(USER, object)).toBe("https://upload");
-    expect(storage.createSignedUploadUrl).toHaveBeenCalledWith(path);
-  });
+      expect(await bucket.createUploadUrl(USER, object)).toBe("https://upload");
+      expect(from).toHaveBeenCalledWith(name);
+      expect(storage.createSignedUploadUrl).toHaveBeenCalledWith(path);
+    },
+  );
 });
 
 describe("verifyUploadUrlLifetime", () => {
@@ -286,37 +304,64 @@ describe("bucket settings", () => {
   });
 });
 
-describe("verifySettings", () => {
-  const live = (settings: object) =>
-    buckets.getBucket.mockResolvedValue({ data: settings, error: null });
+describe("ping", () => {
+  it("fails when any bucket is missing", async () => {
+    buckets.getBucket.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === IMAGE_BUCKET
+          ? { data: null, error: new Error("Bucket not found") }
+          : { data: {}, error: null },
+      ),
+    );
 
-  it("passes when the live bucket is what the schema declares", async () => {
-    live({
-      public: false,
-      file_size_limit: SETTINGS.fileSizeLimit,
-      allowed_mime_types: [...SETTINGS.allowedMimeTypes].reverse(),
+    await expect(bucket.ping()).rejects.toThrow("Bucket not found");
+    expect(buckets.getBucket).toHaveBeenCalledWith(AUDIO_BUCKET);
+  });
+});
+
+describe("verifySettings", () => {
+  /** Each bucket live as the schema declares it, but for `changed`. */
+  const live = (changed: Record<string, object | null> = {}) =>
+    buckets.getBucket.mockImplementation((name: string) => {
+      if (changed[name] === null) {
+        return Promise.resolve({
+          data: null,
+          error: { status: 400, statusCode: "404", message: "Not found" },
+        });
+      }
+      const declared = BUCKET_SETTINGS[name];
+      return Promise.resolve({
+        data: {
+          public: declared.public,
+          file_size_limit: declared.fileSizeLimit,
+          allowed_mime_types: declared.allowedMimeTypes,
+          ...changed[name],
+        },
+        error: null,
+      });
     });
+
+  it("passes when every live bucket is what the schema declares", async () => {
+    live();
 
     await expect(bucket.verifySettings()).resolves.toBeUndefined();
+    expect(buckets.getBucket).toHaveBeenCalledWith(AUDIO_BUCKET);
+    expect(buckets.getBucket).toHaveBeenCalledWith(IMAGE_BUCKET);
   });
 
-  it("fails when a limit was loosened, and says how to fix it", async () => {
-    live({
-      public: false,
-      allowed_mime_types: SETTINGS.allowedMimeTypes,
-    });
+  it("fails when one bucket's limit was loosened, and says how to fix it", async () => {
+    live({ [IMAGE_BUCKET]: { file_size_limit: MAX_AUDIO_BYTES } });
 
     await expect(bucket.verifySettings()).rejects.toThrow(
-      /not the storage schema's .*; run npm run storage:push/,
+      /^Bucket "Images" is .*not the storage schema's .*; run npm run storage:push/,
     );
   });
 
-  it("fails when there is no bucket", async () => {
-    buckets.getBucket.mockResolvedValue({
-      data: null,
-      error: { status: 400, statusCode: "404", message: "Bucket not found" },
-    });
+  it("fails when a bucket is missing", async () => {
+    live({ [IMAGE_BUCKET]: null });
 
-    await expect(bucket.verifySettings()).rejects.toThrow("does not exist");
+    await expect(bucket.verifySettings()).rejects.toThrow(
+      'Bucket "Images" does not exist',
+    );
   });
 });

@@ -60,7 +60,7 @@ async function signGroup(
 
 /**
  * The only storage calls a data module may make: signing read URLs, which
- * changes nothing in the bucket.
+ * changes nothing in storage.
  */
 export const sign = {
   url: createSignedUrl,
