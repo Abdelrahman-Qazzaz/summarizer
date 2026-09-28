@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from "node:util";
 // Exported so the API can publish it on /contract — the youtube-fetcher reads
 // the bucket name from there instead of hardcoding it. Non-sensitive config,
 // same as the queue names.
-export const AUDIO_BUCKET = "Audio & Text files";
+export const AUDIO_BUCKET = "Audio";
 
 // Images have a bucket to themselves, so the bucket can hold them to the
 // image limit rather than the audio one.
