@@ -158,17 +158,17 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
 
     it("records objects that start out referenced", async () => {
       const audio = randomUUID();
-      const text = randomUUID();
+      const picture = randomUUID();
 
       await storageLedger.recordConfirmedObjects(userId, [
         { kind: "audio", uploadId: audio },
-        { kind: "text", uploadId: text },
+        { kind: "image", uploadId: picture },
       ]);
 
       expect(await ledger()).toEqual(
         expect.arrayContaining([
           { uploadId: audio, kind: "audio", status: "confirmed" },
-          { uploadId: text, kind: "text", status: "confirmed" },
+          { uploadId: picture, kind: "image", status: "confirmed" },
         ]),
       );
     });
@@ -664,7 +664,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
       ];
       const failing = {
         userId: "other-owner",
-        kind: "text" as const,
+        kind: "audio" as const,
         uploadId: randomUUID(),
       };
       await storageLedger.recordPendingUpload(stalePending);
@@ -673,10 +673,7 @@ describe.skipIf(!testState.databaseUrl)("storage ledger in PostgreSQL", () => {
         staleDeleted,
         staleConfirmed,
       ]);
-      await storageLedger.recordPendingUpload({ ...failing, kind: "image" });
-      await db.execute(
-        sql`update ${StorageLedger} set kind = 'text' where upload_id = ${failing.uploadId}`,
-      );
+      await storageLedger.recordPendingUpload(failing);
       await db.transaction((tx) =>
         storageLedger.markDeleted(userId, [staleDeleted], tx),
       );

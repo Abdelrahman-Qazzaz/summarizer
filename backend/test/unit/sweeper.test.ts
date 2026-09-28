@@ -58,14 +58,14 @@ describe("sweepUnusedObjects", () => {
     mockFindLedgerEntries.mockResolvedValue([
       { userId: "u1", kind: "image", uploadId: "i1" },
       { userId: "u2", kind: "audio", uploadId: "a1" },
-      { userId: "u1", kind: "text", uploadId: "t1" },
+      { userId: "u1", kind: "audio", uploadId: "a2" },
     ]);
 
     expect(await sweepUnusedObjects()).toBe(3);
     expect(mockDeleteObjects).toHaveBeenCalledTimes(2);
     expect(mockDeleteObjects).toHaveBeenCalledWith("u1", [
       { kind: "image", uploadId: "i1" },
-      { kind: "text", uploadId: "t1" },
+      { kind: "audio", uploadId: "a2" },
     ]);
     expect(mockDeleteObjects).toHaveBeenCalledWith("u2", [
       { kind: "audio", uploadId: "a1" },

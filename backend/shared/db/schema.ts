@@ -21,11 +21,10 @@ export const attachmentKindEnum = pgEnum("attachment_kind", [
   "image",
   "audio",
 ] as const);
-/** Everything the bucket stores, which is more than attachments: text too. */
+/** Everything the buckets store. */
 export const storedObjectKindEnum = pgEnum("stored_object_kind", [
   "image",
   "audio",
-  "text",
 ] as const);
 export const storageLedgerStatusEnum = pgEnum("storage_ledger_status", [
   "pending",

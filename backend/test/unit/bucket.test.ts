@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 
 // Every key is <userId>/<folder>/<id>. youtube-fetcher/app/bucket.py builds the
-// same keys for audio and text, and the worker reads them back from here.
+// same keys for audio, and the worker reads them back from here.
 describe("delete", () => {
   it("removes a mix of kinds with one request per bucket", async () => {
     const removed: Record<string, string[]> = {};
@@ -54,10 +54,14 @@ describe("delete", () => {
       },
     }));
 
-    await bucket.delete(USER, [audio, { kind: "text", uploadId: "t1" }, image]);
+    await bucket.delete(USER, [
+      audio,
+      image,
+      { kind: "audio", uploadId: "a2" },
+    ]);
 
     expect(removed).toEqual({
-      [AUDIO_BUCKET]: ["user_01/audios/a1", "user_01/texts/t1"],
+      [AUDIO_BUCKET]: ["user_01/audios/a1", "user_01/audios/a2"],
       [IMAGE_BUCKET]: ["user_01/images/i1"],
     });
   });
