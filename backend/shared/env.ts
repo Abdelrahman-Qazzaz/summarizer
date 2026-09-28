@@ -79,8 +79,8 @@ const drizzleEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
 });
 
-export type BaseEnv = z.infer<typeof baseEnvSchema>;
-export type ApiEnv = z.infer<typeof apiEnvSchema>;
+type BaseEnv = z.infer<typeof baseEnvSchema>;
+type ApiEnv = z.infer<typeof apiEnvSchema>;
 
 /** For `drizzle-kit` only — does not require MQ, WorkOS, etc. */
 export const drizzleEnv = parseEnv(drizzleEnvSchema, "drizzle");
