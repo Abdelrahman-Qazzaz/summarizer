@@ -47,7 +47,7 @@ export const MEDIA_ACCEPT =
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 
-/** Images one turn may carry — MAX_ATTACHMENTS in messages.schema.ts. */
+/** Images one turn may carry — MAX_IMAGES in messages.schema.ts. */
 export const MAX_IMAGES_PER_MESSAGE = 6;
 
 function fileExtension(name: string): string {

@@ -12,7 +12,7 @@ const MAX_MESSAGE_LENGTH = 50_000;
  * input, which is priced per image, so the cap is what keeps a single message
  * from being an unbounded bill.
  */
-const MAX_ATTACHMENTS = 6;
+const MAX_IMAGES = 6;
 
 /**
  * Transcripts one turn may carry. This is not what limits the prompt: the
@@ -86,7 +86,7 @@ export const messageCreateBodySchema = z
     const imageCount = data[CTX_KEYS.messageAttachmentsIds].filter(
       (attachment) => attachment.type === "image",
     ).length;
-    if (imageCount > MAX_ATTACHMENTS) {
+    if (imageCount > MAX_IMAGES) {
       ctx.addIssue({
         code: "custom",
         message: "Too many attachments",
