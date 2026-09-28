@@ -116,6 +116,37 @@ describe("rate limiting", () => {
     expect(mockGetAuthSessionFromCode).toHaveBeenCalledTimes(20);
   });
 
+  describe("keyed on the client IP Railway reports in X-Real-IP", () => {
+    const callback =
+      (headers: Record<string, string>) =>
+      (app: Awaited<ReturnType<typeof createApp>>) =>
+        app.request("http://localhost/auth/callback?code=test", { headers });
+
+    it("gives each client its own budget", async () => {
+      const app = await createApp();
+      const first = callback({ "X-Real-IP": "203.0.113.1" });
+      for (let i = 0; i < 20; i++) await first(app);
+
+      expect((await first(app)).status).toBe(429);
+      expect(
+        (await callback({ "X-Real-IP": "203.0.113.2" })(app)).status,
+      ).not.toBe(429);
+    });
+
+    // A duplicated header reaches Hono joined with ", ", and garbage is
+    // garbage: neither may become a key the client chose.
+    it("doesn't trust a value that isn't a single IP", async () => {
+      const app = await createApp();
+      for (let i = 0; i < 20; i++) {
+        await callback({ "X-Real-IP": `203.0.113.1, 198.51.100.${i}` })(app);
+      }
+
+      expect((await callback({ "X-Real-IP": "not-an-ip" })(app)).status).toBe(
+        429,
+      );
+    });
+  });
+
   it("returns 503 when the rate limit store is unavailable", async () => {
     setRateLimitStoreUnavailable(true);
     mockLimit.mockResolvedValueOnce([

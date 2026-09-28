@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import type { Context, MiddlewareHandler } from "hono";
 import { rateLimiter } from "hono-rate-limiter";
 import { getConnInfo } from "@hono/node-server/conninfo";
@@ -16,7 +17,22 @@ const rateLimitUnavailableMessage = {
   message: "Rate limiting is temporarily unavailable. Please try again later.",
 };
 
+/**
+ * The client's IP, as Railway's edge proxy reports it in X-Real-IP: the one
+ * client-IP header Railway documents, and one it doesn't let clients set.
+ * The socket's peer is Railway's proxy for every request, so keying on it
+ * would put every user in one bucket.
+ *
+ * With Railway's CDN in the path, X-Real-IP has been seen holding the CDN
+ * edge's address instead; that over-limits users sharing an edge, but never
+ * lets a client pick its own key. A value that isn't a single IP (a
+ * duplicated header arrives joined with ", ") isn't trusted. Without Railway
+ * in front, as in local development, the socket address is the client.
+ */
 function getClientIpKey(c: Context): string {
+  const realIp = c.req.header("x-real-ip")?.trim();
+  if (realIp && isIP(realIp)) return realIp;
+
   try {
     const address = getConnInfo(c).remote.address;
     if (address) return address;
