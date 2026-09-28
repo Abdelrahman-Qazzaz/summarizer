@@ -233,7 +233,7 @@ describe("bucket settings", () => {
       error: null,
     });
 
-    expect(await bucket.readSettings()).toEqual({
+    expect(await bucket.readSettings(BUCKET)).toEqual({
       public: false,
       fileSizeLimit: 1024,
       allowedMimeTypes: null,
@@ -247,7 +247,7 @@ describe("bucket settings", () => {
       error: { status: 400, statusCode: "404", message: "Bucket not found" },
     });
 
-    expect(await bucket.readSettings()).toBeNull();
+    expect(await bucket.readSettings(BUCKET)).toBeNull();
   });
 
   it("throws any other read failure", async () => {
@@ -256,15 +256,15 @@ describe("bucket settings", () => {
       error: new Error("unreachable"),
     });
 
-    await expect(bucket.readSettings()).rejects.toThrow("unreachable");
+    await expect(bucket.readSettings(BUCKET)).rejects.toThrow("unreachable");
   });
 
   it("creates and updates the bucket with the settings given", async () => {
     buckets.createBucket.mockResolvedValue({ data: {}, error: null });
     buckets.updateBucket.mockResolvedValue({ data: {}, error: null });
 
-    await bucket.create(BUCKET_SETTINGS);
-    await bucket.updateSettings(BUCKET_SETTINGS);
+    await bucket.create(BUCKET, BUCKET_SETTINGS);
+    await bucket.updateSettings(BUCKET, BUCKET_SETTINGS);
 
     expect(buckets.createBucket).toHaveBeenCalledWith(BUCKET, BUCKET_SETTINGS);
     expect(buckets.updateBucket).toHaveBeenCalledWith(BUCKET, BUCKET_SETTINGS);
@@ -276,9 +276,9 @@ describe("bucket settings", () => {
       error: new Error("forbidden"),
     });
 
-    await expect(bucket.updateSettings(BUCKET_SETTINGS)).rejects.toThrow(
-      "forbidden",
-    );
+    await expect(
+      bucket.updateSettings(BUCKET, BUCKET_SETTINGS),
+    ).rejects.toThrow("forbidden");
   });
 });
 

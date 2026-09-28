@@ -21,11 +21,11 @@ async function ping(): Promise<void> {
 }
 
 /**
- * The bucket's settings as Supabase has them, or null when there's no bucket.
- * A limit Supabase doesn't enforce reads as null.
+ * A bucket's settings as Supabase has them, or null when there's no such
+ * bucket. A limit Supabase doesn't enforce reads as null.
  */
-async function readSettings(): Promise<LiveBucketSettings | null> {
-  const { data, error } = await supabase.storage.getBucket(BUCKET);
+async function readSettings(name: string): Promise<LiveBucketSettings | null> {
+  const { data, error } = await supabase.storage.getBucket(name);
   if (error) {
     if (isNotFound(error)) return null;
     throw error;
@@ -44,7 +44,7 @@ async function readSettings(): Promise<LiveBucketSettings | null> {
  * after the bytes had landed. `npm run storage:push` puts the settings back.
  */
 async function verifySettings(): Promise<void> {
-  const live = await readSettings();
+  const live = await readSettings(BUCKET);
   if (!live) {
     throw new Error(
       `Bucket "${BUCKET}" does not exist; run npm run storage:push`,
@@ -58,15 +58,18 @@ async function verifySettings(): Promise<void> {
   }
 }
 
-/** Creates the bucket with these settings. */
-async function create(settings: BucketSettings): Promise<void> {
-  const { error } = await supabase.storage.createBucket(BUCKET, settings);
+/** Creates the named bucket with these settings. */
+async function create(name: string, settings: BucketSettings): Promise<void> {
+  const { error } = await supabase.storage.createBucket(name, settings);
   if (error) throw error;
 }
 
-/** Changes the existing bucket's settings to these. */
-async function updateSettings(settings: BucketSettings): Promise<void> {
-  const { error } = await supabase.storage.updateBucket(BUCKET, settings);
+/** Changes the named bucket's settings to these. */
+async function updateSettings(
+  name: string,
+  settings: BucketSettings,
+): Promise<void> {
+  const { error } = await supabase.storage.updateBucket(name, settings);
   if (error) throw error;
 }
 

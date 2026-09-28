@@ -10,16 +10,16 @@ import {
   matchesBucketSettings,
 } from "../shared/storage/schema";
 
-const live = await bucket.readSettings();
+const live = await bucket.readSettings(BUCKET);
 
 if (!live) {
-  await bucket.create(BUCKET_SETTINGS);
+  await bucket.create(BUCKET, BUCKET_SETTINGS);
   console.log(`Created bucket "${BUCKET}":`, BUCKET_SETTINGS);
 } else if (matchesBucketSettings(live, BUCKET_SETTINGS)) {
   console.log(`Bucket "${BUCKET}" already matches the schema`);
   console.log("  compared:", BUCKET_SETTINGS);
 } else {
-  await bucket.updateSettings(BUCKET_SETTINGS);
+  await bucket.updateSettings(BUCKET, BUCKET_SETTINGS);
   console.log(`Updated bucket "${BUCKET}"`);
   console.log("  from:", live);
   console.log("  to:  ", BUCKET_SETTINGS);
