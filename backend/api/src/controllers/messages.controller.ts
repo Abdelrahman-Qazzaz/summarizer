@@ -456,7 +456,7 @@ function streamAndPersistMessageTurn(
         newMessageContextCharCount,
         ...history.map((message) => message.contextCharCount),
       ]);
-      const lastMessageId = await data.messages.persistChatTurn({
+      const lastMessageId = await data.messages.persistAndUnclaimChatTurn({
         userId: messageInput.userId,
         conversationId: messageInput.conversationId,
         content: messageInput.content,

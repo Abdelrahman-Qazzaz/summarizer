@@ -569,7 +569,7 @@ async function deleteOwnedMessage(
  * All-or-nothing, so a mid-write failure can't leave a turn half-recorded — a
  * user message with no reply, or a reply the conversation never points at.
  */
-async function persistChatTurn(turn: {
+async function persistAndUnclaimChatTurn(turn: {
   userId: string;
   conversationId: string;
   content: string;
@@ -629,5 +629,5 @@ export const messages = {
   findCreateMessageHistory,
   findRecentMessagesWithContext,
   deleteOwnedMessage,
-  persistChatTurn,
+  persistAndUnclaimChatTurn,
 };
