@@ -34,15 +34,16 @@ export function getRiderctUrl() {
 
 /**
  * Exchanges the code WorkOS redirected back with for the user and their
- * access token, which becomes the session cookie as it is.
+ * tokens: the access token becomes the session cookie as it is, and the
+ * refresh token is what gets a new one when it expires.
  */
 export async function getAuthSessionFromCode(code: string) {
-  const { user, accessToken } =
+  const { user, accessToken, refreshToken } =
     await workos.userManagement.authenticateWithCode({
       code,
       clientId: getApiEnv().WORKOS_CLIENT_ID,
     });
-  return { userId: user.id, accessToken };
+  return { userId: user.id, accessToken, refreshToken };
 }
 
 export async function revokeAuthSession(sessionId: string): Promise<void> {

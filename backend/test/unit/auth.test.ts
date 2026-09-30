@@ -29,15 +29,17 @@ beforeEach(() => {
 });
 
 describe("WorkOS auth sessions", () => {
-  it("returns the user and the access token WorkOS issued", async () => {
+  it("returns the user and the tokens WorkOS issued", async () => {
     mockAuthenticateWithCode.mockResolvedValueOnce({
       user: { id: userId },
       accessToken: "workos-access-token",
+      refreshToken: "workos-refresh-token",
     });
 
     await expect(getAuthSessionFromCode("oauth-code")).resolves.toEqual({
       userId,
       accessToken: "workos-access-token",
+      refreshToken: "workos-refresh-token",
     });
   });
 

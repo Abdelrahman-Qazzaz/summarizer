@@ -8,7 +8,12 @@ import {
   revokeAuthSession,
 } from "../auth/auth";
 import { verifyAccessToken } from "../auth/accessToken";
-import { clearSessionToken, setSessionToken } from "../cookies/session";
+import {
+  clearRefreshToken,
+  clearSessionToken,
+  setRefreshToken,
+  setSessionToken,
+} from "../cookies/session";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../shared/keys";
 import { data } from "../../../shared/data";
@@ -27,6 +32,7 @@ export async function handleMe(c: Context) {
 export async function handleLogout(c: Context) {
   const token = getCookie(c, COOKIE_KEYS.session);
   clearSessionToken(c);
+  clearRefreshToken(c);
 
   if (!token) return c.json(null, 200);
 
@@ -52,10 +58,12 @@ export async function handleCallback(c: Context) {
   const code = c.req.query("code");
   if (!code) return c.json({ message: "code required" }, 400);
 
-  const { userId, accessToken } = await getAuthSessionFromCode(code);
+  const { userId, accessToken, refreshToken } =
+    await getAuthSessionFromCode(code);
 
   await data.users.ensureUser(userId);
   setSessionToken(c, accessToken);
+  setRefreshToken(c, refreshToken);
 
   return c.redirect(getApiEnv().CLIENT_URL);
 }

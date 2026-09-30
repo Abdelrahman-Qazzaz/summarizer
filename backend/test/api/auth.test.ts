@@ -96,6 +96,7 @@ describe("GET /auth/callback", () => {
     mockGetAuthSessionFromCode.mockResolvedValue({
       userId,
       accessToken: "workos-access-token",
+      refreshToken: "workos-refresh-token",
     });
     mockInsert.mockReturnValue({
       values: vi.fn().mockReturnValue({
@@ -121,8 +122,19 @@ describe("GET /auth/callback", () => {
     expect(res.headers.get("Location")).toBe("http://localhost:5173");
     expect(mockGetAuthSessionFromCode).toHaveBeenCalledWith("oauth_code_123");
     expect(mockInsert).toHaveBeenCalledTimes(1);
-    expect(res.headers.get("Set-Cookie")).toContain(
-      `${COOKIE_KEYS.session}=workos-access-token;`,
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(`^${COOKIE_KEYS.session}=workos-access-token;.*Path=/;`),
+      ),
+    );
+    // Sent only to the endpoint that spends it.
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(
+          `^${COOKIE_KEYS.refresh}=workos-refresh-token;.*Path=/auth/refresh;`,
+        ),
+      ),
     );
   });
 });
@@ -133,7 +145,7 @@ describe("POST /auth/logout", () => {
     mockRevokeAuthSession.mockResolvedValue(undefined);
   });
 
-  it("revokes the WorkOS session and clears the session cookie", async () => {
+  it("revokes the WorkOS session and clears both cookies", async () => {
     const res = await (
       await createApp()
     ).request("http://localhost/auth/logout", {
@@ -142,9 +154,19 @@ describe("POST /auth/logout", () => {
     });
     expect(res.status).toBe(200);
     expect(mockRevokeAuthSession).toHaveBeenCalledWith(sessionId);
-    const setCookie = res.headers.get("Set-Cookie");
-    expect(setCookie).toContain(`${COOKIE_KEYS.session}=`);
-    expect(setCookie?.toLowerCase()).toMatch(/max-age=0|expires=/);
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(`^${COOKIE_KEYS.session}=;.*Max-Age=0;.*Path=/;`),
+      ),
+    );
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(
+          `^${COOKIE_KEYS.refresh}=;.*Max-Age=0;.*Path=/auth/refresh;`,
+        ),
+      ),
+    );
   });
 
   it("ends the session of an access token that has already expired", async () => {
