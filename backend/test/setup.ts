@@ -23,6 +23,12 @@ vi.mock("../api/src/rateLimit/storage", async () => {
   return { createRateLimitStore: createMockRateLimitStore };
 });
 
+// Access tokens are verified against keys the tests sign with, not WorkOS's.
+vi.mock("../api/src/auth/workosKeys", async () => {
+  const { testKeys } = await import("./helpers/accessTokens");
+  return { workosKeys: () => testKeys };
+});
+
 // createApp() runs a fail-fast preflight against real third-party services.
 // Tests build the app against fake hosts, so stub the preflight to a no-op.
 vi.mock("../api/startup", () => ({

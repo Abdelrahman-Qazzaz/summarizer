@@ -17,6 +17,11 @@ export async function pingWorkos(): Promise<void> {
   await workos.userManagement.listUsers({ limit: 1 });
 }
 
+/** Where WorkOS publishes the keys it signs access tokens with. */
+export function getJwksUrl() {
+  return workos.userManagement.getJwksUrl(getApiEnv().WORKOS_CLIENT_ID);
+}
+
 export function getRiderctUrl() {
   return workos.userManagement.getAuthorizationUrl({
     // Specify that we'd like AuthKit to handle the authentication flow
