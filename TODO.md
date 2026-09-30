@@ -7,32 +7,22 @@ items are in [MESSAGE_LATENCY.md](MESSAGE_LATENCY.md).
 
 1. **Measure first.** Wrap `prepareTurn` in `withPreparationMetrics` again so
    the timing already in the code logs. The cost of one Railway → Supabase
-   database round trip decides whether 5 and 6 are worth doing.
-2. **#5:** end the stream before the two cleanup queries that do nothing
-   after a successful turn. Tied to the `persistChatTurn` question below.
-3. **#4:** on an edit, delete the dropped images from storage after the
+   database round trip decides whether #6 is worth doing.
+2. **#4:** on an edit, delete the dropped images from storage after the
    stream starts, not before.
-4. **#3:** save re-signed image URLs without making the model call wait on
+3. **#3:** save re-signed image URLs without making the model call wait on
    the write.
-5. **#6:** cut `persistChatTurn` from about six round trips to two or three,
+4. **#6:** cut `persistAndUnclaimChatTurn` from about six round trips to two or three,
    using ids generated in the app.
-6. **#7:** don't make `done` wait for a first turn's title; save it later
+5. **#7:** don't make `done` wait for a first turn's title; save it later
    and push it over the socket.
-
-## Open question
-
-- **`persistChatTurn` doesn't say it ends the turn.** Besides saving the
-  messages, it releases the conversation's claim and the attachment
-  reservations, and nothing in its name says so. Decide how to make that
-  visible, and whether the cleanup in `streamAndPersistMessageTurn`'s
-  `finally` should run only when the turn wasn't saved (#5).
 
 ## Scaling out (only when replicas are needed)
 
-7. **Fanout for job updates.** A RabbitMQ fanout exchange so every API
+6. **Fanout for job updates.** A RabbitMQ fanout exchange so every API
    instance hears every job update. This is what blocks running more than
    one instance.
-8. **Then decide where rate limits go:** a load balancer that verifies the
+7. **Then decide where rate limits go:** a load balancer that verifies the
    session JWT, a shared store, or limits divided by the replica count. The
    limits are already plain data in `api/src/rateLimit/policies.ts`.
 

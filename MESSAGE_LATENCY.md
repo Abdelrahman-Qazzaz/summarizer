@@ -2,7 +2,7 @@
 
 Remaining latency work on `POST /conversations/:id/messages` (and the PATCH
 that edits a message), from a read of the code. Line numbers refer to
-`bbdf61d` on `catalog-cache-swr`. Nothing here has been measured in
+`4334ef8` on `catalog-cache-swr`. Nothing here has been measured in
 production; the sizes are estimates.
 
 Already done on this branch:
@@ -12,14 +12,16 @@ Already done on this branch:
 - Rate limits are counted in memory (`bbdf61d`), so no request waits on
   Upstash. What's left of #1 is moving them out of the API when it scales;
   see [Rate limits after scaling out](#rate-limits-after-scaling-out).
+- #5: a saved turn no longer runs the two cleanup queries before its stream
+  closes (`4334ef8`). `persistAndUnclaimChatTurn` is now `persistAndUnclaimChatTurn`
+  (`83dc19f`), since it releases the claim and reservations itself.
 
-| #   | What                                  | Delays                   | When                                 |
-| --- | ------------------------------------- | ------------------------ | ------------------------------------ |
-| 3   | Re-signing week-old image URLs        | First token              | Conversations reopened after ~7 days |
-| 4   | Storage delete before an edit streams | First token              | Every edit that drops images         |
-| 5   | Two no-op cleanup queries             | End of stream            | Every successful turn                |
-| 6   | `persistChatTurn` round trips         | `done` and end of stream | Every successful turn                |
-| 7   | Title generation                      | `done` and end of stream | First turn of a conversation         |
+| #   | What                                    | Delays                   | When                                 |
+| --- | --------------------------------------- | ------------------------ | ------------------------------------ |
+| 3   | Re-signing week-old image URLs          | First token              | Conversations reopened after ~7 days |
+| 4   | Storage delete before an edit streams   | First token              | Every edit that drops images         |
+| 6   | `persistAndUnclaimChatTurn` round trips | `done` and end of stream | Every successful turn                |
+| 7   | Title generation                        | `done` and end of stream | First turn of a conversation         |
 
 "End of stream" matters because the client's `streamMessage` resolves only
 when the response closes (`client/src/api/messages.ts:128`), not on `done`,
@@ -32,7 +34,7 @@ only logs inside `withPreparationMetrics` (`shared/preparationMetrics.ts:22`),
 and nothing calls that since `d70ee27` merged the create and patch
 handlers. Wrapping `prepareTurn` in it again gives production numbers. The
 most useful one is a single Railway → Supabase database round trip, since
-it decides whether 5 and 6 are worth 10 ms or 150 ms.
+it decides whether 6 is worth 10 ms or 150 ms.
 
 ## Rate limits after scaling out
 
@@ -152,7 +154,7 @@ round trip off; the signing call has to stay.
 ## 4. Storage delete before an edit streams
 
 On PATCH, `deleteMessageTail` runs after preparation and before the stream
-starts (`api/src/controllers/messages.controller.ts:557`). It ends with
+starts (`api/src/controllers/messages.controller.ts:561`). It ends with
 `deleteObjects` (`:404`), an HTTP request to Supabase Storage for the images
 that lost their last message.
 
@@ -161,23 +163,17 @@ any object whose removal didn't finish. So the storage call can run after
 the stream has started, or be left to the sweep entirely, instead of
 delaying the first token of every edit that drops images.
 
-## 5. Two no-op cleanup queries on every successful turn
+## 5. Two no-op cleanup queries on every successful turn (done)
 
-`persistChatTurn` already clears the conversation's claim
-(`completeConversationTurn`) and the attachment reservations inside its
-transaction. The `finally` block in `streamAndPersistMessageTurn` then runs
-`unclaimAttachments` and `unclaimConversationTurn` again
-(`messages.controller.ts:486-491`) before `events.end()` (`:492`). On
-success both match nothing, and `unclaimAttachments` runs even for a message
-with no attachments. That's two wasted database round trips before the
-stream closes.
+`persistAndUnclaimChatTurn` releases the conversation's claim and the
+attachment reservations in the transaction that saves the turn. The handler
+used to release both again in its `finally`, matching nothing, before the
+stream could close. That release now runs in the `catch`, only for a turn
+that wasn't saved (`4334ef8`).
 
-**Fix:** end the stream before the cleanup, or skip the cleanup when the
-persist succeeded. The cleanup is only needed on the failure paths.
+## 6. `persistAndUnclaimChatTurn` round trips
 
-## 6. `persistChatTurn` round trips
-
-`persistChatTurn` (`shared/data/messages.data.ts:572`) takes about six round
+`persistAndUnclaimChatTurn` (`shared/data/messages.data.ts:578`) takes about six round
 trips before `done`: begin, insert the user message, insert the assistant
 message and link the attachments, complete the turn on the conversation,
 delete the reservations, commit.
@@ -191,7 +187,7 @@ bringing it to about two or three.
 
 On a conversation's first turn, the title is generated alongside the reply
 (`openai/gpt-4o-mini`, 15-second timeout) and awaited before the turn is
-saved (`messages.controller.ts:466`). It usually finishes first, but with a
+saved (`messages.controller.ts:467`). It usually finishes first, but with a
 fast model and a short reply, `done` waits for it.
 
 **Fix:** save the turn without the title and write the title when it
