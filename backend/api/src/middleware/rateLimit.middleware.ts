@@ -94,6 +94,8 @@ export const authLoginRateLimiter = createAuthIpLimiter(60, "login");
 export const authCallbackRateLimiter = createAuthIpLimiter(20, "callback");
 export const authLogoutRateLimiter = createAuthIpLimiter(60, "logout");
 export const authMeRateLimiter = createAuthIpLimiter(200, "me");
+/** Each signed-in user refreshes every few minutes, so this sits with /me. */
+export const authRefreshRateLimiter = createAuthIpLimiter(200, "refresh");
 
 export const jobRateLimiter = createLimiter(100, "rate-limit:job:", getUserId);
 
