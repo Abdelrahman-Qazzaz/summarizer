@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuthenticateWithCode, mockRevokeSession } = vi.hoisted(() => ({
+const {
+  mockAuthenticateWithCode,
+  mockAuthenticateWithRefreshToken,
+  mockRevokeSession,
+} = vi.hoisted(() => ({
   mockAuthenticateWithCode: vi.fn(),
+  mockAuthenticateWithRefreshToken: vi.fn(),
   mockRevokeSession: vi.fn(),
 }));
 
@@ -9,6 +14,7 @@ vi.mock("@workos-inc/node", () => ({
   WorkOS: class {
     userManagement = {
       authenticateWithCode: mockAuthenticateWithCode,
+      authenticateWithRefreshToken: mockAuthenticateWithRefreshToken,
       getAuthorizationUrl: vi.fn(),
       listUsers: vi.fn(),
       revokeSession: mockRevokeSession,
@@ -18,6 +24,7 @@ vi.mock("@workos-inc/node", () => ({
 
 import {
   getAuthSessionFromCode,
+  refreshAuthSession,
   revokeAuthSession,
 } from "../../api/src/auth/auth";
 
@@ -40,6 +47,23 @@ describe("WorkOS auth sessions", () => {
       userId,
       accessToken: "workos-access-token",
       refreshToken: "workos-refresh-token",
+    });
+  });
+
+  it("trades a refresh token for the new tokens WorkOS issues", async () => {
+    mockAuthenticateWithRefreshToken.mockResolvedValueOnce({
+      user: { id: userId },
+      accessToken: "access-2",
+      refreshToken: "refresh-2",
+    });
+
+    await expect(refreshAuthSession("refresh-1")).resolves.toEqual({
+      accessToken: "access-2",
+      refreshToken: "refresh-2",
+    });
+    expect(mockAuthenticateWithRefreshToken).toHaveBeenCalledWith({
+      refreshToken: "refresh-1",
+      clientId: process.env.WORKOS_CLIENT_ID,
     });
   });
 
