@@ -1,3 +1,5 @@
+import { refreshSession } from "./session";
+
 /**
  * Every call the client makes goes out through here: session cookies attached,
  * failures raised as one error type carrying the status the caller may branch on
@@ -40,12 +42,20 @@ export function errorMessage(error: unknown, fallback: string): string {
 /**
  * Returns the raw response so streaming callers (the SSE reply) can read the
  * body themselves; throws before that on any non-2xx.
+ *
+ * A 401 usually means the access token expired between refreshes, so the
+ * session is refreshed and the request sent once more; if the session is
+ * over, the 401 stands.
  */
 export async function apiFetch(
   url: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const response = await fetch(url, { credentials: "include", ...init });
+  const send = () => fetch(url, { credentials: "include", ...init });
+  let response = await send();
+  if (response.status === 401 && (await refreshSession())) {
+    response = await send();
+  }
   if (!response.ok) {
     const data = await readBody(response);
     throw new ApiError(failureMessage(data, response), response.status, data);

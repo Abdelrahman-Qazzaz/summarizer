@@ -14,6 +14,10 @@ export function authMeEndpoint(): string {
   return `${apiBase}/auth/me`;
 }
 
+export function authRefreshEndpoint(): string {
+  return `${apiBase}/auth/refresh`;
+}
+
 export function authLogoutEndpoint(): string {
   return `${apiBase}/auth/logout`;
 }
