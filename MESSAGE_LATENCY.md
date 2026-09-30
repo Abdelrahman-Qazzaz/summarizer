@@ -56,14 +56,52 @@ Notes on that plan:
   fixed for.
 - **Railway may not need your own load balancer.** Railway spreads traffic
   across a service's replicas itself, and as far as I know its edge offers no
-  rate limiting to configure. Check both before relying on either. Whether
-  you'd run a load balancer depends on how the sockets get solved.
-- **Sticky sessions would also work.** Socket.IO across replicas needs a
-  client pinned to one instance anyway. If that pinning is per user (by the
-  session cookie), each user's requests reach one instance, and in-memory
-  counters in the API stay exact without a shared store.
+  rate limiting to configure. Check both before relying on either. The
+  sockets don't need one either; see [Scaling out](#scaling-out-the-socket-problem).
+- **In-memory counters stop being exact with replicas.** Each replica would
+  count on its own, and Railway doesn't pin a user to one replica, so a
+  user's effective budget grows with the replica count. When replicas come,
+  either divide the limits by the count, go back to a shared store, or move
+  the limits into a load balancer then.
 - A single load balancer's counters reset when it restarts. That's fine for
   15-minute budgets.
+
+## Scaling out: the socket problem
+
+Not a latency item, but it's what keeps the API at one instance, so it
+decides when the rate-limit question above comes up.
+
+**The problem** (PROBLEMS.md #6): each API instance only knows the sockets
+connected to it (`socket.join(userId)` in
+`api/src/sockets/socketManager.ts`). Job updates arrive on RabbitMQ work
+queues (`api/index.ts:23-41`), and a work queue hands each message to one
+consumer. With two replicas, instance A can consume `transcribe_done` for a
+user whose socket is on instance B, and A's `io.to(userId).emit(...)`
+reaches nobody.
+
+**A load balancer doesn't fix it.** It decides where connections land, not
+which instance RabbitMQ hands a message to. Sticky sessions aren't needed
+either: the client uses websockets only (`transports: ["websocket"]` in
+`client/src/hooks/socket/SocketProvider.tsx`), and stickiness only matters
+for Socket.IO's HTTP polling fallback.
+
+**Fix: send the notification to every instance.** RabbitMQ is already
+there, so use a fanout exchange:
+
+- Each API instance declares its own exclusive, auto-delete queue at startup
+  and binds it to a `job_updates` fanout exchange. Every instance gets every
+  update and calls `io.to(userId).emit("jobUpdated", ...)`; instances
+  without that user's socket do nothing.
+- Work that must happen once stays on a work queue. `yt_fetch_failed` marks
+  the job failed, so one instance still consumes it, does that, and then
+  publishes to the fanout. `transcribe_done` is only a notification (the
+  worker has already saved the transcript), so the worker can publish it to
+  the fanout directly.
+
+The standard alternative is Socket.IO's Redis adapter, which makes
+`io.to(room).emit` reach every instance by itself. It needs a TCP Redis
+connection with pub/sub, and every emit costs Upstash commands. With one
+event type, the fanout is less to run.
 
 ## 3. Re-signing week-old image URLs
 
