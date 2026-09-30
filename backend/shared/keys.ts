@@ -8,6 +8,7 @@ const useCaptionsIfAvailable = "useCaptionsIfAvailable";
 
 export const CTX_KEYS = {
   userId: "userId",
+  sessionExpiresAtEpochSeconds: "sessionExpiresAtEpochSeconds",
   imageUploadId: "imageUploadId",
   audioUploadId: "audioUploadId",
   conversationId: "conversationId",

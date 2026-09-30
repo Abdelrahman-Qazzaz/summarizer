@@ -26,8 +26,20 @@ export async function handleLogin(c: Context) {
   return c.redirect(getRiderctUrl());
 }
 
+/** When an access token expires, as the auth responses report it. */
+function expiresAt(epochSeconds: number) {
+  return new Date(epochSeconds * 1000).toISOString();
+}
+
+/**
+ * Who is signed in, and when their access token expires, so the client can
+ * refresh it before then.
+ */
 export async function handleMe(c: Context) {
-  return c.json({ userId: c.get(CTX_KEYS.userId) });
+  return c.json({
+    userId: c.get(CTX_KEYS.userId),
+    expiresAt: expiresAt(c.get(CTX_KEYS.sessionExpiresAtEpochSeconds)),
+  });
 }
 
 /**
@@ -71,10 +83,7 @@ export async function handleRefresh(c: Context) {
   );
   setSessionToken(c, tokens.accessToken);
   setRefreshToken(c, tokens.refreshToken);
-  return c.json({
-    userId,
-    expiresAt: new Date(expiresAtEpochSeconds * 1000).toISOString(),
-  });
+  return c.json({ userId, expiresAt: expiresAt(expiresAtEpochSeconds) });
 }
 
 export async function handleLogout(c: Context) {

@@ -56,14 +56,24 @@ describe("GET /auth/me", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns userId for a valid session", async () => {
+  it("returns the user and when their access token expires", async () => {
+    const expiresAtEpochSeconds = Math.floor(Date.now() / 1000) + 300;
+    const token = await signAccessToken({
+      userId: "user_01TEST",
+      sessionId,
+      expiresAtEpochSeconds,
+    });
+
     const res = await (
       await createApp()
     ).request("http://localhost/auth/me", {
-      headers: await authedHeaders("user_01TEST"),
+      headers: { Cookie: `${COOKIE_KEYS.session}=${token}` },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ userId: "user_01TEST" });
+    expect(await res.json()).toEqual({
+      userId: "user_01TEST",
+      expiresAt: new Date(expiresAtEpochSeconds * 1000).toISOString(),
+    });
   });
 });
 
