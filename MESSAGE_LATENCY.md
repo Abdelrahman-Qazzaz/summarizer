@@ -2,15 +2,19 @@
 
 Remaining latency work on `POST /conversations/:id/messages` (and the PATCH
 that edits a message), from a read of the code. Line numbers refer to
-`e74821c` on `catalog-cache-swr`. Nothing here has been measured in
+`bbdf61d` on `catalog-cache-swr`. Nothing here has been measured in
 production; the sizes are estimates.
 
-Already done: the model catalog is served from memory while it refreshes
-(`e74821c`), so no request waits on the catalog once a process has it.
+Already done on this branch:
+
+- The model catalog is served from memory while it refreshes (`f41a047`),
+  so no request waits on the catalog once a process has it.
+- Rate limits are counted in memory (`bbdf61d`), so no request waits on
+  Upstash. What's left of #1 is moving them out of the API when it scales;
+  see [Rate limits after scaling out](#rate-limits-after-scaling-out).
 
 | #   | What                                  | Delays                   | When                                 |
 | --- | ------------------------------------- | ------------------------ | ------------------------------------ |
-| 1   | Rate limiter's Upstash round trip     | First token              | Every request                        |
 | 3   | Re-signing week-old image URLs        | First token              | Conversations reopened after ~7 days |
 | 4   | Storage delete before an edit streams | First token              | Every edit that drops images         |
 | 5   | Two no-op cleanup queries             | End of stream            | Every successful turn                |
@@ -30,46 +34,62 @@ handlers. Wrapping `prepareTurn` in it again gives production numbers. The
 most useful one is a single Railway → Supabase database round trip, since
 it decides whether 5 and 6 are worth 10 ms or 150 ms.
 
-## 1. The rate limiter's Upstash round trip
+## Rate limits after scaling out
 
-`conversationRateLimiter` (`api/src/middleware/rateLimit.middleware.ts:100`)
-runs before every conversation route, message sends included, and each
-call is an HTTP request to Upstash before the handler starts. The TODO in
-`api/src/rateLimit/storage.ts:13` already notes that one API instance could
-count in memory.
+**Done:** the limits are counted in the API's memory. The API is one
+instance, so the counts are exact, and requests no longer wait on Upstash
+(or fail with a 503 when it's unreachable).
 
-**Plan:** move rate limiting into the load balancer that horizontal scaling
-would add anyway. While there is one load balancer, it can count in memory,
-so neither the API nor the load balancer needs Redis for this.
+**Plan:** when the API scales out, move rate limiting into a load balancer.
+While there is one load balancer, it can count in memory too.
 
-Notes on that plan:
+**Built to move:** the limits live in `api/src/rateLimit/policies.ts` as
+plain data (a limit, a window, and whether the budget is per client IP or
+per user) with no Hono or storage code. Moving them means writing that table
+as the load balancer's config, then deleting
+`api/src/middleware/rateLimit.middleware.ts` and its uses in the routers.
+The load balancer also needs to know which paths each limit covers:
 
-- **Memory can come first.** The API is a single instance today
-  (PROBLEMS.md: sockets need it), so an in-memory store in the API is exact
-  now. Switching drops the round trip, and the 503 returned when Upstash is
-  unreachable, before any load balancer exists.
-- **Most limits are per user, not per IP.** Every limiter except the auth
-  ones keys on the user id from the session cookie. A load balancer can only
-  do the same if it verifies the session JWT itself (it's HS256, so it would
-  need the signing secret). Keyed on IP alone, users behind one address (an
-  office, carrier NAT) share a budget, the problem the auth limits just got
-  fixed for.
+| Policy          | Paths                                                              |
+| --------------- | ------------------------------------------------------------------ |
+| `authLogin`     | `GET /auth/login`                                                  |
+| `authCallback`  | `GET /auth/callback`                                               |
+| `authMe`        | `GET /auth/me`                                                     |
+| `authLogout`    | `POST /auth/logout`                                                |
+| `job`           | `/jobs/*`                                                          |
+| `conversation`  | `/conversations/*`                                                 |
+| `model`         | `/models/*`                                                        |
+| `upload`        | `POST /upload/audio`, `POST /upload/image`, `POST /upload/youtube` |
+| `uploadConfirm` | `POST /upload/audio/confirm`, `POST /upload/image/confirm`         |
+| `imageRead`     | `GET /upload/image/:id`, `DELETE /upload/image/:id`                |
+
+The mounts live in `api/src/routes/*.router.ts`; recheck this table against
+them when the move happens.
+
+Things to settle before moving:
+
+- **Most limits are per user, not per IP.** Every policy except the auth
+  ones counts per user, found from the session cookie. A load balancer can
+  only do the same if it verifies the session JWT itself (it's HS256, so it
+  would need the signing secret). Keyed on IP alone, users behind one
+  address (an office, carrier NAT) share a budget, the problem the auth
+  limits just got fixed for.
 - **Railway may not need your own load balancer.** Railway spreads traffic
   across a service's replicas itself, and as far as I know its edge offers no
   rate limiting to configure. Check both before relying on either. The
   sockets don't need one either; see [Scaling out](#scaling-out-the-socket-problem).
-- **In-memory counters stop being exact with replicas.** Each replica would
-  count on its own, and Railway doesn't pin a user to one replica, so a
-  user's effective budget grows with the replica count. When replicas come,
-  either divide the limits by the count, go back to a shared store, or move
-  the limits into a load balancer then.
-- A single load balancer's counters reset when it restarts. That's fine for
-  15-minute budgets.
+- **Until then, in-memory counts stop being exact with replicas.** Each
+  replica counts on its own, and Railway doesn't pin a user to one replica,
+  so a user's effective budget grows with the replica count. If replicas
+  come before a load balancer, divide the limits by the count or go back to
+  a shared store.
+- A single load balancer's counts reset when it restarts, as the API's do on
+  a deploy today. That's fine for 15-minute budgets.
 
 ## Scaling out: the socket problem
 
 Not a latency item, but it's what keeps the API at one instance, so it
-decides when the rate-limit question above comes up.
+decides when the rate limits above have to move.
 
 **The problem** (PROBLEMS.md #6): each API instance only knows the sockets
 connected to it (`socket.join(userId)` in
