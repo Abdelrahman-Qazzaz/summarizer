@@ -79,6 +79,7 @@ describe("getChatModelData", () => {
     expect(mockGetOrSetCache).toHaveBeenCalledWith(
       CACHE_KEYS.openRouterModels,
       expect.any(Function),
+      { serveStale: true },
     );
     expect(mockModelsList).not.toHaveBeenCalled();
   });

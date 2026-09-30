@@ -197,10 +197,12 @@ async function fetchChatModelData(): Promise<ChatModelData> {
 }
 
 // Every send validates the chosen model against this catalog, so the cache
-// keeps that check off the network. The in-memory tier of getCache also spares
-// each process the Redis round-trip once warm.
+// keeps that check off the network. Serving it stale while it refreshes means
+// no send waits on the catalog once a process has loaded it.
 export function getChatModelData(): Promise<ChatModelData> {
-  return getOrSetCache(CACHE_KEYS.openRouterModels, fetchChatModelData);
+  return getOrSetCache(CACHE_KEYS.openRouterModels, fetchChatModelData, {
+    serveStale: true,
+  });
 }
 
 /**
@@ -229,7 +231,6 @@ export async function validateChatModelOutput(
  * up front so a text-only model is a 400 on the request rather than a provider
  * rejection mid-stream, where the only channel left is an SSE error event.
  */
-// TODO: check this for perf issues since its in message-creation pipeline.
 export async function validateChatModelInput(
   modelId: string,
   requiredModality: InputModality,
