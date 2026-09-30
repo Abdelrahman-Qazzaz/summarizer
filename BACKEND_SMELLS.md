@@ -25,7 +25,7 @@ Scope: `backend/` on `main`. Written at 029e2de and rechecked at 371e3d2, which 
 
 ## Modules reaching across layers
 
-- `shared/cache/redis.ts:6` calls `getApiEnv()`, which requires the API-only variables (`SESSION_SECRET`, WorkOS, Upstash). `shared/ai/ai_transcribe_client.ts` imports the cache, so the worker is one call away from exiting at runtime on a missing API variable.
+- `shared/cache/redis.ts:6` calls `getApiEnv()`, which requires the API-only variables (WorkOS, Upstash). `shared/ai/ai_transcribe_client.ts` imports the cache, so the worker is one call away from exiting at runtime on a missing API variable.
 - `shared/env.ts:86` parses `drizzleEnv` when the module is imported, in every process, though only `drizzle.config.ts` uses it.
 - `api/index.ts:1` calls `getApiEnv()` above the import that defines it. It works because ESM hoists imports, but it reads like a use-before-define.
 
@@ -42,7 +42,7 @@ Scope: `backend/` on `main`. Written at 029e2de and rechecked at 371e3d2, which 
 ## Naming and small things
 
 - `getRiderctUrl` is misspelled (`api/src/auth/auth.ts:20`). So is "rhobust" in `ai_chat_client.ts`.
-- `DELETE /upload/image/:id` spends the image *read* budget (`api/src/routes/images.router.ts:52`).
+- `DELETE /upload/image/:id` spends the image _read_ budget (`api/src/routes/images.router.ts:52`).
 - File and identifier casing is mixed: `ai_chat_client.ts`, `ai_client` and `try-catch.ts` sit next to camelCase everywhere else, and the column is `YT_sourceUrl`.
 - `AudioTranscriptionJobs.source` is free `text`, with the allowed values listed only in a comment (`shared/db/schema.ts:89`). The other status-like columns are `pgEnum`s.
 - `mergeTranscriptsIntoContent` casts `get(...) as string` (`messages.controller.ts:268`). This relies on an earlier size check that sits in a different function.

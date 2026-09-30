@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { data } from "../shared/data";
-import { createSessionToken } from "../api/src/auth/sessionToken";
 import { COOKIE_KEYS } from "../shared/keys";
 
 const userId = process.env.PLAYWRIGHT_USER_ID?.trim() || "playwright-e2e";
@@ -11,8 +10,22 @@ const outputPath = resolve(
   "../../output/playwright/auth-state.json",
 );
 
+/**
+ * TODO: broken since the session cookie became the WorkOS access token. The
+ * API used to sign its own session token with SESSION_SECRET, so this could
+ * mint one for a made-up user. Session cookies are now verified against
+ * WorkOS's signing keys, so only WorkOS can issue one. Fix by signing in a
+ * real WorkOS test user (for instance with authenticateWithPassword) and
+ * writing both the session and refresh cookies below.
+ */
+async function createSessionCookieValue(_userId: string): Promise<string> {
+  throw new Error(
+    "browser:auth can't create a session any more; see the TODO in scripts/createBrowserAuthState.ts",
+  );
+}
+
+const token = await createSessionCookieValue(userId);
 await data.users.ensureUser(userId);
-const token = await createSessionToken({ userId, expiresAtEpochSeconds });
 const storageState = {
   cookies: [
     {

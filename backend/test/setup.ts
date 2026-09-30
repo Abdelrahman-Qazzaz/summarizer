@@ -10,7 +10,6 @@ process.env.OPENROUTER_API_KEY = "test-key";
 process.env.DEEPGRAM_API_KEY = "test-key";
 process.env.WORKOS_API_KEY = "sk_test";
 process.env.WORKOS_CLIENT_ID = "client_test";
-process.env.SESSION_SECRET = "test-session-secret-must-be-32-chars-min";
 process.env.CLIENT_URL = "http://localhost:5173";
 process.env.API_BASE_URL = "http://localhost:3001";
 process.env.PORT = "3001";
