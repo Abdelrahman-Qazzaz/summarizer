@@ -521,14 +521,9 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     const response = await responsePromise;
     expect(await response.text()).toContain("event: done");
-    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
-      requestClaimToken(),
-    );
-    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
-      userId,
-      conversationId,
-      requestClaimToken(),
-    );
+    // Saving the turn released both, so there's nothing left to clean up.
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
   });
 
   it("settles late acquisitions before cleanup when a concurrent read fails", async () => {
@@ -707,16 +702,10 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
     persistence.resolve(assistantRow.id);
 
-    await vi.waitFor(() =>
-      expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
-        userId,
-        conversationId,
-        requestClaimToken(),
-      ),
-    );
-    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
-      requestClaimToken(),
-    );
+    // Saving the turn released both, so there's nothing left to clean up.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
   });
 
   it("requires the client to identify the conversation head", async () => {
@@ -1614,7 +1603,11 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       [imageUploadId],
       claimToken,
     );
-    expect(mockUnclaimAttachments).toHaveBeenCalledWith(claimToken);
+    // Saving the edit releases the reservations with it.
+    expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ claimToken }),
+    );
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
   });
 
   it("keeps the rewind and releases its claim when generation fails", async () => {
