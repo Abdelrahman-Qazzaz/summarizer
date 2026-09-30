@@ -12,7 +12,7 @@ import {
   refreshSession,
   type Session,
 } from "../../api/session";
-import { AuthContext } from "./context";
+import { AuthContext, type AuthUser } from "./context";
 
 /**
  * How long before the access token expires it's refreshed, so requests don't
@@ -75,7 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Only a different user is a new user: a refresh keeps the same object.
   const userId = session?.userId;
-  const user = useMemo(() => (userId ? { userId } : null), [userId]);
+  const user = useMemo<AuthUser | null>(
+    () => (userId ? { userId } : null),
+    [userId],
+  );
 
   return (
     <AuthContext.Provider value={{ user, loading, refresh, signOut }}>
