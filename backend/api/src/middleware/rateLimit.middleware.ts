@@ -1,20 +1,16 @@
 import { isIP } from "node:net";
-import type { Context, MiddlewareHandler } from "hono";
-import { rateLimiter } from "hono-rate-limiter";
+import type { Context } from "hono";
+import { MemoryStore, rateLimiter } from "hono-rate-limiter";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { createRateLimitStore } from "../rateLimit/storage";
-import { RateLimitStoreUnavailableError } from "../rateLimit/errors";
+import {
+  RATE_LIMIT_POLICIES,
+  type RateLimitKey,
+  type RateLimitName,
+} from "../rateLimit/policies";
 import { CTX_KEYS } from "../../../shared/keys";
-import { logger } from "../../../shared/logger";
-
-const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
 const rateLimitMessage = {
   message: "Too many requests, please try again later.",
-};
-
-const rateLimitUnavailableMessage = {
-  message: "Rate limiting is temporarily unavailable. Please try again later.",
 };
 
 /**
@@ -52,89 +48,47 @@ function getUserId(c: Context): string {
   return userId;
 }
 
-function withStoreUnavailableHandler(
-  limiter: MiddlewareHandler,
-): MiddlewareHandler {
-  return async (c, next) => {
-    try {
-      return await limiter(c, next);
-    } catch (error) {
-      if (error instanceof RateLimitStoreUnavailableError) {
-        logger.error("Rate limit store error", error.cause);
-        return c.json(rateLimitUnavailableMessage, 503);
-      }
-      throw error;
-    }
-  };
-}
+const keyOf: Record<RateLimitKey, (c: Context) => string> = {
+  clientIp: getClientIpKey,
+  userId: getUserId,
+};
 
-function createLimiter(
-  limit: number,
-  prefix: string,
-  keyGenerator: (c: Context) => string,
-  options?: { skip?: (c: Context) => boolean },
-) {
-  const limiter = rateLimiter({
-    windowMs: FIFTEEN_MINUTES_MS,
+const stores: MemoryStore[] = [];
+
+/**
+ * A policy from policies.ts as middleware, counting in this process's memory.
+ * The API runs as one instance, so the counts are exact and no request waits
+ * on a round trip to a shared store. With several instances each would count
+ * on its own; see MESSAGE_LATENCY.md before scaling out.
+ */
+function createLimiter(name: RateLimitName) {
+  const { limit, windowMs, key } = RATE_LIMIT_POLICIES[name];
+  const store = new MemoryStore();
+  stores.push(store);
+
+  return rateLimiter({
+    windowMs,
     limit,
     standardHeaders: "draft-6",
-    keyGenerator,
-    store: createRateLimitStore(prefix),
+    keyGenerator: keyOf[key],
+    store,
     message: rateLimitMessage,
-    skip: options?.skip ?? (() => false),
   });
-  return withStoreUnavailableHandler(limiter);
 }
 
-function createAuthIpLimiter(limit: number, route: string) {
-  return createLimiter(limit, `rate-limit:auth:${route}:`, getClientIpKey);
+export const authLoginRateLimiter = createLimiter("authLogin");
+export const authCallbackRateLimiter = createLimiter("authCallback");
+export const authLogoutRateLimiter = createLimiter("authLogout");
+export const authMeRateLimiter = createLimiter("authMe");
+
+export const jobRateLimiter = createLimiter("job");
+export const conversationRateLimiter = createLimiter("conversation");
+export const modelRateLimiter = createLimiter("model");
+export const imageReadRateLimiter = createLimiter("imageRead");
+export const uploadRateLimiter = createLimiter("upload");
+export const uploadConfirmRateLimiter = createLimiter("uploadConfirm");
+
+/** Test-only: clears every count, so cases don't spend each other's budgets. */
+export function resetRateLimits() {
+  for (const store of stores) store.resetAll();
 }
-
-export const authLoginRateLimiter = createAuthIpLimiter(60, "login");
-export const authCallbackRateLimiter = createAuthIpLimiter(20, "callback");
-export const authLogoutRateLimiter = createAuthIpLimiter(60, "logout");
-export const authMeRateLimiter = createAuthIpLimiter(200, "me");
-
-export const jobRateLimiter = createLimiter(100, "rate-limit:job:", getUserId);
-
-export const conversationRateLimiter = createLimiter(
-  100,
-  "rate-limit:conversation:",
-  getUserId,
-);
-
-export const modelRateLimiter = createLimiter(
-  100,
-  "rate-limit:model:",
-  getUserId,
-);
-
-/**
- * Reading a stored image back is not an upload: it reads a row and re-signs at
- * most once a week. A single chat turn can ask for one per attachment, so
- * putting these on the 30-request upload budget would exhaust it in a few
- * renders — they get a read-sized budget instead.
- */
-export const imageReadRateLimiter = createLimiter(
-  200,
-  "rate-limit:image-read:",
-  getUserId,
-);
-
-/** Minting an upload URL is what stands for an upload, so it spends this. */
-export const uploadRateLimiter = createLimiter(
-  30,
-  "rate-limit:upload:",
-  getUserId,
-);
-
-/**
- * Confirming moves no bytes and needs an object a mint already paid for, so it
- * gets its own budget rather than halving how many files a user can send.
- * Twice the upload budget leaves room for a retried confirm on every upload.
- */
-export const uploadConfirmRateLimiter = createLimiter(
-  60,
-  "rate-limit:upload-confirm:",
-  getUserId,
-);
