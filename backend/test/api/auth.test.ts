@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { verify } from "hono/jwt";
 
 const MOCK_WORKOS_URL = "https://workos.example/authorize";
 const userId = "user_01CALLBACK";
@@ -35,6 +34,7 @@ vi.mock("../../shared/db", async () => ({
 
 import { createApp } from "../../api/app";
 import { authedHeaders } from "../helpers/session";
+import { signAccessToken } from "../helpers/accessTokens";
 import { WORKOS_REDIRECT_URI } from "../../api/src/auth/auth";
 import { COOKIE_KEYS } from "../../shared/keys";
 
@@ -93,7 +93,10 @@ describe("GET /auth/login", () => {
 describe("GET /auth/callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetAuthSessionFromCode.mockResolvedValue({ userId, sessionId });
+    mockGetAuthSessionFromCode.mockResolvedValue({
+      userId,
+      accessToken: "workos-access-token",
+    });
     mockInsert.mockReturnValue({
       values: vi.fn().mockReturnValue({
         onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
@@ -118,15 +121,9 @@ describe("GET /auth/callback", () => {
     expect(res.headers.get("Location")).toBe("http://localhost:5173");
     expect(mockGetAuthSessionFromCode).toHaveBeenCalledWith("oauth_code_123");
     expect(mockInsert).toHaveBeenCalledTimes(1);
-    const setCookie = res.headers.get("Set-Cookie");
-    expect(setCookie).toContain(`${COOKIE_KEYS.session}=`);
-    const token = setCookie?.match(
-      new RegExp(`${COOKIE_KEYS.session}=([^;]+)`),
-    )?.[1];
-    expect(token).toBeDefined();
-    await expect(
-      verify(token!, process.env.SESSION_SECRET!, "HS256"),
-    ).resolves.toMatchObject({ sub: userId, sid: sessionId });
+    expect(res.headers.get("Set-Cookie")).toContain(
+      `${COOKIE_KEYS.session}=workos-access-token;`,
+    );
   });
 });
 
@@ -148,6 +145,27 @@ describe("POST /auth/logout", () => {
     const setCookie = res.headers.get("Set-Cookie");
     expect(setCookie).toContain(`${COOKIE_KEYS.session}=`);
     expect(setCookie?.toLowerCase()).toMatch(/max-age=0|expires=/);
+  });
+
+  it("ends the session of an access token that has already expired", async () => {
+    const token = await signAccessToken({
+      userId: "user_01TEST",
+      sessionId,
+      expiresAtEpochSeconds: Math.floor(Date.now() / 1000) - 600,
+    });
+
+    const res = await (
+      await createApp()
+    ).request("http://localhost/auth/logout", {
+      method: "POST",
+      headers: {
+        Origin: process.env.CLIENT_URL!,
+        Cookie: `${COOKIE_KEYS.session}=${token}`,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRevokeAuthSession).toHaveBeenCalledWith(sessionId);
   });
 
   it("remains successful without a session cookie", async () => {

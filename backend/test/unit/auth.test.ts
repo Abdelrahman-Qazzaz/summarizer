@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sign } from "hono/jwt";
 
 const { mockAuthenticateWithCode, mockRevokeSession } = vi.hoisted(() => ({
   mockAuthenticateWithCode: vi.fn(),
@@ -30,16 +29,15 @@ beforeEach(() => {
 });
 
 describe("WorkOS auth sessions", () => {
-  it("keeps the WorkOS session ID returned during authentication", async () => {
-    const accessToken = await sign({ sid: sessionId }, "workos-test-secret");
+  it("returns the user and the access token WorkOS issued", async () => {
     mockAuthenticateWithCode.mockResolvedValueOnce({
       user: { id: userId },
-      accessToken,
+      accessToken: "workos-access-token",
     });
 
     await expect(getAuthSessionFromCode("oauth-code")).resolves.toEqual({
       userId,
-      sessionId,
+      accessToken: "workos-access-token",
     });
   });
 

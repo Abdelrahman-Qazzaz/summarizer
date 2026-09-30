@@ -7,7 +7,7 @@ import {
   getRiderctUrl,
   revokeAuthSession,
 } from "../auth/auth";
-import { createSessionToken, verifySessionToken } from "../auth/sessionToken";
+import { verifyAccessToken } from "../auth/accessToken";
 import { clearSessionToken, setSessionToken } from "../cookies/session";
 
 import { COOKIE_KEYS, CTX_KEYS } from "../../../shared/keys";
@@ -30,19 +30,19 @@ export async function handleLogout(c: Context) {
 
   if (!token) return c.json(null, 200);
 
-  let sessionId: string | undefined;
+  // The token has usually expired by the time someone logs out; it's still
+  // what names the session to end.
+  let sessionId: string;
   try {
-    ({ sessionId } = await verifySessionToken(token));
+    ({ sessionId } = await verifyAccessToken(token, { allowExpired: true }));
   } catch {
     return c.json(null, 200);
   }
 
-  if (sessionId) {
-    try {
-      await revokeAuthSession(sessionId);
-    } catch (error) {
-      log.error("Failed to revoke WorkOS session", error);
-    }
+  try {
+    await revokeAuthSession(sessionId);
+  } catch (error) {
+    log.error("Failed to revoke WorkOS session", error);
   }
 
   return c.json(null, 200);
@@ -52,21 +52,10 @@ export async function handleCallback(c: Context) {
   const code = c.req.query("code");
   if (!code) return c.json({ message: "code required" }, 400);
 
-  const { userId, sessionId } = await getAuthSessionFromCode(code);
+  const { userId, accessToken } = await getAuthSessionFromCode(code);
 
-  const week = 60 * 60 * 24 * 7;
-  // Upserting the user row and signing the session token are independent;
-  // both must still succeed before the cookie is issued.
-  const [, token] = await Promise.all([
-    data.users.ensureUser(userId),
-    createSessionToken({
-      userId,
-      sessionId,
-      expiresAtEpochSeconds: Math.floor(Date.now() / 1000) + week,
-    }),
-  ]);
-
-  setSessionToken(c, token);
+  await data.users.ensureUser(userId);
+  setSessionToken(c, accessToken);
 
   return c.redirect(getApiEnv().CLIENT_URL);
 }

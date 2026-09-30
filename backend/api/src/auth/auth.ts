@@ -1,5 +1,4 @@
 import { WorkOS } from "@workos-inc/node";
-import { decode } from "hono/jwt";
 import { getApiEnv } from "../../../shared/env";
 
 /** Exported so the auth tests can assert the URL WorkOS is handed. */
@@ -33,17 +32,17 @@ export function getRiderctUrl() {
   });
 }
 
+/**
+ * Exchanges the code WorkOS redirected back with for the user and their
+ * access token, which becomes the session cookie as it is.
+ */
 export async function getAuthSessionFromCode(code: string) {
   const { user, accessToken } =
     await workos.userManagement.authenticateWithCode({
       code,
       clientId: getApiEnv().WORKOS_CLIENT_ID,
     });
-  const { payload } = decode(accessToken);
-  if (typeof payload.sid !== "string") {
-    throw new Error("WorkOS authentication response is missing a session ID");
-  }
-  return { userId: user.id, sessionId: payload.sid };
+  return { userId: user.id, accessToken };
 }
 
 export async function revokeAuthSession(sessionId: string): Promise<void> {
