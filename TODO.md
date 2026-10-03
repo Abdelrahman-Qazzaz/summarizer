@@ -23,8 +23,9 @@ items are in [MESSAGE_LATENCY.md](MESSAGE_LATENCY.md).
    instance hears every job update. This is what blocks running more than
    one instance.
 7. **Then decide where rate limits go:** a load balancer that verifies the
-   session JWT, a shared store, or limits divided by the replica count. The
-   limits are already plain data in `api/src/rateLimit/policies.ts`.
+   WorkOS access token, a shared store, or limits divided by the replica
+   count. The limits are already plain data in
+   `api/src/rateLimit/policies.ts`.
 
 ## From earlier sessions
 
@@ -46,5 +47,3 @@ items are in [MESSAGE_LATENCY.md](MESSAGE_LATENCY.md).
   they need a longer one.
 - **`shared/uploads.ts`.** Decide whether to keep it, reshape it, or remove
   it.
-- **Logout token revocation.** Low priority. Logout leaves the 7-day session
-  JWT valid; the chosen fix is a Redis denylist of session ids.
