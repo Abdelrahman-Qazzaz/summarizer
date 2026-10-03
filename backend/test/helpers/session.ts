@@ -1,11 +1,11 @@
-import { createSessionToken } from "../../api/src/auth/sessionToken";
 import { COOKIE_KEYS } from "../../shared/keys";
+import { signAccessToken } from "./accessTokens";
 
 export async function sessionCookieHeader(
   userId: string,
-  sessionId?: string,
+  sessionId = "session_01TEST",
 ): Promise<string> {
-  const token = await createSessionToken({
+  const token = await signAccessToken({
     userId,
     sessionId,
     expiresAtEpochSeconds: Math.floor(Date.now() / 1000) + 3600,

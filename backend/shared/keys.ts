@@ -8,6 +8,7 @@ const useCaptionsIfAvailable = "useCaptionsIfAvailable";
 
 export const CTX_KEYS = {
   userId: "userId",
+  sessionExpiresAtEpochSeconds: "sessionExpiresAtEpochSeconds",
   imageUploadId: "imageUploadId",
   audioUploadId: "audioUploadId",
   conversationId: "conversationId",
@@ -41,4 +42,5 @@ export const FORM_KEYS = {
 
 export const COOKIE_KEYS = {
   session: "session",
+  refresh: "refresh",
 } as const;

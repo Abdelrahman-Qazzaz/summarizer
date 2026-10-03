@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { verify } from "hono/jwt";
 
 const MOCK_WORKOS_URL = "https://workos.example/authorize";
 const userId = "user_01CALLBACK";
@@ -9,11 +8,13 @@ const {
   mockGetRiderctUrl,
   mockGetAuthSessionFromCode,
   mockRevokeAuthSession,
+  mockRefreshAuthSession,
   mockInsert,
 } = vi.hoisted(() => ({
   mockGetRiderctUrl: vi.fn(),
   mockGetAuthSessionFromCode: vi.fn(),
   mockRevokeAuthSession: vi.fn(),
+  mockRefreshAuthSession: vi.fn(),
   mockInsert: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ vi.mock("../../api/src/auth/auth", async (importOriginal) => {
     getRiderctUrl: mockGetRiderctUrl,
     getAuthSessionFromCode: mockGetAuthSessionFromCode,
     revokeAuthSession: mockRevokeAuthSession,
+    refreshAuthSession: mockRefreshAuthSession,
   };
 });
 
@@ -35,6 +37,7 @@ vi.mock("../../shared/db", async () => ({
 
 import { createApp } from "../../api/app";
 import { authedHeaders } from "../helpers/session";
+import { signAccessToken } from "../helpers/accessTokens";
 import { WORKOS_REDIRECT_URI } from "../../api/src/auth/auth";
 import { COOKIE_KEYS } from "../../shared/keys";
 
@@ -53,14 +56,24 @@ describe("GET /auth/me", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns userId for a valid session", async () => {
+  it("returns the user and when their access token expires", async () => {
+    const expiresAtEpochSeconds = Math.floor(Date.now() / 1000) + 300;
+    const token = await signAccessToken({
+      userId: "user_01TEST",
+      sessionId,
+      expiresAtEpochSeconds,
+    });
+
     const res = await (
       await createApp()
     ).request("http://localhost/auth/me", {
-      headers: await authedHeaders("user_01TEST"),
+      headers: { Cookie: `${COOKIE_KEYS.session}=${token}` },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ userId: "user_01TEST" });
+    expect(await res.json()).toEqual({
+      userId: "user_01TEST",
+      expiresAt: new Date(expiresAtEpochSeconds * 1000).toISOString(),
+    });
   });
 });
 
@@ -93,7 +106,11 @@ describe("GET /auth/login", () => {
 describe("GET /auth/callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetAuthSessionFromCode.mockResolvedValue({ userId, sessionId });
+    mockGetAuthSessionFromCode.mockResolvedValue({
+      userId,
+      accessToken: "workos-access-token",
+      refreshToken: "workos-refresh-token",
+    });
     mockInsert.mockReturnValue({
       values: vi.fn().mockReturnValue({
         onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
@@ -118,15 +135,127 @@ describe("GET /auth/callback", () => {
     expect(res.headers.get("Location")).toBe("http://localhost:5173");
     expect(mockGetAuthSessionFromCode).toHaveBeenCalledWith("oauth_code_123");
     expect(mockInsert).toHaveBeenCalledTimes(1);
-    const setCookie = res.headers.get("Set-Cookie");
-    expect(setCookie).toContain(`${COOKIE_KEYS.session}=`);
-    const token = setCookie?.match(
-      new RegExp(`${COOKIE_KEYS.session}=([^;]+)`),
-    )?.[1];
-    expect(token).toBeDefined();
-    await expect(
-      verify(token!, process.env.SESSION_SECRET!, "HS256"),
-    ).resolves.toMatchObject({ sub: userId, sid: sessionId });
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(`^${COOKIE_KEYS.session}=workos-access-token;.*Path=/;`),
+      ),
+    );
+    // Sent only to the endpoint that spends it.
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(
+          `^${COOKIE_KEYS.refresh}=workos-refresh-token;.*Path=/auth/refresh;`,
+        ),
+      ),
+    );
+  });
+});
+
+describe("POST /auth/refresh", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** Refresh results are kept per refresh token, so each test spends its own. */
+  const refresh = async (refreshToken?: string) =>
+    (await createApp()).request("http://localhost/auth/refresh", {
+      method: "POST",
+      headers: {
+        Origin: process.env.CLIENT_URL!,
+        ...(refreshToken && {
+          Cookie: `${COOKIE_KEYS.refresh}=${refreshToken}`,
+        }),
+      },
+    });
+
+  // The cookies are SameSite=None in production, so another site could
+  // otherwise make the browser spend its refresh token.
+  it("refuses a refresh from another site", async () => {
+    const res = await (
+      await createApp()
+    ).request("http://localhost/auth/refresh", {
+      method: "POST",
+      headers: {
+        Origin: "https://evil.example",
+        Cookie: `${COOKIE_KEYS.refresh}=refresh-cross-site`,
+      },
+    });
+
+    expect(res.status).toBe(403);
+    expect(mockRefreshAuthSession).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 without a refresh cookie", async () => {
+    const res = await refresh();
+
+    expect(res.status).toBe(401);
+    expect(mockRefreshAuthSession).not.toHaveBeenCalled();
+  });
+
+  it("sets both new tokens and says when the access token expires", async () => {
+    const expiresAtEpochSeconds = Math.floor(Date.now() / 1000) + 300;
+    const accessToken = await signAccessToken({
+      userId,
+      sessionId,
+      expiresAtEpochSeconds,
+    });
+    mockRefreshAuthSession.mockResolvedValue({
+      accessToken,
+      refreshToken: "refresh-after-success",
+    });
+
+    const res = await refresh("refresh-before-success");
+
+    expect(res.status).toBe(200);
+    expect(mockRefreshAuthSession).toHaveBeenCalledWith(
+      "refresh-before-success",
+    );
+    expect(await res.json()).toEqual({
+      userId,
+      expiresAt: new Date(expiresAtEpochSeconds * 1000).toISOString(),
+    });
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(`^${COOKIE_KEYS.session}=${accessToken};`),
+      ),
+    );
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(
+          `^${COOKIE_KEYS.refresh}=refresh-after-success;.*Path=/auth/refresh;`,
+        ),
+      ),
+    );
+  });
+
+  it("signs the user out when WorkOS turns the refresh token down", async () => {
+    mockRefreshAuthSession.mockRejectedValue(
+      Object.assign(new Error("invalid_grant"), { status: 400 }),
+    );
+
+    const res = await refresh("refresh-rejected");
+
+    expect(res.status).toBe(401);
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toContainEqual(
+      expect.stringMatching(new RegExp(`^${COOKIE_KEYS.session}=;.*Max-Age=0`)),
+    );
+    expect(cookies).toContainEqual(
+      expect.stringMatching(new RegExp(`^${COOKIE_KEYS.refresh}=;.*Max-Age=0`)),
+    );
+  });
+
+  it("keeps the cookies when WorkOS fails to answer", async () => {
+    mockRefreshAuthSession.mockRejectedValue(
+      Object.assign(new Error("WorkOS unavailable"), { status: 503 }),
+    );
+
+    const res = await refresh("refresh-during-outage");
+
+    expect(res.status).toBe(500);
+    expect(res.headers.getSetCookie()).toEqual([]);
   });
 });
 
@@ -136,7 +265,7 @@ describe("POST /auth/logout", () => {
     mockRevokeAuthSession.mockResolvedValue(undefined);
   });
 
-  it("revokes the WorkOS session and clears the session cookie", async () => {
+  it("revokes the WorkOS session and clears both cookies", async () => {
     const res = await (
       await createApp()
     ).request("http://localhost/auth/logout", {
@@ -145,9 +274,40 @@ describe("POST /auth/logout", () => {
     });
     expect(res.status).toBe(200);
     expect(mockRevokeAuthSession).toHaveBeenCalledWith(sessionId);
-    const setCookie = res.headers.get("Set-Cookie");
-    expect(setCookie).toContain(`${COOKIE_KEYS.session}=`);
-    expect(setCookie?.toLowerCase()).toMatch(/max-age=0|expires=/);
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(`^${COOKIE_KEYS.session}=;.*Max-Age=0;.*Path=/;`),
+      ),
+    );
+    expect(cookies).toContainEqual(
+      expect.stringMatching(
+        new RegExp(
+          `^${COOKIE_KEYS.refresh}=;.*Max-Age=0;.*Path=/auth/refresh;`,
+        ),
+      ),
+    );
+  });
+
+  it("ends the session of an access token that has already expired", async () => {
+    const token = await signAccessToken({
+      userId: "user_01TEST",
+      sessionId,
+      expiresAtEpochSeconds: Math.floor(Date.now() / 1000) - 600,
+    });
+
+    const res = await (
+      await createApp()
+    ).request("http://localhost/auth/logout", {
+      method: "POST",
+      headers: {
+        Origin: process.env.CLIENT_URL!,
+        Cookie: `${COOKIE_KEYS.session}=${token}`,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRevokeAuthSession).toHaveBeenCalledWith(sessionId);
   });
 
   it("remains successful without a session cookie", async () => {

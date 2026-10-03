@@ -6,6 +6,7 @@ import {
   authLoginRateLimiter,
   authLogoutRateLimiter,
   authMeRateLimiter,
+  authRefreshRateLimiter,
 } from "../middleware/rateLimit.middleware";
 
 export const authRouter = new Hono();
@@ -17,4 +18,9 @@ authRouter.get(
   authController.handleCallback,
 );
 authRouter.get("/me", authMeRateLimiter, requireAuth, authController.handleMe);
+authRouter.post(
+  "/refresh",
+  authRefreshRateLimiter,
+  authController.handleRefresh,
+);
 authRouter.post("/logout", authLogoutRateLimiter, authController.handleLogout);

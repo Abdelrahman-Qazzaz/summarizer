@@ -4,13 +4,7 @@ Scope: `backend/` on `main`. Written at 029e2de and rechecked at e8040ee, which 
 
 ## Medium
 
-### 1. Logging out does not end the session token
-
-`backend/api/src/auth/sessionToken.ts:29`, `backend/api/src/controllers/auth.controller.ts:27`
-
-The session cookie is an HS256 JWT valid for 7 days. `verifySessionToken` checks only the signature, `exp` and claim types. Logout clears the cookie and revokes the WorkOS session, but nothing on the API side checks that session again. A copied cookie keeps working for the rest of its 7 days after logout, both for HTTP and for the Socket.IO handshake.
-
-### 2. Unconfirmed uploads can hold storage for hours
+### 1. Unconfirmed uploads can hold storage for hours
 
 `backend/shared/uploads.ts:20`, `backend/shared/sweeper.ts:12`, `backend/api/src/middleware/rateLimit.middleware.ts:125`
 
@@ -18,13 +12,13 @@ Each upload URL records a pending object, and storage accepts one file on it: up
 
 ## Low
 
-### 3. A lost `transcribe_done` leaves the user's screen out of date
+### 2. A lost `transcribe_done` leaves the user's screen out of date
 
 `backend/transcribe-worker/transcribeJob.ts:158`
 
 If publishing `transcribe_done` fails after the transcript is saved, `announceCompletion` logs it and the message is done; nothing publishes it again. While its socket stays connected, the client only refetches a job when it receives that event, so the source keeps showing "transcribing" until a reload or a socket reconnect. A lost publish without the connection dropping (which exits the process) should be rare.
 
-### 4. A job whose process dies before publishing stays queued
+### 3. A job whose process dies before publishing stays queued
 
 `backend/shared/audioTranscription.ts:32`, `backend/api/src/controllers/upload.controller.ts:114`
 

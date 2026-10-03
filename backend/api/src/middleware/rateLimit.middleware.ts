@@ -80,6 +80,7 @@ export const authLoginRateLimiter = createLimiter("authLogin");
 export const authCallbackRateLimiter = createLimiter("authCallback");
 export const authLogoutRateLimiter = createLimiter("authLogout");
 export const authMeRateLimiter = createLimiter("authMe");
+export const authRefreshRateLimiter = createLimiter("authRefresh");
 
 export const jobRateLimiter = createLimiter("job");
 export const conversationRateLimiter = createLimiter("conversation");

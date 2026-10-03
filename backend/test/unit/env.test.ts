@@ -19,7 +19,6 @@ const validUpstash = {
 const validApi = {
   ...validBase,
   ...validUpstash,
-  SESSION_SECRET: "a".repeat(32),
   WORKOS_API_KEY: "sk_test",
   WORKOS_CLIENT_ID: "client_test",
   CLIENT_URL: "http://localhost:5173",
@@ -30,14 +29,6 @@ describe("apiEnvSchema", () => {
   it("accepts valid api env", () => {
     const result = apiEnvSchema.safeParse(validApi);
     expect(result.success).toBe(true);
-  });
-
-  it("rejects SESSION_SECRET shorter than 32 chars", () => {
-    const result = apiEnvSchema.safeParse({
-      ...validApi,
-      SESSION_SECRET: "a".repeat(31),
-    });
-    expect(result.success).toBe(false);
   });
 
   it("rejects empty UPSTASH_REDIS_REST_TOKEN", () => {

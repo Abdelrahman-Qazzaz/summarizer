@@ -28,6 +28,8 @@ export const RATE_LIMIT_POLICIES = {
   authCallback: { limit: 20, windowMs: FIFTEEN_MINUTES_MS, key: "clientIp" },
   authLogout: { limit: 60, windowMs: FIFTEEN_MINUTES_MS, key: "clientIp" },
   authMe: { limit: 200, windowMs: FIFTEEN_MINUTES_MS, key: "clientIp" },
+  /** Each signed-in user refreshes every few minutes, so this sits with /me. */
+  authRefresh: { limit: 200, windowMs: FIFTEEN_MINUTES_MS, key: "clientIp" },
 
   job: { limit: 100, windowMs: FIFTEEN_MINUTES_MS, key: "userId" },
   conversation: { limit: 100, windowMs: FIFTEEN_MINUTES_MS, key: "userId" },

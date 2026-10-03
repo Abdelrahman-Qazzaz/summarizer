@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sign } from "hono/jwt";
 
-const { mockAuthenticateWithCode, mockRevokeSession } = vi.hoisted(() => ({
+const {
+  mockAuthenticateWithCode,
+  mockAuthenticateWithRefreshToken,
+  mockRevokeSession,
+} = vi.hoisted(() => ({
   mockAuthenticateWithCode: vi.fn(),
+  mockAuthenticateWithRefreshToken: vi.fn(),
   mockRevokeSession: vi.fn(),
 }));
 
@@ -10,6 +14,7 @@ vi.mock("@workos-inc/node", () => ({
   WorkOS: class {
     userManagement = {
       authenticateWithCode: mockAuthenticateWithCode,
+      authenticateWithRefreshToken: mockAuthenticateWithRefreshToken,
       getAuthorizationUrl: vi.fn(),
       listUsers: vi.fn(),
       revokeSession: mockRevokeSession,
@@ -19,6 +24,7 @@ vi.mock("@workos-inc/node", () => ({
 
 import {
   getAuthSessionFromCode,
+  refreshAuthSession,
   revokeAuthSession,
 } from "../../api/src/auth/auth";
 
@@ -30,16 +36,34 @@ beforeEach(() => {
 });
 
 describe("WorkOS auth sessions", () => {
-  it("keeps the WorkOS session ID returned during authentication", async () => {
-    const accessToken = await sign({ sid: sessionId }, "workos-test-secret");
+  it("returns the user and the tokens WorkOS issued", async () => {
     mockAuthenticateWithCode.mockResolvedValueOnce({
       user: { id: userId },
-      accessToken,
+      accessToken: "workos-access-token",
+      refreshToken: "workos-refresh-token",
     });
 
     await expect(getAuthSessionFromCode("oauth-code")).resolves.toEqual({
       userId,
-      sessionId,
+      accessToken: "workos-access-token",
+      refreshToken: "workos-refresh-token",
+    });
+  });
+
+  it("trades a refresh token for the new tokens WorkOS issues", async () => {
+    mockAuthenticateWithRefreshToken.mockResolvedValueOnce({
+      user: { id: userId },
+      accessToken: "access-2",
+      refreshToken: "refresh-2",
+    });
+
+    await expect(refreshAuthSession("refresh-1")).resolves.toEqual({
+      accessToken: "access-2",
+      refreshToken: "refresh-2",
+    });
+    expect(mockAuthenticateWithRefreshToken).toHaveBeenCalledWith({
+      refreshToken: "refresh-1",
+      clientId: process.env.WORKOS_CLIENT_ID,
     });
   });
 

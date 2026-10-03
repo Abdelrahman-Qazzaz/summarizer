@@ -17,18 +17,33 @@ import { getApiEnv } from "../../../shared/env";
  * Cross-site cookies are forgeable by design, so `csrf()` in app.ts guards the
  * mutating routes this opens up.
  */
-function sessionCookieOptions() {
+function sessionCookieOptions(path = "/") {
   const crossSite = getApiEnv().NODE_ENV === "production";
   return {
     httpOnly: true,
     secure: crossSite,
     sameSite: crossSite ? ("None" as const) : ("Lax" as const),
-    path: "/",
+    path,
   };
 }
 
+/**
+ * The refresh token is only ever read by the endpoint that spends it, so
+ * the browser sends it there and nowhere else.
+ */
+const REFRESH_COOKIE_PATH = "/auth/refresh";
+
 export function setSessionToken(c: Context, token: string): void {
   setCookie(c, COOKIE_KEYS.session, token, sessionCookieOptions());
+}
+
+export function setRefreshToken(c: Context, token: string): void {
+  setCookie(
+    c,
+    COOKIE_KEYS.refresh,
+    token,
+    sessionCookieOptions(REFRESH_COOKIE_PATH),
+  );
 }
 
 /**
@@ -37,4 +52,12 @@ export function setSessionToken(c: Context, token: string): void {
  */
 export function clearSessionToken(c: Context): void {
   deleteCookie(c, COOKIE_KEYS.session, sessionCookieOptions());
+}
+
+export function clearRefreshToken(c: Context): void {
+  deleteCookie(
+    c,
+    COOKIE_KEYS.refresh,
+    sessionCookieOptions(REFRESH_COOKIE_PATH),
+  );
 }
