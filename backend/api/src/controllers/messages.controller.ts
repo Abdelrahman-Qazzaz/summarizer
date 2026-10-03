@@ -411,11 +411,12 @@ async function deleteMessageTail(
 }
 
 /**
- * Streams the answer and stores the turn, and owns the claim throughout:
- * whatever `prepareTurn` and the run do, the claim and reservations are released
- * at the end. `prepareTurn` settles everything the turn needs and throws if it
- * can't run, so nothing it destroys (an edit's rewind) is destroyed for a turn
- * that was never going to happen.
+ * Streams the answer and stores the turn, and owns the claim throughout: the
+ * claim and reservations are released when the turn is saved, by
+ * persistAndUnclaimChatTurn in the same transaction, and otherwise in the
+ * catch, whatever failed. `prepareTurn` settles everything the turn needs and
+ * throws if it can't run, so nothing it destroys (an edit's rewind) is
+ * destroyed for a turn that was never going to happen.
  */
 function streamAndPersistMessageTurn(
   c: Context,
@@ -456,7 +457,7 @@ function streamAndPersistMessageTurn(
         newMessageContextCharCount,
         ...history.map((message) => message.contextCharCount),
       ]);
-      const lastMessageId = await data.messages.persistChatTurn({
+      const lastMessageId = await data.messages.persistAndUnclaimChatTurn({
         userId: messageInput.userId,
         conversationId: messageInput.conversationId,
         content: messageInput.content,
@@ -471,6 +472,17 @@ function streamAndPersistMessageTurn(
       events.push("done", { lastMessageId });
       return streamResponse;
     } catch (error) {
+      // Released before answering, so a client that retries at once doesn't
+      // meet its own claim. A failed read does not cancel acquisition; settle
+      // it before releasing anything.
+      await Promise.allSettled(claimPromises);
+      await data.attachments.unclaimAttachments(claimToken).catch(() => {});
+      await unclaimConversationSafely(
+        messageInput.userId,
+        messageInput.conversationId,
+        claimToken,
+      );
+
       if (!streamResponse) {
         if (error instanceof MessageRequestError) {
           return c.json(error.body, error.status);
@@ -481,14 +493,6 @@ function streamAndPersistMessageTurn(
       events.push("error", { message: "Model response failed" });
       return streamResponse;
     } finally {
-      // A failed read does not cancel acquisition; settle it before releasing anything.
-      await Promise.allSettled(claimPromises);
-      await data.attachments.unclaimAttachments(claimToken).catch(() => {});
-      await unclaimConversationSafely(
-        messageInput.userId,
-        messageInput.conversationId,
-        claimToken,
-      );
       events.end();
     }
   })().then(responseReady.resolve, responseReady.reject);

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { mockGet, mockSet } = vi.hoisted(() => ({
   mockGet: vi.fn(),
@@ -22,6 +22,7 @@ import {
 
 // OpenRouter's catalog maps to Redis key "models:v9" with a 24h Redis TTL.
 const REDIS_KEY = "models:v9";
+const MEMO_TTL_MS = 5 * 60 * 1000;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -171,5 +172,99 @@ describe("getOrSetCache", () => {
       some: "catalog",
     });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("getOrSetCache once the memo has expired", () => {
+  const STALE = { serveStale: true };
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    mockGet.mockResolvedValueOnce("old catalog");
+    await getOrSetCache(CACHE_KEYS.openRouterModels, vi.fn(), STALE);
+    vi.advanceTimersByTime(MEMO_TTL_MS + 1);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("waits for the refresh without serveStale", async () => {
+    mockGet.mockResolvedValueOnce("new catalog");
+
+    expect(await getOrSetCache(CACHE_KEYS.openRouterModels, vi.fn())).toBe(
+      "new catalog",
+    );
+  });
+
+  it("serves the old value without waiting on the refresh", async () => {
+    const refreshed = Promise.withResolvers<unknown>();
+    mockGet.mockReturnValueOnce(refreshed.promise);
+
+    expect(
+      await getOrSetCache(CACHE_KEYS.openRouterModels, vi.fn(), STALE),
+    ).toBe("old catalog");
+
+    refreshed.resolve("new catalog");
+    await vi.waitFor(async () =>
+      expect(
+        await getOrSetCache(CACHE_KEYS.openRouterModels, vi.fn(), STALE),
+      ).toBe("new catalog"),
+    );
+  });
+
+  it("fetches in the background when Redis misses", async () => {
+    mockGet.mockResolvedValueOnce(null);
+    mockSet.mockResolvedValueOnce(undefined);
+    const fetch = vi.fn(async () => "new catalog");
+
+    expect(await getOrSetCache(CACHE_KEYS.openRouterModels, fetch, STALE)).toBe(
+      "old catalog",
+    );
+
+    await vi.waitFor(() =>
+      expect(mockSet).toHaveBeenCalledWith(REDIS_KEY, "new catalog", {
+        ex: 24 * 60 * 60,
+      }),
+    );
+    expect(await getOrSetCache(CACHE_KEYS.openRouterModels, fetch, STALE)).toBe(
+      "new catalog",
+    );
+  });
+
+  it("keeps serving the old value when the refresh fails, and retries", async () => {
+    mockGet.mockResolvedValue(null);
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("upstream is down"))
+      .mockResolvedValueOnce("new catalog");
+
+    expect(await getOrSetCache(CACHE_KEYS.openRouterModels, fetch, STALE)).toBe(
+      "old catalog",
+    );
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    expect(await getOrSetCache(CACHE_KEYS.openRouterModels, fetch, STALE)).toBe(
+      "old catalog",
+    );
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await vi.waitFor(async () =>
+      expect(
+        await getOrSetCache(CACHE_KEYS.openRouterModels, fetch, STALE),
+      ).toBe("new catalog"),
+    );
+  });
+
+  it("starts one refresh for callers that find it expired together", async () => {
+    const refreshed = Promise.withResolvers<unknown>();
+    mockGet.mockReturnValueOnce(refreshed.promise);
+
+    await Promise.all([
+      getOrSetCache(CACHE_KEYS.openRouterModels, vi.fn(), STALE),
+      getOrSetCache(CACHE_KEYS.openRouterModels, vi.fn(), STALE),
+    ]);
+    refreshed.resolve("new catalog");
+
+    expect(mockGet).toHaveBeenCalledTimes(2);
   });
 });

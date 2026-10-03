@@ -568,8 +568,14 @@ async function deleteOwnedMessage(
  * attachments, the assistant reply, and the conversation's new head.
  * All-or-nothing, so a mid-write failure can't leave a turn half-recorded — a
  * user message with no reply, or a reply the conversation never points at.
+ *
+ * It also unclaims the turn: the conversation's claim and the attachments'
+ * reservations go in the same transaction. Releasing the claim with the new
+ * head means a crash after the commit can't leave the conversation locked
+ * until the lease runs out, and the claim check refuses the write if this
+ * turn's lease was lost to another.
  */
-async function persistChatTurn(turn: {
+async function persistAndUnclaimChatTurn(turn: {
   userId: string;
   conversationId: string;
   content: string;
@@ -629,5 +635,5 @@ export const messages = {
   findCreateMessageHistory,
   findRecentMessagesWithContext,
   deleteOwnedMessage,
-  persistChatTurn,
+  persistAndUnclaimChatTurn,
 };

@@ -1,8 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  resetRateLimitMock,
-  setRateLimitStoreUnavailable,
-} from "../helpers/rateLimitStoreMock";
 
 const {
   mockLimit,
@@ -44,13 +40,14 @@ vi.mock("../../shared/ai/ai_chat_client", async (importActual) => {
 });
 
 import { createApp } from "../../api/app";
+import { resetRateLimits } from "../../api/src/middleware/rateLimit.middleware";
 import { sessionCookieHeader } from "../helpers/session";
 
 const audioUploadId = "550e8400-e29b-41d4-a716-446655440000";
 
 describe("rate limiting", () => {
   beforeEach(() => {
-    resetRateLimitMock();
+    resetRateLimits();
     vi.clearAllMocks();
     mockGetAuthSessionFromCode.mockRejectedValue(
       new Error("WorkOS unavailable"),
@@ -146,33 +143,11 @@ describe("rate limiting", () => {
       );
     });
   });
-
-  it("returns 503 when the rate limit store is unavailable", async () => {
-    setRateLimitStoreUnavailable(true);
-    mockLimit.mockResolvedValueOnce([
-      {
-        audioUploadId,
-        fileName: "clip.mp3",
-        status: "completed",
-        error: null,
-      },
-    ]);
-    const res = await (
-      await createApp()
-    ).request(`http://localhost/jobs/${audioUploadId}`, {
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-    });
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({
-      message:
-        "Rate limiting is temporarily unavailable. Please try again later.",
-    });
-  });
 });
 
 describe("GET /models rate limiting", () => {
   beforeEach(() => {
-    resetRateLimitMock();
+    resetRateLimits();
     vi.clearAllMocks();
     mockgetChatModelData.mockResolvedValue({});
   });
@@ -195,17 +170,15 @@ describe("GET /models rate limiting", () => {
     });
   });
 
-  it("returns 503 when the rate limit store is unavailable", async () => {
-    setRateLimitStoreUnavailable(true);
-    const res = await (
-      await createApp()
-    ).request("http://localhost/models", {
-      headers: { Cookie: await sessionCookieHeader("user_01") },
-    });
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({
-      message:
-        "Rate limiting is temporarily unavailable. Please try again later.",
-    });
+  it("gives each user their own budget", async () => {
+    const app = await createApp();
+    const models = async (userId: string) =>
+      app.request("http://localhost/models", {
+        headers: { Cookie: await sessionCookieHeader(userId) },
+      });
+    for (let i = 0; i < 100; i++) await models("user_01");
+
+    expect((await models("user_01")).status).toBe(429);
+    expect((await models("user_02")).status).not.toBe(429);
   });
 });

@@ -80,34 +80,58 @@ export async function setCache<T>(name: CacheKey, data: T): Promise<void> {
 }
 
 /**
- * The read-through path: the two cache tiers, then `fetch` on a miss. Callers
- * that miss together share one `fetch` per process instead of each starting
- * their own — the difference between one catalog fetch and one per request
- * whenever an entry expires, or whenever Redis is unreachable and every read
- * reports a miss. The shared entry is dropped once it settles, so a failed
- * fetch is retried rather than handed to every later caller.
+ * The read-through path: the in-process memo, then Redis, then `fetch`.
+ *
+ * With `serveStale`, only a process's first read waits on those. Once the
+ * memo holds a value it is returned at once: when it has expired, it is
+ * served as it is while a refresh runs in the background, so the request that
+ * finds it expired doesn't pay for the refresh. A refresh that fails leaves
+ * the old value in place, and the next read starts another. Without it, a
+ * read that finds the memo expired waits for the refresh.
  */
 export async function getOrSetCache<T>(
   name: CacheKey,
   fetch: () => Promise<T>,
+  { serveStale = false }: { serveStale?: boolean } = {},
 ): Promise<T> {
-  const hit = await getCache<T>(name);
-  if (hit != null) return hit;
+  const memoized = memo.get(name);
+  if (memoized && memoized.expiresAt > Date.now()) return memoized.data as T;
+  if (!memoized || !serveStale) return refresh(name, fetch);
 
+  // if accepts stale, run the refresh in background while immediately returning stale memozied.
+  refresh(name, fetch).catch((error: unknown) =>
+    logger.error("Cache refresh failed", error, {
+      cacheKey: CACHE_ENTRIES[name].redisKey,
+    }),
+  );
+  return memoized.data as T;
+}
+
+/**
+ * Reads Redis, then `fetch` on a miss, writing both tiers. Callers that
+ * refresh together share one run per process instead of each starting their
+ * own — the difference between one catalog fetch and one per request whenever
+ * Redis is unreachable and every read reports a miss. The shared run is
+ * dropped once it settles, so a failed fetch is retried rather than handed to
+ * every later caller.
+ */
+function refresh<T>(name: CacheKey, fetch: () => Promise<T>): Promise<T> {
   const pending = inFlight.get(name);
   if (pending) return pending as Promise<T>;
 
-  // Nothing is awaited between reading and writing inFlight, so a caller
-  // resuming from its own getCache always sees this entry.
-  const fetched = fetch()
-    .then((data) => {
-      void setCache(name, data);
-      return data;
-    })
-    .finally(() => inFlight.delete(name));
+  // Nothing is awaited between reading and writing inFlight, so no two
+  // callers can both find it empty.
+  const refreshed = (async () => {
+    const hit = await getCache<T>(name);
+    if (hit != null) return hit;
 
-  inFlight.set(name, fetched);
-  return fetched;
+    const data = await fetch();
+    void setCache(name, data);
+    return data;
+  })().finally(() => inFlight.delete(name));
+
+  inFlight.set(name, refreshed);
+  return refreshed;
 }
 
 /** Test-only: drops the in-process state so cases don't leak entries into each other. */

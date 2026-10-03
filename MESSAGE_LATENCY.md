@@ -1,0 +1,195 @@
+# Message-creation latency
+
+Remaining latency work on `POST /conversations/:id/messages` (and the PATCH
+that edits a message), from a read of the code. Line numbers refer to
+`4334ef8` on `catalog-cache-swr`. Nothing here has been measured in
+production; the sizes are estimates.
+
+Already done on this branch:
+
+- The model catalog is served from memory while it refreshes (`f41a047`),
+  so no request waits on the catalog once a process has it.
+- Rate limits are counted in memory (`bbdf61d`), so no request waits on
+  Upstash. What's left of #1 is moving them out of the API when it scales;
+  see [Rate limits after scaling out](#rate-limits-after-scaling-out).
+- #5: a saved turn no longer runs the two cleanup queries before its stream
+  closes (`4334ef8`). `persistAndUnclaimChatTurn` is now `persistAndUnclaimChatTurn`
+  (`83dc19f`), since it releases the claim and reservations itself.
+
+| #   | What                                    | Delays                   | When                                 |
+| --- | --------------------------------------- | ------------------------ | ------------------------------------ |
+| 3   | Re-signing week-old image URLs          | First token              | Conversations reopened after ~7 days |
+| 4   | Storage delete before an edit streams   | First token              | Every edit that drops images         |
+| 6   | `persistAndUnclaimChatTurn` round trips | `done` and end of stream | Every successful turn                |
+| 7   | Title generation                        | `done` and end of stream | First turn of a conversation         |
+
+"End of stream" matters because the client's `streamMessage` resolves only
+when the response closes (`client/src/api/messages.ts:128`), not on `done`,
+and the chat UI treats the turn as finished at that point.
+
+## Measure first
+
+`measurePreparation` already times each step of preparing a turn, but it
+only logs inside `withPreparationMetrics` (`shared/preparationMetrics.ts:22`),
+and nothing calls that since `d70ee27` merged the create and patch
+handlers. Wrapping `prepareTurn` in it again gives production numbers. The
+most useful one is a single Railway → Supabase database round trip, since
+it decides whether 6 is worth 10 ms or 150 ms.
+
+## Rate limits after scaling out
+
+**Done:** the limits are counted in the API's memory. The API is one
+instance, so the counts are exact, and requests no longer wait on Upstash
+(or fail with a 503 when it's unreachable).
+
+**Plan:** when the API scales out, move rate limiting into a load balancer.
+While there is one load balancer, it can count in memory too.
+
+**Built to move:** the limits live in `api/src/rateLimit/policies.ts` as
+plain data (a limit, a window, and whether the budget is per client IP or
+per user) with no Hono or storage code. Moving them means writing that table
+as the load balancer's config, then deleting
+`api/src/middleware/rateLimit.middleware.ts` and its uses in the routers.
+The load balancer also needs to know which paths each limit covers:
+
+| Policy          | Paths                                                              |
+| --------------- | ------------------------------------------------------------------ |
+| `authLogin`     | `GET /auth/login`                                                  |
+| `authCallback`  | `GET /auth/callback`                                               |
+| `authMe`        | `GET /auth/me`                                                     |
+| `authLogout`    | `POST /auth/logout`                                                |
+| `job`           | `/jobs/*`                                                          |
+| `conversation`  | `/conversations/*`                                                 |
+| `model`         | `/models/*`                                                        |
+| `upload`        | `POST /upload/audio`, `POST /upload/image`, `POST /upload/youtube` |
+| `uploadConfirm` | `POST /upload/audio/confirm`, `POST /upload/image/confirm`         |
+| `imageRead`     | `GET /upload/image/:id`, `DELETE /upload/image/:id`                |
+
+The mounts live in `api/src/routes/*.router.ts`; recheck this table against
+them when the move happens.
+
+Things to settle before moving:
+
+- **Most limits are per user, not per IP.** Every policy except the auth
+  ones counts per user, found from the session cookie. A load balancer can
+  only do the same if it verifies the session JWT itself (it's HS256, so it
+  would need the signing secret). Keyed on IP alone, users behind one
+  address (an office, carrier NAT) share a budget, the problem the auth
+  limits just got fixed for.
+- **Railway may not need your own load balancer.** Railway spreads traffic
+  across a service's replicas itself, and as far as I know its edge offers no
+  rate limiting to configure. Check both before relying on either. The
+  sockets don't need one either; see [Scaling out](#scaling-out-the-socket-problem).
+- **Until then, in-memory counts stop being exact with replicas.** Each
+  replica counts on its own, and Railway doesn't pin a user to one replica,
+  so a user's effective budget grows with the replica count. If replicas
+  come before a load balancer, divide the limits by the count or go back to
+  a shared store.
+- A single load balancer's counts reset when it restarts, as the API's do on
+  a deploy today. That's fine for 15-minute budgets.
+
+## Scaling out: the socket problem
+
+Not a latency item, but it's what keeps the API at one instance, so it
+decides when the rate limits above have to move.
+
+**The problem** (PROBLEMS.md #6): each API instance only knows the sockets
+connected to it (`socket.join(userId)` in
+`api/src/sockets/socketManager.ts`). Job updates arrive on RabbitMQ work
+queues (`api/index.ts:23-41`), and a work queue hands each message to one
+consumer. With two replicas, instance A can consume `transcribe_done` for a
+user whose socket is on instance B, and A's `io.to(userId).emit(...)`
+reaches nobody.
+
+**A load balancer doesn't fix it.** It decides where connections land, not
+which instance RabbitMQ hands a message to. Sticky sessions aren't needed
+either: the client uses websockets only (`transports: ["websocket"]` in
+`client/src/hooks/socket/SocketProvider.tsx`), and stickiness only matters
+for Socket.IO's HTTP polling fallback.
+
+**Fix: send the notification to every instance.** RabbitMQ is already
+there, so use a fanout exchange:
+
+- Each API instance declares its own exclusive, auto-delete queue at startup
+  and binds it to a `job_updates` fanout exchange. Every instance gets every
+  update and calls `io.to(userId).emit("jobUpdated", ...)`; instances
+  without that user's socket do nothing.
+- Work that must happen once stays on a work queue. `yt_fetch_failed` marks
+  the job failed, so one instance still consumes it, does that, and then
+  publishes to the fanout. `transcribe_done` is only a notification (the
+  worker has already saved the transcript), so the worker can publish it to
+  the fanout directly.
+
+The standard alternative is Socket.IO's Redis adapter, which makes
+`io.to(room).emit` reach every instance by itself. It needs a TCP Redis
+connection with pub/sub, and every emit costs Upstash commands. With one
+event type, the fanout is less to run.
+
+## 3. Re-signing week-old image URLs
+
+**What happens:** each image's signed URL is created once when the upload is
+confirmed and saved on the attachment row, valid for 7 days
+(`IMAGE_URL_TTL_SECONDS`). Sending a message puts up to 8 recent images from
+history into the model's context, and a URL with less than an hour left
+(`SIGNED_URL_REFRESH_MARGIN_MS`, `shared/data/images.data.ts:48`) is signed
+again before it's sent.
+
+**Why it's slow:** when that happens, these run one after another before
+the model call can start (`resolveImageAttachmentUrls`,
+`shared/data/images.data.ts:130`, called from `messages.data.ts:320`):
+
+1. the history query,
+2. an HTTP request to Supabase Storage to sign the stale URLs,
+3. one `UPDATE` per image saving the new URL (`images.data.ts:167`).
+
+Steps 2 and 3 only happen when a conversation with images is picked back up
+about a week after those images were uploaded. Everyone else skips them.
+
+**Fix:** the model only needs the URL, not the saved copy, so step 3 doesn't
+have to finish first. Return the new URLs as soon as they're signed and save
+them without waiting, logging a failed save. A save that fails costs one
+extra signing call on a later request, nothing more. That takes one database
+round trip off; the signing call has to stay.
+
+## 4. Storage delete before an edit streams
+
+On PATCH, `deleteMessageTail` runs after preparation and before the stream
+starts (`api/src/controllers/messages.controller.ts:561`). It ends with
+`deleteObjects` (`:404`), an HTTP request to Supabase Storage for the images
+that lost their last message.
+
+The ledger rows are already marked deleted by then, and the sweeper removes
+any object whose removal didn't finish. So the storage call can run after
+the stream has started, or be left to the sweep entirely, instead of
+delaying the first token of every edit that drops images.
+
+## 5. Two no-op cleanup queries on every successful turn (done)
+
+`persistAndUnclaimChatTurn` releases the conversation's claim and the
+attachment reservations in the transaction that saves the turn. The handler
+used to release both again in its `finally`, matching nothing, before the
+stream could close. That release now runs in the `catch`, only for a turn
+that wasn't saved (`4334ef8`).
+
+## 6. `persistAndUnclaimChatTurn` round trips
+
+`persistAndUnclaimChatTurn` (`shared/data/messages.data.ts:578`) takes about six round
+trips before `done`: begin, insert the user message, insert the assistant
+message and link the attachments, complete the turn on the conversation,
+delete the reservations, commit.
+
+The user message goes first only because the database generates its id,
+which the links need. With ids generated in the app, the rest can be sent
+without waiting on each other, or merged into one statement with CTEs,
+bringing it to about two or three.
+
+## 7. `done` waits for the title on a first turn
+
+On a conversation's first turn, the title is generated alongside the reply
+(`openai/gpt-4o-mini`, 15-second timeout) and awaited before the turn is
+saved (`messages.controller.ts:467`). It usually finishes first, but with a
+fast model and a short reply, `done` waits for it.
+
+**Fix:** save the turn without the title and write the title when it
+arrives, pushing it to the client over the socket as other background
+updates are.

@@ -216,7 +216,7 @@ describe.skipIf(!testState.databaseUrl)(
         }),
       ).toEqual([]);
 
-      await messages.persistChatTurn({
+      await messages.persistAndUnclaimChatTurn({
         userId,
         conversationId,
         content: "Summarize",
@@ -269,7 +269,7 @@ describe.skipIf(!testState.databaseUrl)(
         .set({ activeTurnClaimToken: randomUUID() });
 
       await expect(
-        messages.persistChatTurn({
+        messages.persistAndUnclaimChatTurn({
           userId,
           conversationId,
           content: "Describe",

@@ -5,7 +5,7 @@ const {
   mockClaimConversationTurn,
   mockUnclaimConversationTurn,
   mockFindCreateMessageHistory,
-  mockPersistChatTurn,
+  mockPersistAndUnclaimChatTurn,
   mockFindConversationMessages,
   mockDeleteOwnedMessage,
   mockResolveImages,
@@ -25,7 +25,7 @@ const {
   mockClaimConversationTurn: vi.fn(),
   mockUnclaimConversationTurn: vi.fn(),
   mockFindCreateMessageHistory: vi.fn(),
-  mockPersistChatTurn: vi.fn(),
+  mockPersistAndUnclaimChatTurn: vi.fn(),
   mockFindConversationMessages: vi.fn(),
   mockDeleteOwnedMessage: vi.fn(),
   mockResolveImages: vi.fn(),
@@ -87,7 +87,7 @@ vi.mock("../../shared/data/messages.data", async (importActual) => {
     messages: {
       ...actual.messages,
       findCreateMessageHistory: mockFindCreateMessageHistory,
-      persistChatTurn: mockPersistChatTurn,
+      persistAndUnclaimChatTurn: mockPersistAndUnclaimChatTurn,
       findConversationMessages: mockFindConversationMessages,
       deleteOwnedMessage: mockDeleteOwnedMessage,
     },
@@ -273,7 +273,7 @@ beforeEach(() => {
   mockResolveImageAttachmentUrls.mockResolvedValue(new Map());
   mockFindMessageTranscriptAttachments.mockResolvedValue(new Map());
   mockFindTranscripts.mockResolvedValue(new Map());
-  mockPersistChatTurn.mockResolvedValue(assistantRow.id);
+  mockPersistAndUnclaimChatTurn.mockResolvedValue(assistantRow.id);
   mockDeleteOwnedMessage.mockResolvedValue({
     status: "deleted",
     ids: [messageId],
@@ -472,7 +472,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       mockGenerateTitle.mock.invocationCallOrder[0],
     );
     expect(mockUnclaimAttachments).not.toHaveBeenCalled();
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
 
     finishGeneration("Summary");
     expect(await response.text()).toContain("event: done");
@@ -481,7 +481,7 @@ describe("POST /conversations/:conversationId/messages", () => {
   it("releases reservations when persistence fails after generation", async () => {
     mockResolveImages.mockResolvedValueOnce([resolvedImage]);
     mockChatAI.mockResolvedValueOnce("Answer");
-    mockPersistChatTurn.mockRejectedValueOnce(
+    mockPersistAndUnclaimChatTurn.mockRejectedValueOnce(
       new Error("database unavailable"),
     );
 
@@ -521,14 +521,9 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     const response = await responsePromise;
     expect(await response.text()).toContain("event: done");
-    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
-      requestClaimToken(),
-    );
-    expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
-      userId,
-      conversationId,
-      requestClaimToken(),
-    );
+    // Saving the turn released both, so there's nothing left to clean up.
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
   });
 
   it("settles late acquisitions before cleanup when a concurrent read fails", async () => {
@@ -684,7 +679,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     const persistence = Promise.withResolvers<string>();
     mockResolveImages.mockResolvedValueOnce([resolvedImage]);
     mockChatAI.mockReturnValueOnce(generation.promise);
-    mockPersistChatTurn.mockReturnValueOnce(persistence.promise);
+    mockPersistAndUnclaimChatTurn.mockReturnValueOnce(persistence.promise);
 
     const response = await postMessage(
       {
@@ -700,21 +695,17 @@ describe("POST /conversations/:conversationId/messages", () => {
     expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
 
     generation.resolve("Description");
-    await vi.waitFor(() => expect(mockPersistChatTurn).toHaveBeenCalled());
+    await vi.waitFor(() =>
+      expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalled(),
+    );
     expect(mockUnclaimAttachments).not.toHaveBeenCalled();
     expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
     persistence.resolve(assistantRow.id);
 
-    await vi.waitFor(() =>
-      expect(mockUnclaimConversationTurn).toHaveBeenCalledExactlyOnceWith(
-        userId,
-        conversationId,
-        requestClaimToken(),
-      ),
-    );
-    expect(mockUnclaimAttachments).toHaveBeenCalledExactlyOnceWith(
-      requestClaimToken(),
-    );
+    // Saving the turn released both, so there's nothing left to clean up.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
+    expect(mockUnclaimConversationTurn).not.toHaveBeenCalled();
   });
 
   it("requires the client to identify the conversation head", async () => {
@@ -831,7 +822,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       message: "Conversation changed or a response is already in progress",
     });
     expect(mockChatAI).not.toHaveBeenCalled();
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
   });
 
   it("never compresses the reply stream, even when the client accepts gzip", async () => {
@@ -909,7 +900,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
 
-    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+    expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         userId,
         conversationId,
@@ -935,7 +926,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
     await response.text();
 
-    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+    expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationTitle: "Plan the next quarter",
       }),
@@ -968,7 +959,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     // The run is decoupled from the response, so it completes and persists the
     // whole turn regardless of the disconnect. Persistence is fire-and-forget.
     await vi.waitFor(() =>
-      expect(mockPersistChatTurn).toHaveBeenCalledWith(
+      expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
         expect.objectContaining({
           userId,
           conversationId,
@@ -1093,7 +1084,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       message: "Invalid model: must accept image input",
     });
     expect(mockChatAI).not.toHaveBeenCalled();
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
     expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
@@ -1120,7 +1111,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     const labels = turns.map((t: { content: string }) => t.content.slice(0, 6));
     expect(labels).toEqual(["middle", "newest", "Hi the"]);
     expect(opts.maxOutputTokens).toBe(MAX_RESPONSE_TOKENS);
-    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+    expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
       expect.objectContaining({ contextWindowMessageCount: 4 }),
     );
   });
@@ -1159,7 +1150,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         expect.objectContaining({ onDelta: expect.any(Function) }),
       );
       await vi.waitFor(() =>
-        expect(mockPersistChatTurn).toHaveBeenCalledWith(
+        expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
           expect.objectContaining({
             content: "Compare these",
             attachmentIds: [firstAudioUploadId, secondAudioUploadId],
@@ -1267,7 +1258,7 @@ describe("POST /conversations/:conversationId/messages", () => {
         message: "Transcript not found",
       });
       expect(mockChatAI).not.toHaveBeenCalled();
-      expect(mockPersistChatTurn).not.toHaveBeenCalled();
+      expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
       expect(mockUnclaimConversationTurn).toHaveBeenCalledTimes(1);
     });
 
@@ -1341,7 +1332,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     // The writes only run once a reply is known, so a failed turn saves nothing.
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
     expect(mockUnclaimAttachments).toHaveBeenCalledWith(requestClaimToken());
     expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
@@ -1379,7 +1370,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     // The upload rides along on the turn's transactional write, to be claimed
     // by the user message it inserts.
     await vi.waitFor(() =>
-      expect(mockPersistChatTurn).toHaveBeenCalledWith(
+      expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
         expect.objectContaining({ attachmentIds: [imageUploadId] }),
       ),
     );
@@ -1396,7 +1387,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "Image not found" });
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
     expect(mockUnclaimConversationTurn).toHaveBeenCalledTimes(1);
   });
 
@@ -1431,7 +1422,7 @@ describe("POST /conversations/:conversationId/messages", () => {
 
     expect(res.status).toBe(400);
     expect(mockFindOwnedConversation).not.toHaveBeenCalled();
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the conversation is not owned by the user", async () => {
@@ -1442,7 +1433,7 @@ describe("POST /conversations/:conversationId/messages", () => {
       chosenModelId: modelId,
     });
     expect(res.status).toBe(404);
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid model with 400 before touching the db", async () => {
@@ -1455,7 +1446,7 @@ describe("POST /conversations/:conversationId/messages", () => {
     });
     expect(res.status).toBe(400);
     expect(mockFindOwnedConversation).not.toHaveBeenCalled();
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
   });
 
   it("rejects an empty message with 400", async () => {
@@ -1578,7 +1569,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       expect.objectContaining({ onDelta: expect.any(Function) }),
     );
     // The replacement is stored like any other turn.
-    expect(mockPersistChatTurn).toHaveBeenCalledWith(
+    expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         userId,
         conversationId,
@@ -1612,7 +1603,11 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       [imageUploadId],
       claimToken,
     );
-    expect(mockUnclaimAttachments).toHaveBeenCalledWith(claimToken);
+    // Saving the edit releases the reservations with it.
+    expect(mockPersistAndUnclaimChatTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ claimToken }),
+    );
+    expect(mockUnclaimAttachments).not.toHaveBeenCalled();
   });
 
   it("keeps the rewind and releases its claim when generation fails", async () => {
@@ -1623,7 +1618,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("event: error");
     expect(mockDeleteOwnedMessage).toHaveBeenCalledOnce();
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
     expect(mockUnclaimConversationTurn).toHaveBeenCalledWith(
       userId,
       conversationId,
@@ -1641,7 +1636,7 @@ describe("PATCH /conversations/:conversationId/messages/:messageId", () => {
       message: "Only user messages can be edited",
     });
     expect(mockChatAI).not.toHaveBeenCalled();
-    expect(mockPersistChatTurn).not.toHaveBeenCalled();
+    expect(mockPersistAndUnclaimChatTurn).not.toHaveBeenCalled();
     expect(mockUnclaimConversationTurn).toHaveBeenCalledOnce();
   });
 
