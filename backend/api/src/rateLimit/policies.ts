@@ -10,7 +10,7 @@
  *   X-Real-IP.
  * - userId: the signed-in user, from the session cookie. In the API that
  *   means requireAuth runs first; anything enforcing it outside the API has
- *   to verify the session JWT to know the user.
+ *   to verify the WorkOS access token in that cookie to know the user.
  */
 
 export type RateLimitKey = "clientIp" | "userId";

@@ -57,6 +57,7 @@ The load balancer also needs to know which paths each limit covers:
 | `authLogin`     | `GET /auth/login`                                                  |
 | `authCallback`  | `GET /auth/callback`                                               |
 | `authMe`        | `GET /auth/me`                                                     |
+| `authRefresh`   | `POST /auth/refresh`                                               |
 | `authLogout`    | `POST /auth/logout`                                                |
 | `job`           | `/jobs/*`                                                          |
 | `conversation`  | `/conversations/*`                                                 |
@@ -72,10 +73,11 @@ Things to settle before moving:
 
 - **Most limits are per user, not per IP.** Every policy except the auth
   ones counts per user, found from the session cookie. A load balancer can
-  only do the same if it verifies the session JWT itself (it's HS256, so it
-  would need the signing secret). Keyed on IP alone, users behind one
-  address (an office, carrier NAT) share a budget, the problem the auth
-  limits just got fixed for.
+  only do the same if it verifies the cookie's WorkOS access token itself.
+  That needs no secret: it's standard JWT validation against WorkOS's
+  published keys, the same check `api/src/auth/accessToken.ts` makes.
+  Keyed on IP alone, users behind one address (an office, carrier NAT)
+  share a budget, the problem the auth limits just got fixed for.
 - **Railway may not need your own load balancer.** Railway spreads traffic
   across a service's replicas itself, and as far as I know its edge offers no
   rate limiting to configure. Check both before relying on either. The
